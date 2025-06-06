@@ -13,6 +13,7 @@ import AdminForgotPasswordScreen from './src/components/AdminForgotPasswordScree
 import AdminDashboard from './src/components/AdminDashboard'; // Assuming this is default export
 import AdminProfile from './src/components/AdminProfile'; // Assuming this is default export
 import AdminNotifications from './src/components/AdminNotifications'; // Assuming this is default export
+import AdminLM from './src/components/AdminLM';
 
 // Screens
 import WelcomePage from './src/components/WelcomePage';
@@ -137,6 +138,7 @@ export default function App() {
         <Stack.Screen name="AdminProfile" component={AdminProfile} options={{ headerShown: false }} />
         <Stack.Screen name="AdminNotifications" component={AdminNotifications} options={{ headerShown: false }} />
         <Stack.Screen name="AdminStudentProfiles" component={AdminStudentProfiles} options={{ headerTitle: '', headerTransparent: true }} />
+        <Stack.Screen name="AdminLM" component={AdminLM} options={{ headerTitle: '', headerTransparent: true }} />
 
         {/* Academic */}
         <Stack.Screen name="AcademicCalendar" component={AcademicCalendar} options={{ headerTitle: '', headerTransparent: true }} />

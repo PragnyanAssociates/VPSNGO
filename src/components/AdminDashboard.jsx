@@ -2,135 +2,52 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, SafeAreaView, Dimensions, Image, Platform } from 'react-native';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-// MaterialCommunityIcons is not used, can be removed if you don't plan to use it.
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+
+// Component Imports
 import AdminNotifications, { initialNotificationsData } from './AdminNotifications';
 import AdminProfile from './AdminProfile';
 import AcademicCalendar from './AcademicCalendar';
-import AdminStudentProfiles from './AdminStudentProfiles'; // Ensure this path is correct
+import AdminStudentProfiles from './AdminStudentProfiles';
+import AdminLM from './AdminLM';
+
 
 const { width: windowWidth } = Dimensions.get('window');
 
 const CARD_GAP = 12;
 const CONTENT_HORIZONTAL_PADDING = 15;
-const BOTTOM_NAV_HEIGHT = 70; // Adjusted slightly for a common bottom nav height
+const BOTTOM_NAV_HEIGHT = 70;
 
 const PRIMARY_COLOR = '#008080';
 const SECONDARY_COLOR = '#e0f2f7';
 const TERTIARY_COLOR = '#f8f8ff';
 const TEXT_COLOR_DARK = '#333';
 const TEXT_COLOR_MEDIUM = '#555';
-const TEXT_COLOR_LIGHT = '#777';
 const BORDER_COLOR = '#b2ebf2';
-
-// The AllQuickAccessScreenContent component seems to be a separate concept
-// for a dedicated "view all" screen. It's not directly used for rendering
-// the quick access items on the main dashboard home tab in this setup.
-// If you intend to use it, you'll need a separate mechanism to navigate to it.
-// For now, I'm keeping it as it was in your provided code.
-const AllQuickAccessScreenContent = ({ allQuickAccessItems, onBackPress, DashboardSectionCard }) => {
-  return (
-    <SafeAreaView style={allQuickAccessStyles.safeArea}>
-      <View style={allQuickAccessStyles.header}>
-        <TouchableOpacity onPress={onBackPress} style={allQuickAccessStyles.backButton}>
-          <MaterialIcons name="arrow-back" size={24} color={PRIMARY_COLOR} />
-        </TouchableOpacity>
-        <Text style={allQuickAccessStyles.headerTitle}>All Quick Access</Text>
-        <View style={allQuickAccessStyles.headerRightPlaceholder} />
-      </View>
-      <ScrollView contentContainerStyle={allQuickAccessStyles.scrollViewContent}>
-        <View style={allQuickAccessStyles.dashboardGrid}>
-          {allQuickAccessItems.map(item => (
-            <DashboardSectionCard // This DashboardSectionCard is defined inside AdminDashboard
-              key={item.id} // Ensure these IDs are unique
-              title={item.title}
-              imageSource={item.imageSource}
-              // iconName and iconType are not in your allQuickAccessItems data structure
-              // iconName={item.iconName}
-              // iconType={item.iconType}
-              onPress={() => Alert.alert(item.title, `Navigating to ${item.title}...`)}
-            />
-          ))}
-        </View>
-      </ScrollView>
-    </SafeAreaView>
-  );
-};
-
-const allQuickAccessStyles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: TERTIARY_COLOR,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: SECONDARY_COLOR,
-    paddingHorizontal: 15,
-    paddingVertical: 12,
-    // paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight + 10 : 15, // Adjust for status bar
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
-    marginBottom: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 3,
-    borderBottomWidth: 1,
-    borderBottomColor: BORDER_COLOR,
-  },
-  backButton: {
-    padding: 8,
-  },
-  headerTitle: {
-    color: PRIMARY_COLOR,
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  headerRightPlaceholder: {
-    width: 40,
-  },
-  scrollViewContent: {
-    paddingHorizontal: CONTENT_HORIZONTAL_PADDING,
-    paddingVertical: 15,
-    paddingBottom: BOTTOM_NAV_HEIGHT + 20, // Ensure space for bottom nav
-  },
-  dashboardGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    // If cards have internal margins creating gaps, marginHorizontal on grid might not be needed.
-    // marginHorizontal: -CARD_GAP / 2,
-    marginBottom: 20,
-    marginTop: 10,
-  },
-});
 
 
 const AdminDashboard = ({ navigation }) => {
   const [activeTab, setActiveTab] = useState('home');
   const [userProfile, setUserProfile] = useState({
-    name: 'Sarah Anderson (Admin)',
-    profileImage: 'https://randomuser.me/api/portraits/women/44.jpg',
-    class: 'Administration', // Or 'Admin Role'
-    studentId: 'ADM001', // Admin ID
+    name: 'Allu Arjun (Admin)',
+    profileImage: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTFjDq3OY2InCSeoESM7MRUF3Vh96I48yz2gA&s',
+    class: 'Administration',
+    studentId: 'ADM001',
     dob: '1985-07-15',
     gender: 'Female',
-    email: 'sarah.anderson@example.com',
+    email: 'AlluArjun@example.com',
     phone: '+91 98765 43210',
     address: '123, School Lane, Knowledge City, Hyderabad - 500081',
     rollNo: 'N/A',
-    admissionDate: '2015-06-01', // Or employment date
+    admissionDate: '2015-06-01',
   });
 
   const initialUnreadCount = initialNotificationsData.filter(n => !n.read).length;
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(initialUnreadCount);
 
-  // CRITICAL: Ensure all IDs are unique
   const allQuickAccessItems = [
-    { id: 'qa1', title: 'Student Profiles', imageSource: 'https://cdn-icons-png.flaticon.com/128/2444/2444491.png', navigateToTab: 'studentProfiles' },
+    { id: 'qa0', title: 'LM', imageSource: 'https://cdn-icons-png.flaticon.com/128/15096/15096966.png', navigateToTab: 'AdminLM' },
+    { id: 'qa1', title: 'Student Profiles', imageSource: 'https://cdn-icons-png.flaticon.com/128/2444/2444491.png', navigateToTab: 'AdminstudentProfiles' },
     { id: 'qa2', title: 'MI', imageSource: 'https://cdn-icons-png.flaticon.com/128/9195/9195955.png' },
     { id: 'qa3', title: 'Attendance', imageSource: 'https://cdn-icons-png.flaticon.com/128/10293/10293877.png' },
     { id: 'qa4', title: 'Syllabus', imageSource: 'https://cdn-icons-png.flaticon.com/128/4728/4728712.png' },
@@ -139,33 +56,27 @@ const AdminDashboard = ({ navigation }) => {
     { id: 'qa7', title: 'Schedule', imageSource: 'https://cdn-icons-png.flaticon.com/128/4029/4029113.png' },
     { id: 'qa8', title: 'Digital Labs', imageSource: 'https://cdn-icons-png.flaticon.com/128/9562/9562280.png' },
     { id: 'qa9', title: 'Sports', imageSource: 'https://cdn-icons-png.flaticon.com/128/3429/3429456.png' },
-    { id: 'qa10', title: 'Parent-Teacher Meetings', imageSource: 'https://cdn-icons-png.flaticon.com/128/17588/17588666.png' },
+    { id: 'qa10', title: 'PTM', imageSource: 'https://cdn-icons-png.flaticon.com/128/17588/17588666.png' },
     { id: 'qa11', title: 'Events', imageSource: 'https://cdn-icons-png.flaticon.com/128/16917/16917970.png' },
     { id: 'qa12', title: 'Health Info', imageSource: 'https://cdn-icons-png.flaticon.com/128/9441/9441727.png' },
     { id: 'qa13', title: 'Staff Management', imageSource: 'https://cdn-icons-png.flaticon.com/128/10692/10692138.png' },
     { id: 'qa14', title: 'Help Desk', imageSource: 'https://cdn-icons-png.flaticon.com/128/4840/4840332.png' },
-    { id: 'qa15', title: 'Donations', imageSource: 'https://cdn-icons-png.flaticon.com/128/3349/3349234.png' },
   ];
 
   const handleLogout = () => {
     Alert.alert(
-      "Logout",
-      "Are you sure you want to log out?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Logout",
-          onPress: () => {
-            if (navigation && navigation.replace) {
-              navigation.replace('HomeScreen');
-            } else {
-              Alert.alert("Logout", "Logout successful! (No navigation context)");
-            }
-          },
-          style: "destructive"
-        }
-      ],
-      { cancelable: true }
+      "Logout", "Are you sure you want to log out?",
+      [{ text: "Cancel", style: "cancel" }, {
+        text: "Logout",
+        onPress: () => {
+          if (navigation && navigation.replace) {
+            navigation.replace('HomeScreen');
+          } else {
+            Alert.alert("Logout", "Logout successful! (No navigation context)");
+          }
+        },
+        style: "destructive"
+      }], { cancelable: true }
     );
   };
 
@@ -177,7 +88,6 @@ const AdminDashboard = ({ navigation }) => {
   const handleBellIconClick = () => setActiveTab('allNotifications');
   const handleUnreadCountChange = (count) => setUnreadNotificationsCount(count);
 
-  // This definition is now inside AdminDashboard and correctly referenced
   const DashboardSectionCard = ({ title, imageSource, onPress }) => {
     return (
       <TouchableOpacity style={styles.dashboardCard} onPress={onPress}>
@@ -188,14 +98,26 @@ const AdminDashboard = ({ navigation }) => {
       </TouchableOpacity>
     );
   };
+  
+  // === ADDED START: The missing ContentScreenHeader component definition ===
+  const ContentScreenHeader = ({ title, onBack = () => setActiveTab('home') }) => (
+    <View style={styles.contentHeader}>
+      <TouchableOpacity onPress={onBack} style={styles.backButtonGlobal}>
+        <MaterialIcons name="arrow-back" size={24} color={PRIMARY_COLOR} />
+      </TouchableOpacity>
+      <Text style={styles.contentHeaderTitle}>{title}</Text>
+      <View style={{ width: 30 }} /> {/* Spacer for balance */}
+    </View>
+  );
+  // === ADDED END ===
 
   const renderContent = () => {
     switch (activeTab) {
       case 'home':
         return (
           <ScrollView
-            style={styles.contentScrollView} // Use a specific style for content scroll view
-            contentContainerStyle={styles.contentScrollViewContainer} // For padding
+            style={styles.contentScrollView}
+            contentContainerStyle={styles.contentScrollViewContainer}
           >
             <View style={styles.dashboardGrid}>
               {allQuickAccessItems.map(item => (
@@ -217,18 +139,14 @@ const AdminDashboard = ({ navigation }) => {
         );
       case 'allNotifications':
         return (
-          <AdminNotifications
-            onBackPress={() => setActiveTab('home')}
-            onUnreadCountChange={handleUnreadCountChange}
-          />
+          <>
+            <ContentScreenHeader title="Notifications" />
+            <AdminNotifications onUnreadCountChange={handleUnreadCountChange} />
+          </>
         );
       case 'calendar':
-        return (
-          <AcademicCalendar
-            onBackPress={() => setActiveTab('home')}
-          />
-        );
-      case 'studentProfiles':
+        return <AcademicCalendar />;
+      case 'AdminstudentProfiles':
         return (
           <AdminStudentProfiles
             onBackPress={() => setActiveTab('home')}
@@ -242,21 +160,27 @@ const AdminDashboard = ({ navigation }) => {
             onBackToDashboard={() => setActiveTab('home')}
           />
         );
+      case 'AdminLM':
+        return (
+          <>
+            <ContentScreenHeader title="Login Management" />
+            <AdminLM />
+          </>
+        );
       default:
         return (
-            <View style={styles.fallbackContent}>
-                <Text style={styles.fallbackText}>Content for '{activeTab}' is not available.</Text>
-                <TouchableOpacity onPress={() => setActiveTab('home')}>
-                    <Text style={styles.fallbackLink}>Go to Home</Text>
-                </TouchableOpacity>
-            </View>
+          <View style={styles.fallbackContent}>
+            <Text style={styles.fallbackText}>Content for '{activeTab}' is not available.</Text>
+            <TouchableOpacity onPress={() => setActiveTab('home')}>
+              <Text style={styles.fallbackLink}>Go to Home</Text>
+            </TouchableOpacity>
+          </View>
         );
     }
   };
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      {/* Top bar appears only when on the 'home' tab */}
       {activeTab === 'home' && (
         <View style={styles.topBar}>
           <View style={styles.profileContainer}>
@@ -293,15 +217,6 @@ const AdminDashboard = ({ navigation }) => {
           <Icon name="calendar" size={24} color={activeTab === 'calendar' ? PRIMARY_COLOR : TEXT_COLOR_MEDIUM} />
           <Text style={[styles.navText, activeTab === 'calendar' && styles.navTextActive]}>Calendar</Text>
         </TouchableOpacity>
-        {/* You can add back Tasks and Messages if needed */}
-        {/* <TouchableOpacity style={styles.navItem} onPress={() => setActiveTab('tasks')}>
-          <Icon name="tasks" size={24} color={activeTab === 'tasks' ? PRIMARY_COLOR : TEXT_COLOR_MEDIUM} />
-          <Text style={[styles.navText, activeTab === 'tasks' && styles.navTextActive]}>Tasks</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.navItem} onPress={() => setActiveTab('messages')}>
-          <Icon name="envelope" size={24} color={activeTab === 'messages' ? PRIMARY_COLOR : TEXT_COLOR_MEDIUM} />
-          <Text style={[styles.navText, activeTab === 'messages' && styles.navTextActive]}>Messages</Text>
-        </TouchableOpacity> */}
         <TouchableOpacity style={styles.navItem} onPress={() => setActiveTab('profile')}>
           <Icon name="user" size={24} color={activeTab === 'profile' ? PRIMARY_COLOR : TEXT_COLOR_MEDIUM} />
           <Text style={[styles.navText, activeTab === 'profile' && styles.navTextActive]}>Profile</Text>
@@ -319,12 +234,12 @@ const styles = StyleSheet.create({
   topBar: {
     backgroundColor: SECONDARY_COLOR,
     paddingHorizontal: 15,
-    paddingVertical: Platform.OS === 'ios' ? 12 : 15, // iOS typically needs less vertical padding with SafeAreaView
+    paddingVertical: Platform.OS === 'ios' ? 12 : 15,
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between', // Ensures profile info is left and actions are right
+    justifyContent: 'space-between',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -336,7 +251,6 @@ const styles = StyleSheet.create({
   profileContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    // flex: 1, // Allow it to take available space if needed, but justifyContent: space-between on topBar might be enough
   },
   profileImage: {
     width: 45,
@@ -345,26 +259,26 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: PRIMARY_COLOR,
   },
-  profileTextContainer: { // Renamed for clarity
+  profileTextContainer: {
     marginLeft: 12,
   },
-  profileNameText: { // Renamed for clarity
+  profileNameText: {
     color: PRIMARY_COLOR,
     fontSize: 17,
     fontWeight: 'bold',
   },
-  profileRoleText: { // Renamed for clarity
+  profileRoleText: {
     color: TEXT_COLOR_MEDIUM,
     fontSize: 13,
   },
-  topBarActions: { // Grouping for right-side icons
+  topBarActions: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   notificationBellContainer: {
-    position: 'relative', // For the badge
-    padding: 8, // Smaller padding for icon button
-    marginRight: 5, // Space before logout
+    position: 'relative',
+    padding: 8,
+    marginRight: 5,
   },
   notificationBellIcon: {
     width: 24,
@@ -374,23 +288,23 @@ const styles = StyleSheet.create({
   },
   notificationCountBubble: {
     position: 'absolute',
-    top: 3, // Adjusted for smaller padding
-    right: 3, // Adjusted for smaller padding
+    top: 3,
+    right: 3,
     backgroundColor: '#ef4444',
     borderRadius: 10,
-    minWidth: 20, // Ensure it's circular even for single digit
+    minWidth: 20,
     height: 20,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 5, // Add padding for numbers like "10+"
+    paddingHorizontal: 5,
   },
   notificationCountText: {
     color: 'white',
-    fontSize: 11, // Slightly smaller
+    fontSize: 11,
     fontWeight: 'bold',
   },
   logoutButton: {
-    padding: 8, // Smaller padding for icon button
+    padding: 8,
   },
   logoutIcon: {
     width: 22,
@@ -398,29 +312,42 @@ const styles = StyleSheet.create({
     resizeMode: 'contain',
     tintColor: PRIMARY_COLOR,
   },
-  contentScrollView: { // Style for the main ScrollView holding dashboard grid or other tabs
-    flex: 1, // Essential for ScrollView to take available space
+  // === ADDED START: The missing styles for the ContentScreenHeader ===
+  contentHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 15, paddingVertical: 12, backgroundColor: SECONDARY_COLOR,
+    borderBottomWidth: 1, borderBottomColor: BORDER_COLOR,
   },
-  contentScrollViewContainer: { // For padding inside the ScrollView
+  backButtonGlobal: {
+    padding: 5,
+  },
+  contentHeaderTitle: {
+    fontSize: 18, fontWeight: 'bold', color: PRIMARY_COLOR,
+    textAlign: 'center', flex: 1,
+  },
+  // === ADDED END ===
+  contentScrollView: {
+    flex: 1,
+  },
+  contentScrollViewContainer: {
     paddingHorizontal: CONTENT_HORIZONTAL_PADDING,
-    paddingTop: 15, // Add some top padding for content
-    paddingBottom: BOTTOM_NAV_HEIGHT + 20, // Space for bottom nav
+    paddingTop: 15,
+    paddingBottom: BOTTOM_NAV_HEIGHT + 20,
   },
   dashboardGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
-    // marginBottom: 20, // Handled by ScrollView's bottom padding
   },
   dashboardCard: {
     width: (windowWidth - (CONTENT_HORIZONTAL_PADDING * 2) - (CARD_GAP * 2)) / 3,
-    borderRadius: 12, // Slightly less rounded
+    borderRadius: 12,
     paddingVertical: 15,
     marginBottom: CARD_GAP,
     alignItems: 'center',
-    justifyContent: 'flex-start', // Align content to top
-    height: 110, // Adjusted height
-    backgroundColor: '#fff', // Added background for cards
+    justifyContent: 'flex-start',
+    height: 110,
+    backgroundColor: '#fff',
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 1, },
     shadowOpacity: 0.10,
@@ -428,35 +355,33 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   cardIconContainer: {
-    width: 45, // Fixed size for icon container
+    width: 45,
     height: 45,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 8,
-    // backgroundColor: PRIMARY_COLOR_LIGHT, // Optional: Add a background to icon
-    // borderRadius: 22.5,
   },
   cardImage: {
-    width: 38, // Slightly smaller than container
+    width: 38,
     height: 38,
     resizeMode: 'contain',
   },
   cardTitle: {
-    fontSize: 11, // Adjusted for better fit
+    fontSize: 11,
     fontWeight: '600',
     color: TEXT_COLOR_DARK,
     textAlign: 'center',
-    lineHeight: 14, // Adjusted line height
+    lineHeight: 14,
     paddingHorizontal: 4,
-    marginTop: 'auto', // Push title towards bottom if icon is smaller
+    marginTop: 'auto',
   },
   bottomNav: {
     flexDirection: 'row',
     backgroundColor: SECONDARY_COLOR,
     borderTopWidth: 1,
     borderTopColor: BORDER_COLOR,
-    paddingVertical: Platform.OS === 'ios' ? 10 : 8, // Adjust padding for different OS
-    paddingBottom: Platform.OS === 'ios' ? 15 : 8, // Extra padding for home indicator on iOS
+    paddingVertical: Platform.OS === 'ios' ? 10 : 8,
+    paddingBottom: Platform.OS === 'ios' ? 15 : 8,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -2 },
     shadowOpacity: 0.05,
@@ -467,11 +392,11 @@ const styles = StyleSheet.create({
   navItem: {
     flex: 1,
     alignItems: 'center',
-    justifyContent: 'center', // Center content vertically
+    justifyContent: 'center',
     paddingVertical: 5,
   },
   navText: {
-    fontSize: 10, // Made smaller for compactness
+    fontSize: 10,
     color: TEXT_COLOR_MEDIUM,
     marginTop: 3,
   },

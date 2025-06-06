@@ -41,6 +41,7 @@ export default function HomeScreen() {
         />
         <Text style={styles.schoolName}>Vivekananda Public School</Text>
         <Text style={styles.schoolSubName}>(English Medium school for underprivileged students)</Text>
+        <Text style={styles.schoolqt}>Knowledge is light</Text>
       </View>
 
       <View style={styles.content}>
