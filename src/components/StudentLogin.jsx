@@ -1,36 +1,74 @@
+// src/components/StudentLogin.jsx
+
 import React, { useState } from "react";
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, Image } from "react-native";
+import { 
+  View, Text, StyleSheet, TextInput, TouchableOpacity, Image,
+  Alert, ActivityIndicator 
+} from "react-native";
 import { useNavigation } from "@react-navigation/native";
+import { API_BASE_URL } from '../../apiConfig'; // Import the backend address
 
 export default function StudentLogin() {
   const navigation = useNavigation();
   const [studentId, setStudentId] = useState("");
   const [password, setPassword] = useState("");
+  
+  // ✅ NEW: State to show a loading spinner on the button
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleLogin = () => {
-    console.log("Student ID:", studentId);
-    console.log("Password:", password);
-    // Example: navigation.navigate("StudentDashboard");
-    navigation.navigate("StudentDashboard");
+  // ✅ NEW: The full, backend-connected login function
+  const handleLogin = async () => {
+    // 1. Basic check to make sure fields aren't empty
+    if (!studentId || !password) {
+      Alert.alert("Input Required", "Please enter your Student ID and Password.");
+      return;
+    }
+
+    setIsLoading(true); // Show the loading spinner
+
+    try {
+      // 2. Send the login data to the backend server
+      const response = await fetch(`${API_BASE_URL}/api/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: studentId, password: password })
+      });
+
+      const data = await response.json();
+
+      // 3. Check if the server responded with an error
+      if (!response.ok) {
+        throw new Error(data.message); // Use the error message from the backend
+      }
+      
+      // 4. Double-check that the logged-in user is actually a student
+      if (data.user.role !== 'student') {
+        throw new Error("Access Denied. This is not a student account.");
+      }
+
+      // 5. If everything is successful, navigate to the dashboard
+      //    We use 'replace' to prevent the user from going back to the login screen.
+      navigation.replace("StudentDashboard", { userProfile: data.user });
+
+    } catch (error) {
+      // 6. If any step failed, show an alert with the error message
+      Alert.alert("Login Failed", error.message);
+    } finally {
+      // 7. Always hide the loading spinner, whether it succeeded or failed
+      setIsLoading(false); 
+    }
   };
 
   const handleForgotPassword = () => {
-    console.log("Forgot Password");
-    // Example: navigation.navigate("ForgotPasswordScreen", { role: "student" });
     navigation.navigate("ForgotPasswordScreen");
   };
-
-//   const handleRegister = () => {
-//     console.log("Register");
-//     navigation.navigate("StudentRegister");
-//   };
 
   return (
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
         <Image
-          source={require("../assets/vspngo-logo.png")} // Replace with your logo path
+          source={require("../assets/vspngo-logo.png")}
           style={styles.logo}
           accessibilityLabel="School logo"
         />
@@ -48,6 +86,7 @@ export default function StudentLogin() {
             placeholder="Enter your student ID"
             value={studentId}
             onChangeText={setStudentId}
+            autoCapitalize="none"
             accessibilityLabel="Student ID input"
           />
         </View>
@@ -68,8 +107,17 @@ export default function StudentLogin() {
           <Text style={styles.forgotPassword}>Forgot Password?</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.loginButton} onPress={handleLogin}>
-          <Text style={styles.loginButtonText}>Login</Text>
+        {/* ✅ UPDATED: The button now shows a loading spinner */}
+        <TouchableOpacity 
+          style={styles.loginButton} 
+          onPress={handleLogin} 
+          disabled={isLoading}
+        >
+          {isLoading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.loginButtonText}>Login</Text>
+          )}
         </TouchableOpacity>
       </View>
 
@@ -81,13 +129,14 @@ export default function StudentLogin() {
   );
 }
 
+// Your original styles remain unchanged.
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f8f8ff", // Very light gray background
+    backgroundColor: "#f8f8ff",
   },
   header: {
-    backgroundColor: "#e0f2f7", // Light cyan/teal shade
+    backgroundColor: "#e0f2f7",
     paddingTop: 50,
     paddingBottom: 30,
     alignItems: "center",
@@ -104,7 +153,7 @@ const styles = StyleSheet.create({
   schoolName: {
     fontSize: 22,
     fontWeight: "bold",
-    color: "#008080", // Teal
+    color: "#008080",
   },
   formContainer: {
     flex: 1,
@@ -153,7 +202,7 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
   footer: {
-    backgroundColor: "#e0f2f7", // Light cyan/teal shade
+    backgroundColor: "#e0f2f7",
     paddingVertical: 20,
     alignItems: "center",
     borderTopWidth: 1,

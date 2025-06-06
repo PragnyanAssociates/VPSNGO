@@ -1,0 +1,7 @@
+# This file tells Git what NOT to upload to GitHub.
+
+# Ignore the file with our secret environment variables
+.env
+
+# Ignore the massive node_modules folder
+node_modules
