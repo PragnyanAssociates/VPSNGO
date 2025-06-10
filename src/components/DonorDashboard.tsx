@@ -1,12 +1,12 @@
-// 📂 File: src/components/DonorDashboard.tsx (FULL CODE - FINAL)
-
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, SafeAreaView, Dimensions, Image, Platform, ActivityIndicator } from 'react-native';
-import Icon from 'react-native-vector-icons/FontAwesome';
+import FontAwesome from 'react-native-vector-icons/FontAwesome';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Import ProfileScreen and other components
+import { Asset } from 'react-native-image-picker';
+import { API_BASE_URL } from '../../apiConfig'; 
+
 import ProfileScreen, { ProfileData } from '../screens/ProfileScreen';
 import DonorNotifications, { initialNotificationsData } from './DonorNotifications';
 import AcademicCalendar from './AcademicCalendar';
@@ -17,7 +17,7 @@ import DonorPayments from './DonorPayments';
 import DonorSI from './DonorSI';
 import DonorSponsor from './DonorSponsor';
 
-// --- Constants & Color Scheme ---
+// --- Constants & Color Scheme (Unchanged) ---
 const { width: windowWidth } = Dimensions.get('window');
 const CARD_GAP = 12;
 const CONTENT_HORIZONTAL_PADDING = 15;
@@ -31,9 +31,8 @@ const BORDER_COLOR = '#b2ebf2';
 const WHITE = '#ffffff';
 const DANGER_COLOR = '#dc3545';
 
-// Default profile for a first-time public donor.
 const DEFAULT_DONOR_PROFILE: ProfileData = {
-    id: 0, // 0 indicates a non-db, local-only user
+    id: 0, 
     username: 'public_donor',
     full_name: 'Valued Donor',
     role: 'donor',
@@ -41,7 +40,7 @@ const DEFAULT_DONOR_PROFILE: ProfileData = {
     phone: '',
     address: '',
     class_group: 'N/A',
-    profile_image_url: '', // Will show default icon
+    profile_image_url: '', 
     dob: '',
     gender: '',
     admission_date: '',
@@ -52,7 +51,6 @@ const DonorDashboard = () => {
   const [activeTab, setActiveTab] = useState('home');
   const [donorProfile, setDonorProfile] = useState<ProfileData | null>(null);
 
-  // Load the saved donor profile from AsyncStorage when the component mounts
   useEffect(() => {
     const loadProfileFromStorage = async () => {
       try {
@@ -70,15 +68,64 @@ const DonorDashboard = () => {
     loadProfileFromStorage();
   }, []);
 
-  // This function will be called by ProfileScreen to save the changes locally
-  const handleProfileSave = async (updatedData: ProfileData) => {
+  // ✅ FIX: This function now correctly handles BOTH local-only donors AND potential real users.
+  const handleProfileSave = async (updatedData: ProfileData, newImage: Asset | null) => {
     try {
-      setDonorProfile(updatedData);
-      await AsyncStorage.setItem('donorProfile', JSON.stringify(updatedData));
-      Alert.alert("Profile Saved", "Your information has been saved on this device.");
-      setActiveTab('home'); // Go back to the dashboard after saving
-    } catch (e) {
-      Alert.alert("Error", "Could not save profile to this device.");
+      let finalProfileData = { ...updatedData };
+
+      // --- LOGIC FOR LOCAL-ONLY DONOR (NO LOGIN) ---
+      if (updatedData.id === 0) {
+        if (newImage && newImage.uri) {
+          // Save the local file path of the image directly to the profile object.
+          finalProfileData.profile_image_url = newImage.uri;
+        }
+        // Save the entire profile (with new image path) to the device's local storage.
+        await AsyncStorage.setItem('donorProfile', JSON.stringify(finalProfileData));
+        setDonorProfile(finalProfileData);
+        Alert.alert("Profile Saved", "Your information has been saved on this device.");
+        setActiveTab('home');
+        return; // Stop here for local donor.
+      }
+      
+      // --- LOGIC FOR A REAL, LOGGED-IN USER (id is not 0) ---
+      // This part handles uploading to the server if you ever add logged-in donors.
+      const formData = new FormData();
+      Object.entries(updatedData).forEach(([key, value]) => {
+          if (value != null) {
+              formData.append(key, String(value));
+          }
+      });
+      
+      if (newImage && newImage.uri) {
+          formData.append('profileImage', {
+              uri: newImage.uri,
+              type: newImage.type || 'image/jpeg',
+              name: newImage.fileName || `profile-image-${Date.now()}.jpg`
+          } as any);
+      }
+
+      const response = await fetch(`${API_BASE_URL}/api/profiles/${updatedData.id}`, {
+          method: 'PUT',
+          body: formData,
+      });
+
+      if (!response.ok) {
+          const errorBody = await response.json();
+          throw new Error(errorBody.message || "Failed to upload image to server.");
+      }
+      
+      const serverResponse = await response.json();
+      // Update with the server URL for the image
+      finalProfileData.profile_image_url = serverResponse.profile_image_url;
+      
+      await AsyncStorage.setItem('donorProfile', JSON.stringify(finalProfileData));
+      setDonorProfile(finalProfileData);
+      Alert.alert("Profile Saved", "Your information has been updated successfully.");
+      setActiveTab('home');
+
+    } catch (e: any) {
+      console.error("Error saving profile:", e);
+      Alert.alert("Error", e.message || "Could not save profile.");
     }
   };
   
@@ -94,6 +141,18 @@ const DonorDashboard = () => {
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(
     initialNotificationsData.filter(n => !n.read).length
   );
+
+  const getProfileImageSource = () => {
+    if (!donorProfile?.profile_image_url) {
+      return require('../assets/profile.png');
+    }
+    const url = donorProfile.profile_image_url;
+    // If it's a server path, add the base URL. If it's a local file path, use it directly.
+    if (url.startsWith('/uploads/')) {
+      return { uri: `${API_BASE_URL}${url}` };
+    }
+    return { uri: url };
+  };
 
   const renderContent = () => {
     switch (activeTab) {
@@ -119,6 +178,7 @@ const DonorDashboard = () => {
                   onBackPress={() => setActiveTab('home')} 
                   onStaticSave={handleProfileSave} 
                />;
+      // ...unchanged cases
       case 'allNotifications': return <><ContentScreenHeader title="Notifications" onBack={() => setActiveTab('home')} /><DonorNotifications onUnreadCountChange={setUnreadNotificationsCount} /></>;
       case 'calendar': return <AcademicCalendar />;
       case 'DonorPayments': return <><ContentScreenHeader title="Payments" onBack={() => setActiveTab('home')} /><DonorPayments /></>;
@@ -137,7 +197,11 @@ const DonorDashboard = () => {
       {activeTab === 'home' && (
         <View style={styles.topBar}>
           <View style={styles.profileContainer}>
-            <Image source={require('../assets/profile.png')} style={styles.logoImage} />
+            {/* ✅ FIX: Use the new helper function to correctly display local or server images. */}
+            <Image 
+              source={getProfileImageSource()} 
+              style={styles.logoImage} 
+            />
             <View style={styles.profileTextContainer}>
               <Text style={styles.profileNameText}>{donorProfile?.full_name || 'Donor Portal'}</Text>
               <Text style={styles.profileRoleText}>Donor</Text>
@@ -163,7 +227,7 @@ const DonorDashboard = () => {
   );
 };
 
-// --- Helper Components ---
+// --- Helper Components (Unchanged) ---
 const DashboardSectionCard = ({ title, imageSource, onPress }: { title: string, imageSource: string, onPress: () => void }) => (
     <TouchableOpacity style={styles.dashboardCard} onPress={onPress}>
       <View style={styles.cardIconContainer}><Image source={{ uri: imageSource }} style={styles.cardImage} /></View>
@@ -181,12 +245,12 @@ const ContentScreenHeader = ({ title, onBack }: { title: string, onBack: () => v
 );
 const BottomNavItem = ({ icon, label, isActive, onPress }: { icon: string; label: string; isActive: boolean; onPress: () => void; }) => (
     <TouchableOpacity style={styles.navItem} onPress={onPress}>
-        <Icon name={icon} size={isActive ? 24 : 22} color={isActive ? PRIMARY_COLOR : TEXT_COLOR_MEDIUM} />
+        <FontAwesome name={icon} size={isActive ? 24 : 22} color={isActive ? PRIMARY_COLOR : TEXT_COLOR_MEDIUM} />
         <Text style={[styles.navText, isActive && styles.navTextActive]}>{label}</Text>
     </TouchableOpacity>
 );
 
-// --- Styles ---
+// --- Styles (Unchanged) ---
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: TERTIARY_COLOR },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },

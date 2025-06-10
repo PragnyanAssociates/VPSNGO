@@ -1,5 +1,3 @@
-// 📂 File: index.js (Backend - FINAL CORRECTED VERSION)
-
 require('dotenv').config();
 const express = require('express');
 const mysql = require('mysql2/promise');
@@ -15,7 +13,7 @@ app.use(cors());
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Multer configuration (Unchanged)
+// Multer configuration
 const storage = multer.diskStorage({
     destination: (req, file, cb) => { cb(null, 'uploads/'); },
     filename: (req, file, cb) => {
@@ -32,7 +30,7 @@ const db = mysql.createPool({
 });
 
 // ==========================================================
-// --- USER API ROUTES (Unchanged) ---
+// --- USER API ROUTES ---
 // ==========================================================
 app.post('/api/login', async (req, res) => { const { username, password } = req.body; try { const [rows] = await db.query('SELECT * FROM users WHERE username = ?', [username]); const user = rows[0]; if (!user || !(await bcrypt.compare(password, user.password))) { return res.status(401).json({ message: 'Error: Invalid username or password.' }); } const { password: _, ...userData } = user; res.status(200).json({ message: 'Login successful!', user: userData }); } catch (error) { res.status(500).json({ message: 'Error: Database connection failed.' }); }});
 app.get('/api/users', async (req, res) => { try { const [rows] = await db.query('SELECT id, username, full_name, role, class_group FROM users'); res.status(200).json(rows); } catch (error) { res.status(500).json({ message: 'Error: Could not get users.' }); }});
@@ -43,7 +41,7 @@ app.delete('/api/users/:id', async (req, res) => { const { id } = req.params; tr
 
 
 // ==========================================================
-// --- CALENDAR API ROUTES (Unchanged) ---
+// --- CALENDAR API ROUTES ---
 // ==========================================================
 app.get('/api/calendar', async (req, res) => { try { const [rows] = await db.query('SELECT *, DATE_FORMAT(event_date, "%Y-%m-%d") AS event_date FROM calendar_events ORDER BY event_date ASC, time ASC'); const groupedEvents = rows.reduce((acc, event) => { const dateKey = event.event_date; if (!acc[dateKey]) { acc[dateKey] = []; } acc[dateKey].push(event); return acc; }, {}); res.status(200).json(groupedEvents); } catch (error) { console.error(error); res.status(500).json({ message: 'Error: Could not get calendar events.' }); }});
 app.post('/api/calendar', async (req, res) => { const { event_date, name, type, time, description } = req.body; try { await db.query('INSERT INTO calendar_events (event_date, name, type, time, description) VALUES (?, ?, ?, ?, ?)', [event_date, name, type, time, description]); res.status(201).json({ message: 'Event created successfully!' }); } catch (error) { console.error(error); res.status(500).json({ message: 'Error: Could not create event.' }); }});
@@ -52,14 +50,12 @@ app.delete('/api/calendar/:id', async (req, res) => { const { id } = req.params;
 
 
 // ==========================================================
-// ✅ START: USER PROFILE API (UPDATED FOR NEW EMAIL COLUMN)
+// --- USER PROFILE API ---
 // ==========================================================
 
-// GET a user's full profile by JOINING the two tables
 app.get('/api/profiles/:userId', async (req, res) => {
     try {
         const { userId } = req.params;
-        // This query now fetches `email` from `user_profiles` (p)
         const sql = `
             SELECT 
                 u.id, u.username, u.full_name, u.role, u.class_group,
@@ -83,53 +79,88 @@ app.get('/api/profiles/:userId', async (req, res) => {
     }
 });
 
-// PUT (Update) a user's profile, correctly updating both tables
 app.put('/api/profiles/:userId', upload.single('profileImage'), async (req, res) => {
+    
+    console.log('--- RECEIVED /api/profiles/:userId REQUEST ---');
+    console.log('Request Params:', req.params);
+    console.log('Request Body (text fields):', req.body);
+    console.log('Request File (image):', req.file);
+    console.log('-------------------------------------------');
+
     try {
-        const { userId } = req.params;
-        // Data for the 'users' table (no email here)
-        const { full_name, class_group } = req.body;
-        // Data for the 'user_profiles' table (email is now here)
-        const { email, dob, gender, phone, address, admission_date, roll_no } = req.body;
-        
-        // 1. Get existing profile image URL
-        const [profile] = await db.query('SELECT profile_image_url FROM user_profiles WHERE user_id = ?', [userId]);
-        let profile_image_url = profile.length > 0 ? profile[0].profile_image_url : null;
-        
-        if (req.file) {
-            profile_image_url = `/uploads/${req.file.filename}`;
+        const userId = parseInt(req.params.userId, 10);
+        if (isNaN(userId) || userId <= 0) {
+            return res.status(400).json({ message: 'Invalid User ID provided.' });
         }
 
-        // 2. Update the 'users' table with the fields that belong to it
-        await db.query(
-            'UPDATE users SET full_name = ?, class_group = ? WHERE id = ?',
-            [full_name, class_group, userId]
-        );
+        const { 
+            full_name, class_group, email, dob, gender, phone, 
+            address, admission_date, roll_no 
+        } = req.body;
+
+        const [userCheck] = await db.query('SELECT id FROM users WHERE id = ?', [userId]);
+        if (userCheck.length === 0) {
+            return res.status(404).json({ message: `User with ID ${userId} not found.` });
+        }
+
+        let new_profile_image_url = null;
+        if (req.file) {
+            new_profile_image_url = `/uploads/${req.file.filename}`;
+        } else {
+            const [existingProfile] = await db.query('SELECT profile_image_url FROM user_profiles WHERE user_id = ?', [userId]);
+            if (existingProfile.length > 0) {
+                new_profile_image_url = existingProfile[0].profile_image_url;
+            }
+        }
         
-        // 3. Use INSERT...ON DUPLICATE KEY UPDATE for the `user_profiles` table
-        // This query now correctly includes `email`.
+        if (full_name !== undefined || class_group !== undefined) {
+             await db.query(
+                'UPDATE users SET full_name = ?, class_group = ? WHERE id = ?',
+                [full_name, class_group, userId]
+            );
+        }
+       
         const profileSql = `
-            INSERT INTO user_profiles (user_id, email, dob, gender, phone, address, profile_image_url, admission_date, roll_no) 
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-             ON DUPLICATE KEY UPDATE 
-             email=VALUES(email), dob=VALUES(dob), gender=VALUES(gender), phone=VALUES(phone), address=VALUES(address), 
-             profile_image_url=VALUES(profile_image_url), admission_date=VALUES(admission_date), roll_no=VALUES(roll_no)
+            INSERT INTO user_profiles (
+                user_id, email, dob, gender, phone, address, 
+                profile_image_url, admission_date, roll_no
+            ) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE 
+                email = VALUES(email), 
+                dob = VALUES(dob), 
+                gender = VALUES(gender), 
+                phone = VALUES(phone), 
+                address = VALUES(address), 
+                profile_image_url = VALUES(profile_image_url), 
+                admission_date = VALUES(admission_date), 
+                roll_no = VALUES(roll_no)
         `;
-        const profileParams = [userId, email, dob || null, gender, phone, address, profile_image_url, admission_date || null, roll_no];
+        
+        const profileParams = [
+            userId,
+            email || null,
+            dob || null,
+            gender || null,
+            phone || null,
+            address || null,
+            new_profile_image_url,
+            admission_date || null,
+            roll_no || null
+        ];
         
         await db.query(profileSql, profileParams);
         
-        res.json({ message: 'Profile updated successfully!', profile_image_url: profile_image_url });
+        res.status(200).json({ 
+            message: 'Profile updated successfully!', 
+            profile_image_url: new_profile_image_url 
+        });
 
     } catch (error) {
-        console.error("PUT Profile Error:", error);
-        res.status(500).json({ message: 'Error updating profile' });
+        console.error("!!! SERVER ERROR IN PUT /api/profiles/:userId:", error);
+        res.status(500).json({ message: 'An error occurred while updating the profile.' });
     }
 });
-// ==========================================================
-// ✅ END: USER PROFILE API
-// ==========================================================
-
 
 // Start the server
 app.listen(PORT, () => {

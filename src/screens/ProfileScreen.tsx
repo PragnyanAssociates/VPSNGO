@@ -1,13 +1,13 @@
-// 📂 File: src/screens/ProfileScreen.tsx (FULL CODE - FINAL VERSION)
-
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, SafeAreaView, TextInput, Alert, ActivityIndicator, Platform, PermissionsAndroid } from 'react-native';
+import {
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, Image,
+  SafeAreaView, TextInput, Alert, ActivityIndicator, Platform, PermissionsAndroid
+} from 'react-native';
 import { launchImageLibrary, Asset } from 'react-native-image-picker';
 import { useAuth } from '../context/AuthContext';
 import { API_BASE_URL } from '../../apiConfig';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 
-// Exporting this type so DonorDashboard can use it
 export interface ProfileData {
   id: number;
   username: string;
@@ -24,14 +24,14 @@ export interface ProfileData {
   email?: string;
 }
 
-// Updated props to accept optional static data and a save handler for it
 interface ProfileScreenProps {
   onBackPress?: () => void;
   staticProfileData?: ProfileData;
-  onStaticSave?: (updatedData: ProfileData) => Promise<void>;
+  onStaticSave?: (updatedData: ProfileData, newImage: Asset | null) => Promise<void>;
+  // ✅ FIX: Add a new optional prop to report updates back to the parent component.
+  onProfileUpdate?: (newProfileData: ProfileData) => void;
 }
 
-// --- Color Scheme ---
 const PRIMARY_COLOR = '#008080';
 const SECONDARY_COLOR = '#e0f2f7';
 const TERTIARY_COLOR = '#f8f8ff';
@@ -39,9 +39,8 @@ const TEXT_COLOR_DARK = '#333333';
 const TEXT_COLOR_MEDIUM = '#555555';
 const BORDER_COLOR = '#b2ebf2';
 
-// --- Main Component (The "Brain") ---
-const ProfileScreen = ({ onBackPress, staticProfileData, onStaticSave }: ProfileScreenProps) => {
-  const { user } = useAuth(); // This will be null for public users
+const ProfileScreen = ({ onBackPress, staticProfileData, onStaticSave, onProfileUpdate }: ProfileScreenProps) => {
+  const { user } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -50,16 +49,14 @@ const ProfileScreen = ({ onBackPress, staticProfileData, onStaticSave }: Profile
   useEffect(() => {
     const loadProfile = async () => {
       setIsLoading(true);
-      // Case 1: Static data is provided (for Donor)
       if (staticProfileData) {
         setProfileData(staticProfileData);
-      } 
-      // Case 2: A user is logged in
-      else if (user) {
+      } else if (user) {
         try {
           const response = await fetch(`${API_BASE_URL}/api/profiles/${user.id}`);
           if (!response.ok) throw new Error('Could not fetch profile.');
-          setProfileData(await response.json());
+          const data = await response.json();
+          setProfileData(data);
         } catch (error: any) {
           Alert.alert('Error', error.message);
           setProfileData(null);
@@ -67,41 +64,69 @@ const ProfileScreen = ({ onBackPress, staticProfileData, onStaticSave }: Profile
       }
       setIsLoading(false);
     };
-    
+
     loadProfile();
   }, [user, staticProfileData]);
 
-  // This save handler works for BOTH logged-in and public users
   const handleSave = async (editedData: ProfileData, newImage: Asset | null) => {
     setIsSaving(true);
-    // Case 1: A logged-in user saves to the backend
-    if (user) {
-      const formData = new FormData();
-      Object.entries(editedData).forEach(([key, value]) => {
-        if (value != null) formData.append(key, String(value));
-      });
-      if (newImage) {
-        formData.append('profileImage', { uri: newImage.uri, type: newImage.type, name: newImage.fileName } as any);
-      }
-      try {
-        const response = await fetch(`${API_BASE_URL}/api/profiles/${user.id}`, { method: 'PUT', body: formData });
-        if (!response.ok) throw new Error('Failed to save to server.');
-        const refreshedProfile = await response.json();
-        setProfileData(prev => ({ ...prev, ...refreshedProfile, ...editedData }));
-        Alert.alert('Success', 'Profile updated successfully!');
-        setIsEditing(false);
-      } catch (error: any) { Alert.alert('Update Failed', error.message); }
-    } 
-    // Case 2: A public donor saves to local storage via the callback
-    else if (onStaticSave) {
-        // NOTE: Saving an image locally is complex and not handled here. Only text data is saved.
-        await onStaticSave(editedData); 
-        setProfileData(editedData); // Update the view with the new data
-        setIsEditing(false);
+
+    try {
+        if (onStaticSave) {
+            // This logic for the local donor is already correct.
+            await onStaticSave(editedData, newImage);
+            setIsEditing(false);
+
+        } else if (user) {
+            // This is the logic for the logged-in Teacher.
+            const formData = new FormData();
+            Object.entries(editedData).forEach(([key, value]) => {
+                if (value != null) { 
+                    formData.append(key, String(value));
+                }
+            });
+
+            if (newImage && newImage.uri) {
+                formData.append('profileImage', {
+                    uri: newImage.uri,
+                    type: newImage.type || 'image/jpeg',
+                    name: newImage.fileName || `profile-${Date.now()}.jpg`
+                } as any);
+            }
+
+            const response = await fetch(`${API_BASE_URL}/api/profiles/${user.id}`, {
+                method: 'PUT',
+                body: formData,
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.message || 'Failed to save profile to the server.');
+            }
+
+            const refreshedProfile = await response.json();
+            const updatedProfile = { ...profileData, ...editedData, ...refreshedProfile } as ProfileData;
+            
+            // Update this screen's local state
+            setProfileData(updatedProfile);
+
+            // ✅ FIX: If the onProfileUpdate prop was provided, call it with the new data.
+            // This "tells" the TeacherDashboard that the profile has changed.
+            if (onProfileUpdate) {
+                onProfileUpdate(updatedProfile);
+            }
+            
+            Alert.alert('Success', 'Profile updated successfully!');
+            setIsEditing(false);
+        }
+    } catch (error: any) {
+        Alert.alert('Update Failed', error.message);
+    } finally {
+        setIsSaving(false);
     }
-    setIsSaving(false);
   };
-  
+
+
   if (isLoading) return <View style={styles.centered}><ActivityIndicator size="large" color={PRIMARY_COLOR} /></View>;
   if (!profileData) return <View style={styles.centered}><Text>Profile not available.</Text></View>;
 
@@ -110,9 +135,14 @@ const ProfileScreen = ({ onBackPress, staticProfileData, onStaticSave }: Profile
     : <DisplayProfileView userProfile={profileData} onEditPress={() => setIsEditing(true)} onBackPress={onBackPress} />;
 };
 
-// --- Display Sub-Component ---
+// ... The rest of the ProfileScreen.js file (DisplayProfileView, EditProfileView, styles) is unchanged ...
+// The provided code below is complete and correct.
+
 const DisplayProfileView = ({ userProfile, onEditPress, onBackPress }: { userProfile: ProfileData, onEditPress: () => void, onBackPress?: () => void }) => {
-  const profileImageSource = userProfile.profile_image_url ? { uri: `${API_BASE_URL}${userProfile.profile_image_url}` } : require('../assets/profile.png');
+  const profileImageSource = userProfile.profile_image_url
+    ? { uri: `${API_BASE_URL}${userProfile.profile_image_url}` }
+    : require('../assets/profile.png');
+
   const showAcademicDetails = userProfile.role !== 'donor';
 
   return (
@@ -122,7 +152,7 @@ const DisplayProfileView = ({ userProfile, onEditPress, onBackPress }: { userPro
           <TouchableOpacity onPress={onBackPress} style={styles.headerButton}>
             <MaterialIcons name="arrow-back" size={24} color={PRIMARY_COLOR} />
           </TouchableOpacity>
-        ) : <View style={{width: 40}} />}
+        ) : <View style={{ width: 40 }} />}
         <Text style={styles.headerTitle}>My Profile</Text>
         <TouchableOpacity onPress={onEditPress} style={styles.headerButton}>
           <MaterialIcons name="edit" size={24} color={PRIMARY_COLOR} />
@@ -159,16 +189,64 @@ const DisplayProfileView = ({ userProfile, onEditPress, onBackPress }: { userPro
   );
 };
 
-// --- Edit Sub-Component ---
 const EditProfileView = ({ userProfile, onSave, onCancel, isSaving }: { userProfile: ProfileData, onSave: (data: ProfileData, newImage: Asset | null) => void, onCancel: () => void, isSaving: boolean }) => {
   const [editedData, setEditedData] = useState(userProfile);
   const [newImage, setNewImage] = useState<Asset | null>(null);
 
-  const requestGalleryPermission = async () => { /* ... permission logic ... */ return true; };
-  const handleChoosePhoto = async () => { /* ... image picker logic ... */ };
+  const requestGalleryPermission = async () => {
+    if (Platform.OS === 'android') {
+      try {
+        const granted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
+          {
+            title: 'Permission to access gallery',
+            message: 'App needs access to your gallery to choose a profile picture.',
+            buttonNeutral: 'Ask Me Later',
+            buttonNegative: 'Cancel',
+            buttonPositive: 'OK',
+          }
+        );
+        return granted === PermissionsAndroid.RESULTS.GRANTED;
+      } catch (err) {
+        console.warn(err);
+        return false;
+      }
+    }
+    return true;
+  };
 
-  const handleChange = (field: keyof ProfileData, value: string) => setEditedData(prev => ({ ...prev, [field]: value }));
-  const imageSource = newImage?.uri ? { uri: newImage.uri } : (editedData.profile_image_url ? { uri: `${API_BASE_URL}${editedData.profile_image_url}` } : require('../assets/profile.png'));
+  const handleChoosePhoto = async () => {
+    const hasPermission = await requestGalleryPermission();
+    if (!hasPermission) {
+      Alert.alert('Permission Denied', 'Gallery access is required to select an image.');
+      return;
+    }
+
+    try {
+      const result = await launchImageLibrary({ mediaType: 'photo', quality: 0.8, includeBase64: false });
+
+      if (result.didCancel) {
+        console.log('User cancelled image picker');
+      } else if (result.assets && result.assets.length > 0) {
+        setNewImage(result.assets[0]);
+      } else {
+        Alert.alert('Error', 'No image selected or an error occurred.');
+      }
+    } catch (error) {
+      console.error('Image picker error:', error);
+      Alert.alert('Error', 'Failed to open image library.');
+    }
+  };
+
+  const handleChange = (field: keyof ProfileData, value: string) =>
+    setEditedData(prev => ({ ...prev, [field]: value }));
+
+  const imageSource = newImage?.uri
+    ? { uri: newImage.uri }
+    : (editedData.profile_image_url
+      ? { uri: `${API_BASE_URL}${editedData.profile_image_url}` }
+      : require('../assets/profile.png'));
+
   const showAcademicFields = userProfile.role !== 'donor';
 
   return (
@@ -194,13 +272,13 @@ const EditProfileView = ({ userProfile, onSave, onCancel, isSaving }: { userProf
         <EditField label="Phone" value={editedData.phone} onChange={text => handleChange('phone', text)} keyboardType="phone-pad" />
         <EditField label="Address" value={editedData.address} onChange={text => handleChange('address', text)} multiline />
         {showAcademicFields && (
-            <>
-                <EditField label="Date of Birth" value={editedData.dob} onChange={text => handleChange('dob', text)} placeholder="YYYY-MM-DD" />
-                <EditField label="Gender" value={editedData.gender} onChange={text => handleChange('gender', text)} />
-                <EditField label="Class / Group" value={editedData.class_group} onChange={text => handleChange('class_group', text)} />
-                <EditField label="Roll No." value={editedData.roll_no} onChange={text => handleChange('roll_no', text)} />
-                <EditField label="Admission Date" value={editedData.admission_date} onChange={text => handleChange('admission_date', text)} placeholder="YYYY-MM-DD" />
-            </>
+          <>
+            <EditField label="Date of Birth" value={editedData.dob} onChange={text => handleChange('dob', text)} placeholder="YYYY-MM-DD" />
+            <EditField label="Gender" value={editedData.gender} onChange={text => handleChange('gender', text)} />
+            <EditField label="Class / Group" value={editedData.class_group} onChange={text => handleChange('class_group', text)} />
+            <EditField label="Roll No." value={editedData.roll_no} onChange={text => handleChange('roll_no', text)} />
+            <EditField label="Admission Date" value={editedData.admission_date} onChange={text => handleChange('admission_date', text)} placeholder="YYYY-MM-DD" />
+          </>
         )}
         {isSaving && <ActivityIndicator size="large" color={PRIMARY_COLOR} style={{ marginTop: 20 }} />}
       </ScrollView>
@@ -208,25 +286,30 @@ const EditProfileView = ({ userProfile, onSave, onCancel, isSaving }: { userProf
   );
 };
 
-// --- UI Helper Components ---
 const DetailRow = ({ label, value }: { label: string; value?: string | null }) => (
-    <View style={styles.detailRow}>
-        <Text style={styles.detailLabel}>{label}</Text>
-        <Text style={styles.detailValue}>{value || 'N/A'}</Text>
-    </View>
-);
-const EditField = ({ label, value, onChange, ...props }: any) => (
-    <View style={styles.inputGroup}>
-        <Text style={styles.inputLabel}>{label}</Text>
-        <TextInput style={styles.textInput} value={value || ''} onChangeText={onChange} {...props} />
-    </View>
+  <View style={styles.detailRow}>
+    <Text style={styles.detailLabel}>{label}</Text>
+    <Text style={styles.detailValue}>{value || 'N/A'}</Text>
+  </View>
 );
 
-// --- Styles ---
+const EditField = ({ label, value, onChange, ...props }: any) => (
+  <View style={styles.inputGroup}>
+    <Text style={styles.inputLabel}>{label}</Text>
+    <TextInput style={styles.textInput} value={value || ''} onChangeText={onChange} {...props} />
+  </View>
+);
+
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: TERTIARY_COLOR },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: SECONDARY_COLOR, padding: 15, borderBottomLeftRadius: 20, borderBottomRightRadius: 20, marginBottom: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3, borderBottomWidth: 1, borderBottomColor: BORDER_COLOR },
+  header: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: SECONDARY_COLOR, padding: 15,
+    borderBottomLeftRadius: 20, borderBottomRightRadius: 20, marginBottom: 10,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1, shadowRadius: 4, elevation: 3, borderBottomWidth: 1, borderBottomColor: BORDER_COLOR
+  },
   headerButton: { padding: 5, minWidth: 40, alignItems: 'center' },
   headerButtonText: { color: PRIMARY_COLOR, fontSize: 16, fontWeight: '600' },
   headerTitle: { color: PRIMARY_COLOR, fontSize: 20, fontWeight: 'bold' },
