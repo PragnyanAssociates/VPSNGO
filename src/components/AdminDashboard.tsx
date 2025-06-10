@@ -1,23 +1,34 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, SafeAreaView, Dimensions, Image, Platform } from 'react-native';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 
-// Component Imports
+// --- FUNCTIONALITY IMPORTS ---
+// These imports will now be used to make the component functional
+import { useAuth } from '../context/AuthContext'; // Ensure this path is correct
+import { API_BASE_URL } from '../../apiConfig'; // Ensure this path is correct
+
+// --- COMPONENT IMPORTS (As per your original file structure) ---
 import AdminNotifications, { initialNotificationsData } from './AdminNotifications';
-import AdminProfile from './AdminProfile';
 import AcademicCalendar from './AcademicCalendar';
 import AdminStudentProfiles from './AdminStudentProfiles';
 import AdminLM from './AdminLM';
+import ProfileScreen from '../screens/ProfileScreen';
 
+// --- TYPE DEFINITION for profile data from API ---
+interface ProfileData {
+  full_name: string;
+  profile_image_url?: string;
+  role: string;
+}
 
+// --- CONSTANTS from your original file ---
 const { width: windowWidth } = Dimensions.get('window');
-
 const CARD_GAP = 12;
 const CONTENT_HORIZONTAL_PADDING = 15;
 const BOTTOM_NAV_HEIGHT = 70;
 
+// --- COLORS from your original file ---
 const PRIMARY_COLOR = '#008080';
 const SECONDARY_COLOR = '#e0f2f7';
 const TERTIARY_COLOR = '#f8f8ff';
@@ -25,29 +36,46 @@ const TEXT_COLOR_DARK = '#333';
 const TEXT_COLOR_MEDIUM = '#555';
 const BORDER_COLOR = '#b2ebf2';
 
-
-const AdminDashboard = ({ navigation }) => {
+const AdminDashboard = () => {
   const [activeTab, setActiveTab] = useState('home');
-  const [userProfile, setUserProfile] = useState({
-    name: 'Allu Arjun (Admin)',
-    profileImage: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTFjDq3OY2InCSeoESM7MRUF3Vh96I48yz2gA&s',
-    class: 'Administration',
-    studentId: 'ADM001',
-    dob: '1985-07-15',
-    gender: 'Female',
-    email: 'AlluArjun@example.com',
-    phone: '+91 98765 43210',
-    address: '123, School Lane, Knowledge City, Hyderabad - 500081',
-    rollNo: 'N/A',
-    admissionDate: '2015-06-01',
-  });
+  
+  // --- FUNCTIONAL STATE & HOOKS ---
+  const { user, logout } = useAuth(); // Get user and logout function from context
+  const [profile, setProfile] = useState<ProfileData | null>(null); // State to hold API data
+
+  // useEffect to fetch profile data when the component loads
+  useEffect(() => {
+    const fetchProfile = async () => {
+      if (!user) return; // Don't fetch if there's no user
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/profiles/${user.id}`);
+        if (response.ok) {
+          const data = await response.json();
+          setProfile(data);
+        } else {
+          console.error("Failed to fetch profile");
+        }
+      } catch (error) {
+        console.error("Error fetching profile:", error);
+      }
+    };
+
+    fetchProfile();
+  }, [user]); // Re-run this effect if the user object changes
+
+  // Determine the profile image source dynamically
+  const profileImageSource = profile?.profile_image_url
+    ? { uri: `${API_BASE_URL}${profile.profile_image_url}` }
+    : (profile?.full_name ? require('../assets/profile.png') : { uri: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTFjDq3OY2InCSeoESM7MRUF3Vh96I48yz2gA&s' }); // Use a fallback or the original image while loading
+
 
   const initialUnreadCount = initialNotificationsData.filter(n => !n.read).length;
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(initialUnreadCount);
 
+  // --- UI & DATA from your original file ---
   const allQuickAccessItems = [
     { id: 'qa0', title: 'LM', imageSource: 'https://cdn-icons-png.flaticon.com/128/15096/15096966.png', navigateToTab: 'AdminLM' },
-    { id: 'qa1', title: 'Student Profiles', imageSource: 'https://cdn-icons-png.flaticon.com/128/2444/2444491.png', navigateToTab: 'AdminstudentProfiles' },
+    // { id: 'qa1', title: 'Student Profiles', imageSource: 'https://cdn-icons-png.flaticon.com/128/2444/2444491.png', navigateToTab: 'AdminstudentProfiles' },
     { id: 'qa2', title: 'MI', imageSource: 'https://cdn-icons-png.flaticon.com/128/9195/9195955.png' },
     { id: 'qa3', title: 'Attendance', imageSource: 'https://cdn-icons-png.flaticon.com/128/10293/10293877.png' },
     { id: 'qa4', title: 'Syllabus', imageSource: 'https://cdn-icons-png.flaticon.com/128/4728/4728712.png' },
@@ -63,62 +91,49 @@ const AdminDashboard = ({ navigation }) => {
     { id: 'qa14', title: 'Help Desk', imageSource: 'https://cdn-icons-png.flaticon.com/128/4840/4840332.png' },
   ];
 
+  // --- FUNCTIONAL LOGOUT HANDLER ---
   const handleLogout = () => {
     Alert.alert(
       "Logout", "Are you sure you want to log out?",
-      [{ text: "Cancel", style: "cancel" }, {
-        text: "Logout",
-        onPress: () => {
-          if (navigation && navigation.replace) {
-            navigation.replace('HomeScreen');
-          } else {
-            Alert.alert("Logout", "Logout successful! (No navigation context)");
-          }
-        },
-        style: "destructive"
-      }], { cancelable: true }
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Logout",
+          onPress: () => logout(), // This now calls the function from your AuthContext
+          style: "destructive"
+        }
+      ],
+      { cancelable: true }
     );
-  };
-
-  const handleUpdateProfile = (updatedProfile) => {
-    setUserProfile(updatedProfile);
-    Alert.alert('Profile Updated', 'Your profile details have been saved.');
   };
 
   const handleBellIconClick = () => setActiveTab('allNotifications');
   const handleUnreadCountChange = (count) => setUnreadNotificationsCount(count);
 
-  const DashboardSectionCard = ({ title, imageSource, onPress }) => {
-    return (
-      <TouchableOpacity style={styles.dashboardCard} onPress={onPress}>
-        <View style={styles.cardIconContainer}>
-          <Image source={{ uri: imageSource }} style={styles.cardImage} />
-        </View>
-        <Text style={styles.cardTitle}>{title}</Text>
-      </TouchableOpacity>
-    );
-  };
+  const DashboardSectionCard = ({ title, imageSource, onPress }) => (
+    <TouchableOpacity style={styles.dashboardCard} onPress={onPress}>
+      <View style={styles.cardIconContainer}>
+        <Image source={{ uri: imageSource }} style={styles.cardImage} />
+      </View>
+      <Text style={styles.cardTitle}>{title}</Text>
+    </TouchableOpacity>
+  );
   
-  // === ADDED START: The missing ContentScreenHeader component definition ===
   const ContentScreenHeader = ({ title, onBack = () => setActiveTab('home') }) => (
     <View style={styles.contentHeader}>
       <TouchableOpacity onPress={onBack} style={styles.backButtonGlobal}>
         <MaterialIcons name="arrow-back" size={24} color={PRIMARY_COLOR} />
       </TouchableOpacity>
       <Text style={styles.contentHeaderTitle}>{title}</Text>
-      <View style={{ width: 30 }} /> {/* Spacer for balance */}
+      <View style={{ width: 30 }} />
     </View>
   );
-  // === ADDED END ===
 
   const renderContent = () => {
     switch (activeTab) {
       case 'home':
         return (
-          <ScrollView
-            style={styles.contentScrollView}
-            contentContainerStyle={styles.contentScrollViewContainer}
-          >
+          <ScrollView style={styles.contentScrollView} contentContainerStyle={styles.contentScrollViewContainer}>
             <View style={styles.dashboardGrid}>
               {allQuickAccessItems.map(item => (
                 <DashboardSectionCard
@@ -129,7 +144,7 @@ const AdminDashboard = ({ navigation }) => {
                     if (item.navigateToTab) {
                       setActiveTab(item.navigateToTab);
                     } else {
-                      Alert.alert(item.title, `Navigating to ${item.title}... (No specific tab action)`);
+                      Alert.alert(item.title, `This feature is coming soon!`);
                     }
                   }}
                 />
@@ -140,30 +155,22 @@ const AdminDashboard = ({ navigation }) => {
       case 'allNotifications':
         return (
           <>
-            <ContentScreenHeader title="Notifications" />
+            <ContentScreenHeader title="Notifications" onBack={() => setActiveTab('home')} />
             <AdminNotifications onUnreadCountChange={handleUnreadCountChange} />
           </>
         );
       case 'calendar':
-        return <AcademicCalendar />;
-      case 'AdminstudentProfiles':
-        return (
-          <AdminStudentProfiles
-            onBackPress={() => setActiveTab('home')}
-          />
-        );
+        return <AcademicCalendar onBackPress={() => setActiveTab('home')} />;
+      // case 'AdminstudentProfiles':
+      //   return <AdminStudentProfiles onBackPress={() => setActiveTab('home')} />;
       case 'profile':
-        return (
-          <AdminProfile
-            userProfile={userProfile}
-            onUpdateProfile={handleUpdateProfile}
-            onBackToDashboard={() => setActiveTab('home')}
-          />
-        );
+        // ProfileScreen is now a self-contained screen.
+        // It fetches its own data using the AuthContext.
+        return <ProfileScreen onBackPress={() => setActiveTab('home')} />;
       case 'AdminLM':
         return (
           <>
-            <ContentScreenHeader title="Login Management" />
+            <ContentScreenHeader title="Login Management" onBack={() => setActiveTab('home')} />
             <AdminLM />
           </>
         );
@@ -184,10 +191,12 @@ const AdminDashboard = ({ navigation }) => {
       {activeTab === 'home' && (
         <View style={styles.topBar}>
           <View style={styles.profileContainer}>
-            <Image source={{ uri: userProfile.profileImage }} style={styles.profileImage} />
+            {/* Display the profile image from the API */}
+            <Image source={profileImageSource} style={styles.profileImage} />
             <View style={styles.profileTextContainer}>
-              <Text style={styles.profileNameText}>{userProfile.name}</Text>
-              <Text style={styles.profileRoleText}>{userProfile.class}</Text>
+              {/* Display the name and role from the API */}
+              <Text style={styles.profileNameText}>{profile?.full_name || 'Loading...'}</Text>
+              <Text style={styles.profileRoleText}>{profile?.role || 'Administrator'}</Text>
             </View>
           </View>
           <View style={styles.topBarActions}>
@@ -199,6 +208,7 @@ const AdminDashboard = ({ navigation }) => {
                 </View>
               )}
             </TouchableOpacity>
+            {/* The logout button is now fully functional */}
             <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
               <Image source={{ uri: 'https://cdn-icons-png.flaticon.com/512/1828/1828479.png' }} style={styles.logoutIcon} />
             </TouchableOpacity>
@@ -226,6 +236,7 @@ const AdminDashboard = ({ navigation }) => {
   );
 };
 
+// Styles are exactly the same as your original file
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
@@ -258,6 +269,7 @@ const styles = StyleSheet.create({
     borderRadius: 22.5,
     borderWidth: 2,
     borderColor: PRIMARY_COLOR,
+    backgroundColor: '#e0e0e0', // Added a background color for when the image is loading
   },
   profileTextContainer: {
     marginLeft: 12,
@@ -312,7 +324,6 @@ const styles = StyleSheet.create({
     resizeMode: 'contain',
     tintColor: PRIMARY_COLOR,
   },
-  // === ADDED START: The missing styles for the ContentScreenHeader ===
   contentHeader: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 15, paddingVertical: 12, backgroundColor: SECONDARY_COLOR,
@@ -325,7 +336,6 @@ const styles = StyleSheet.create({
     fontSize: 18, fontWeight: 'bold', color: PRIMARY_COLOR,
     textAlign: 'center', flex: 1,
   },
-  // === ADDED END ===
   contentScrollView: {
     flex: 1,
   },

@@ -1,6 +1,19 @@
+<!-- 📂 File: android/app/src/main/AndroidManifest.xml (CORRECTED) -->
+
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- All permissions MUST go here, at the top level -->
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Permissions for react-native-image-picker -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" /> <!-- For Android 13+ -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    
+    <!-- WRITE permission with maxSdkVersion is the correct way for older Android -->
+    <uses-permission 
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE" 
+        android:maxSdkVersion="28" />
 
     <application
       android:name=".MainApplication"
@@ -11,11 +24,11 @@
       android:theme="@style/AppTheme"
       android:usesCleartextTraffic="true"
       android:supportsRtl="true">
-      {/* THIS IS THE IMPORTANT PART */}
+      
       <meta-data
           android:name="com.google.android.geo.API_KEY"
           android:value="YOUR_ACTUAL_API_KEY_HERE"/>
-      {/* END OF IMPORTANT PART */}
+      
       <activity
         android:name=".MainActivity"
         android:label="@string/app_name"

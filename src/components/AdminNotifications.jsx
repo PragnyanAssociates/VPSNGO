@@ -120,13 +120,13 @@ const AdminNotifications = ({ onBackPress, onUnreadCountChange }) => {
 
   return (
     <SafeAreaView style={notificationStyles.safeArea}>
-      <View style={notificationStyles.header}>
+      {/* <View style={notificationStyles.header}>
         <TouchableOpacity onPress={onBackPress} style={notificationStyles.backButton}>
           <Image source={{ uri: backArrowImage }} style={notificationStyles.backArrowIcon} />
         </TouchableOpacity>
         <Text style={notificationStyles.headerTitle}>All Notifications</Text>
         <View style={notificationStyles.headerRightPlaceholder} />
-      </View>
+      </View> */}
 
       <View style={notificationStyles.filterContainer}>
         <TouchableOpacity
@@ -218,38 +218,38 @@ const notificationStyles = StyleSheet.create({
     flex: 1,
     backgroundColor: TERTIARY_COLOR,
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: SECONDARY_COLOR,
-    padding: 15,
-    paddingTop: 15,
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
-    marginBottom: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-    borderBottomWidth: 1,
-    borderBottomColor: BORDER_COLOR,
-  },
-  backButton: {
-    padding: 10,
-  },
-  backArrowIcon: {
-    width: 24,
-    height: 24,
-    resizeMode: 'contain',
-    tintColor: PRIMARY_COLOR,
-  },
-  headerTitle: {
-    color: PRIMARY_COLOR,
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
+  // header: {
+  //   flexDirection: 'row',
+  //   alignItems: 'center',
+  //   justifyContent: 'space-between',
+  //   backgroundColor: SECONDARY_COLOR,
+  //   padding: 15,
+  //   paddingTop: 15,
+  //   borderBottomLeftRadius: 20,
+  //   borderBottomRightRadius: 20,
+  //   marginBottom: 10,
+  //   shadowColor: '#000',
+  //   shadowOffset: { width: 0, height: 2 },
+  //   shadowOpacity: 0.1,
+  //   shadowRadius: 4,
+  //   elevation: 3,
+  //   borderBottomWidth: 1,
+  //   borderBottomColor: BORDER_COLOR,
+  // },
+  // backButton: {
+  //   padding: 10,
+  // },
+  // backArrowIcon: {
+  //   width: 24,
+  //   height: 24,
+  //   resizeMode: 'contain',
+  //   tintColor: PRIMARY_COLOR,
+  // },
+  // headerTitle: {
+  //   color: PRIMARY_COLOR,
+  //   fontSize: 20,
+  //   fontWeight: 'bold',
+  // },
   headerRightPlaceholder: {
     width: 60, // To balance the back button on the left
   },

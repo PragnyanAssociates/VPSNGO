@@ -320,28 +320,22 @@ const AdminStudentProfiles = ({ onBackPress: onBackToDashboard, navigation }) =>
   };
 
   const effectiveBackPress = () => {
-    console.log('Back button pressed:', { currentView, isDeleteClassMode, onBackToDashboard: !!onBackToDashboard, navigation: !!navigation });
-
     if (currentView === 'studentList') {
-      console.log('Navigating back to class list');
       backToClassList();
       return;
     }
 
     if (isDeleteClassMode) {
-      console.log('Exiting delete class mode');
       toggleDeleteClassMode();
       return;
     }
 
     if (typeof onBackToDashboard === 'function') {
-      console.log('Calling onBackToDashboard');
       onBackToDashboard();
       return;
     }
 
     if (navigation && typeof navigation.canGoBack === 'function' && navigation.canGoBack()) {
-      console.log('Navigating back via navigation');
       navigation.goBack();
       return;
     }
@@ -440,11 +434,12 @@ const AdminStudentProfiles = ({ onBackPress: onBackToDashboard, navigation }) =>
         </View>
         {viewingClass.students && viewingClass.students.length > 0 ? (
           <FlatList
+            key="student-list"
             data={viewingClass.students}
             renderItem={renderStudentCard}
             keyExtractor={(item) => item.id}
             contentContainerStyle={styles.studentListContainer}
-            extraData={viewingClass}
+            extraData={selectedStudentsForDeletion}
           />
         ) : (
           <View style={styles.emptyStateContainer}>
@@ -660,13 +655,14 @@ const AdminStudentProfiles = ({ onBackPress: onBackToDashboard, navigation }) =>
       </View>
       {classes.length > 0 ? (
         <FlatList
+          key="class-list"
           data={classes}
           renderItem={renderClassCard}
           keyExtractor={(item) => item.id}
           numColumns={NUM_CLASS_COLUMNS}
           contentContainerStyle={styles.classListContainer}
           columnWrapperStyle={styles.row}
-          extraData={classes}
+          extraData={selectedClassesForDeletion}
         />
       ) : (
         <View style={styles.emptyStateContainer}>

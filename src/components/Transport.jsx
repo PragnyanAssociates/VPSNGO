@@ -232,7 +232,7 @@ export function TransportFeatureNavigator() {
     <TransportStack.Navigator
       initialRouteName="TransportRoutesList"
       screenOptions={{
-        headerStyle: { backgroundColor: '#4A148C' }, // Purple theme for this navigator
+        headerStyle: { backgroundColor: '#008080' }, // Purple theme for this navigator
         headerTintColor: '#fff',
         headerTitleStyle: { fontWeight: 'bold' },
         headerBackTitleVisible: false,
