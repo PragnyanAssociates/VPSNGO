@@ -206,6 +206,115 @@ app.post('/api/health/record/:userId', async (req, res) => {
     }
 });
 
+// ==========================================================
+// --- SPORTS API ROUTES (NEW) ---
+// ==========================================================
+
+// STUDENT: Get a list of activities a specific student is registered for.
+app.get('/api/sports/my-registrations/:userId', async (req, res) => {
+    const { userId } = req.params;
+    const query = `
+        SELECT sa.name, sa.team_name, sa.coach_name, sa.schedule_details, ar.achievements
+        FROM activity_registrations ar
+        JOIN sports_activities sa ON ar.activity_id = sa.id
+        WHERE ar.student_id = ? AND ar.status = 'Approved'`;
+    try {
+        const [registrations] = await db.query(query, [userId]);
+        res.json(registrations);
+    } catch (error) { res.status(500).json({ message: 'Error fetching registrations.' }); }
+});
+
+// STUDENT: Get a list of all available activities they haven't applied for yet.
+app.get('/api/sports/available/:userId', async (req, res) => {
+    const { userId } = req.params;
+    const query = `
+        SELECT * FROM sports_activities 
+        WHERE is_active = TRUE AND id NOT IN 
+        (SELECT activity_id FROM activity_registrations WHERE student_id = ?)`;
+    try {
+        const [activities] = await db.query(query, [userId]);
+        res.json(activities);
+    } catch (error) { res.status(500).json({ message: 'Error fetching available activities.' }); }
+});
+
+// STUDENT: Apply for an activity.
+app.post('/api/sports/apply', async (req, res) => {
+    const { userId, activityId } = req.body;
+    try {
+        await db.query('INSERT INTO activity_registrations (student_id, activity_id) VALUES (?, ?)', [userId, activityId]);
+        res.status(201).json({ message: 'Successfully applied!' });
+    } catch (error) {
+        if (error.code === 'ER_DUP_ENTRY') {
+            return res.status(409).json({ message: 'You have already applied for this activity.' });
+        }
+        res.status(500).json({ message: 'Error applying for activity.' });
+    }
+});
+
+// ADMIN/TEACHER: Create a new sport/activity.
+app.post('/api/sports', async (req, res) => {
+    const { name, team_name, coach_name, schedule_details, description, created_by } = req.body;
+    const query = 'INSERT INTO sports_activities (name, team_name, coach_name, schedule_details, description, created_by) VALUES (?, ?, ?, ?, ?, ?)';
+    try {
+        await db.query(query, [name, team_name, coach_name, schedule_details, description, created_by]);
+        res.status(201).json({ message: 'Activity created successfully!' });
+    } catch (error) { res.status(500).json({ message: 'Error creating activity.' }); }
+});
+
+// ADMIN/TEACHER: Get all activities for management view.
+app.get('/api/sports/all', async (req, res) => {
+    const query = `
+        SELECT sa.*, COUNT(ar.id) as application_count 
+        FROM sports_activities sa 
+        LEFT JOIN activity_registrations ar ON sa.id = ar.activity_id AND ar.status = 'Applied'
+        GROUP BY sa.id ORDER BY sa.created_at DESC`;
+    try {
+        const [activities] = await db.query(query);
+        res.json(activities);
+    } catch (error) { res.status(500).json({ message: 'Error fetching all activities.' }); }
+});
+
+// ADMIN/TEACHER: Get all applications (Applied, Approved) for a specific activity.
+app.get('/api/sports/applications/:activityId', async (req, res) => {
+    const { activityId } = req.params;
+    const query = `
+        SELECT ar.id as registration_id, ar.status, ar.achievements, ar.remarks, u.id as student_id, u.full_name, ar.registration_date
+        FROM activity_registrations ar
+        JOIN users u ON ar.student_id = u.id
+        WHERE ar.activity_id = ?
+        ORDER BY ar.registration_date DESC`; // Order by most recent application first
+    try {
+        const [applications] = await db.query(query, [activityId]);
+        res.json(applications);
+    } catch (error) { res.status(500).json({ message: 'Error fetching applications.' }); }
+});
+
+// ADMIN/TEACHER: Update an application's status (Approve/Reject).
+app.put('/api/sports/application/status', async (req, res) => {
+    const { registrationId, status } = req.body;
+    try {
+        await db.query('UPDATE activity_registrations SET status = ? WHERE id = ?', [status, registrationId]);
+        res.status(200).json({ message: `Application status updated to ${status}` });
+    } catch (error) { res.status(500).json({ message: 'Error updating status.' }); }
+});
+
+// ADMIN/TEACHER: Update a student's achievements for a registration.
+app.put('/api/sports/application/achievements', async (req, res) => {
+    const { registrationId, achievements } = req.body;
+    try {
+        await db.query('UPDATE activity_registrations SET achievements = ? WHERE id = ?', [achievements, registrationId]);
+        res.status(200).json({ message: 'Achievements updated successfully!' });
+    } catch (error) { res.status(500).json({ message: 'Error updating achievements.' }); }
+});
+// ADMIN/TEACHER: Update an application's remarks.
+app.put('/api/sports/application/remarks', async (req, res) => {
+    const { registrationId, remarks } = req.body;
+    try {
+        await db.query('UPDATE activity_registrations SET remarks = ? WHERE id = ?', [remarks, registrationId]);
+        res.status(200).json({ message: 'Remarks updated successfully!' });
+    } catch (error) { res.status(500).json({ message: 'Error updating remarks.' }); }
+});
+
 // Start the server
 app.listen(PORT, () => {
     console.log(`✅ Backend server is running on http://localhost:${PORT}`);

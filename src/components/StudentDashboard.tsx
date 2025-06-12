@@ -13,7 +13,7 @@ import { API_BASE_URL } from '../../apiConfig';
 import StudentNotifications, { initialNotificationsData } from './StudentNotifications';
 import AcademicCalendar from './AcademicCalendar';
 import StudentHelpdesk from './StudentHelpdesk';
-import StudentSports from './StudentSports';
+// import StudentSports from './StudentSports';
 import StudentEvents from './StudentEvents';
 import StudentPTM from './StudentPTM';
 import StudentLabs from './StudentLabs';
@@ -30,6 +30,7 @@ import ProfileScreen from '../screens/ProfileScreen';
 import TimetableScreen from '../screens/TimetableScreen'; 
 import AttendanceScreen from '../screens/AttendanceScreen';
 import StudentHealthScreen from '../screens/health/StudentHealthScreen';
+import StudentSportsScreen from '../screens/sports/StudentSportsScreen';
 
 // We no longer need the old static imports
 // import StudentAttendance from './StudentAttendance';
@@ -95,7 +96,7 @@ const StudentDashboard = () => {
     { id: 'qa6', title: 'Results', imageSource: 'https://cdn-icons-png.flaticon.com/128/9913/9913576.png', navigateToTab: 'StudentResults' },
     { id: 'qa7', title: 'Exam Schedule', imageSource: 'https://cdn-icons-png.flaticon.com/128/4029/4029113.png', navigateToTab: 'StudentSchedule' },
     { id: 'qa8', title: 'Digital Labs', imageSource: 'https://cdn-icons-png.flaticon.com/128/9562/9562280.png', navigateToTab: 'StudentLabs' },
-    { id: 'qa9', title: 'Sports', imageSource: 'https://cdn-icons-png.flaticon.com/128/3429/3429456.png', navigateToTab: 'StudentSports' },
+    { id: 'qa9', title: 'Sports', imageSource: 'https://cdn-icons-png.flaticon.com/128/3429/3429456.png', navigateToTab: 'StudentSportsScreen' },
     { id: 'qa10', title: 'Health Info', imageSource: 'https://cdn-icons-png.flaticon.com/128/3004/3004458.png', navigateToTab: 'StudentHealthScreen' },
     { id: 'qa11', title: 'PTM', imageSource: 'https://cdn-icons-png.flaticon.com/128/17588/17588666.png', navigateToTab: 'StudentPTM' },
     { id: 'qa13', title: 'Events', imageSource: 'https://cdn-icons-png.flaticon.com/128/9592/9592283.png', navigateToTab: 'StudentEvents' },
@@ -120,7 +121,7 @@ const StudentDashboard = () => {
       case 'profile': return <ProfileScreen onBackPress={() => setActiveTab('home')} />;
       case 'StudentHealthScreen': return ( <><ContentScreenHeader title="Health Information" /><StudentHealthScreen /></> );
       case 'StudentHelpdesk': return ( <><ContentScreenHeader title="Help Desk" /><StudentHelpdesk /></> );
-      case 'StudentSports': return ( <><ContentScreenHeader title="Sports" /><StudentSports /></> );
+      case 'StudentSportsScreen': return ( <><ContentScreenHeader title="Sports" /><StudentSportsScreen /></> );
       case 'StudentEvents': return ( <><ContentScreenHeader title="Events" /><StudentEvents /></> );
       case 'StudentPTM': return ( <><ContentScreenHeader title="Parents-Teachers Meetings" /><StudentPTM /></> );
       case 'StudentLabs': return ( <><ContentScreenHeader title="Digital Labs" /><StudentLabs /></> );

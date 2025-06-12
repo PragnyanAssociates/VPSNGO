@@ -34,7 +34,6 @@ import StudentDashboard from './src/components/StudentDashboard';
 import StudentNotifications from './src/components/StudentNotifications';
 import StudentHealthScreen from './src/screens/health/StudentHealthScreen';
 import StudentHelpdesk from './src/components/StudentHelpdesk';
-import StudentSports from './src/components/StudentSports';
 import StudentEvents from './src/components/StudentEvents';
 import StudentPTM from './src/components/StudentPTM';
 import StudentLabs from './src/components/StudentLabs';
@@ -47,6 +46,7 @@ import StudentHistory from './src/components/StudentHistory';
 import StudentTB from './src/components/StudentTB';
 import StudentSyllabus from './src/components/StudentSyllabus';
 import StudentExams from './src/components/StudentExams';
+import StudentSportsScreen from './src/screens/sports/StudentSportsScreen';
 
 // Subjects
 import PhysicsSyllabus from './src/components/PhysicsSyllabus';
@@ -143,7 +143,7 @@ const AuthenticatedStack = () => {
       <Stack.Screen name="StudentNotifications" component={StudentNotifications} />
       <Stack.Screen name="StudentHealthScreen" component={StudentHealthScreen} />
       <Stack.Screen name="StudentHelpdesk" component={StudentHelpdesk} />
-      <Stack.Screen name="StudentSports" component={StudentSports} />
+      <Stack.Screen name="StudentSportsScreen" component={StudentSportsScreen} />
       <Stack.Screen name="StudentEvents" component={StudentEvents} />
       <Stack.Screen name="StudentPTM" component={StudentPTM} />
       <Stack.Screen name="StudentLabs" component={StudentLabs} />
