@@ -19,6 +19,8 @@ import ForgotPasswordScreen from './src/components/ForgotPasswordScreen';
 import AboutUs from './src/components/AboutUs';
 import AcademicCalendar from './src/components/AcademicCalendar';
 import { TransportFeatureNavigator } from './src/components/Transport';
+import TimetableScreen from './src/screens/TimetableScreen';   // 👈 Import Timetable
+import AttendanceScreen from './src/screens/AttendanceScreen'; // 👈 Import Attendance
 
 // Admin
 import AdminDashboard from './src/components/AdminDashboard';
@@ -30,7 +32,7 @@ import AdminForgotPasswordScreen from './src/components/AdminForgotPasswordScree
 // Student
 import StudentDashboard from './src/components/StudentDashboard';
 import StudentNotifications from './src/components/StudentNotifications';
-import StudentHealth from './src/components/StudentHealth';
+import StudentHealthScreen from './src/screens/health/StudentHealthScreen';
 import StudentHelpdesk from './src/components/StudentHelpdesk';
 import StudentSports from './src/components/StudentSports';
 import StudentEvents from './src/components/StudentEvents';
@@ -59,8 +61,9 @@ import TeacherPTM from './src/components/TeacherPTM';
 import TeacherHomework from './src/components/TeacherHomework';
 import TeacherSyllabus from './src/components/TeacherSyllabus';
 import TeacherAttendance from './src/components/TeacherAttendance';
-import TeacherHI from './src/components/TeacherHI';
+// import TeacherHealthAdminScreen from './src/components/TeacherHI';
 import TeacherResults from './src/components/TeacherResults';
+import TeacherHealthAdminScreen from './src/screens/health/TeacherHealthAdminScreen';
 
 // Donor
 import DonorDashboard from './src/components/DonorDashboard';
@@ -116,6 +119,8 @@ const AuthenticatedStack = () => {
         This allows any dashboard to navigate to them.
       */}
       <Stack.Screen name="Profile" component={ProfileScreen} />
+       <Stack.Screen name="Timetable" component={TimetableScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="Attendance" component={AttendanceScreen} options={{ title: 'Attendance' }} /> 
 
       {/* Admin Sub-screens */}
       <Stack.Screen name="AdminNotifications" component={AdminNotifications} />
@@ -131,12 +136,12 @@ const AuthenticatedStack = () => {
       <Stack.Screen name="TeacherHomework" component={TeacherHomework} />
       <Stack.Screen name="TeacherSyllabus" component={TeacherSyllabus} />
       <Stack.Screen name="TeacherAttendance" component={TeacherAttendance} />
-      <Stack.Screen name="TeacherHI" component={TeacherHI} />
+      <Stack.Screen name="TeacherHealthAdminScreen" component={TeacherHealthAdminScreen} />
       <Stack.Screen name="TeacherResults" component={TeacherResults} />
 
       {/* Student Sub-screens */}
       <Stack.Screen name="StudentNotifications" component={StudentNotifications} />
-      <Stack.Screen name="StudentHealth" component={StudentHealth} />
+      <Stack.Screen name="StudentHealthScreen" component={StudentHealthScreen} />
       <Stack.Screen name="StudentHelpdesk" component={StudentHelpdesk} />
       <Stack.Screen name="StudentSports" component={StudentSports} />
       <Stack.Screen name="StudentEvents" component={StudentEvents} />

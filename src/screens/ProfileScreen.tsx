@@ -28,7 +28,6 @@ interface ProfileScreenProps {
   onBackPress?: () => void;
   staticProfileData?: ProfileData;
   onStaticSave?: (updatedData: ProfileData, newImage: Asset | null) => Promise<void>;
-  // ✅ FIX: Add a new optional prop to report updates back to the parent component.
   onProfileUpdate?: (newProfileData: ProfileData) => void;
 }
 
@@ -73,8 +72,16 @@ const ProfileScreen = ({ onBackPress, staticProfileData, onStaticSave, onProfile
 
     try {
         if (onStaticSave) {
-            // This logic for the local donor is already correct.
+            // This is the logic for the static "Donor" profile.
             await onStaticSave(editedData, newImage);
+
+            // CORRECTED: Optimistically update the local state to immediately show changes.
+            const updatedProfile = { ...profileData, ...editedData } as ProfileData;
+            if (newImage && newImage.uri) {
+                // Use the local URI of the newly selected image for immediate display.
+                updatedProfile.profile_image_url = newImage.uri;
+            }
+            setProfileData(updatedProfile);
             setIsEditing(false);
 
         } else if (user) {
@@ -107,11 +114,8 @@ const ProfileScreen = ({ onBackPress, staticProfileData, onStaticSave, onProfile
             const refreshedProfile = await response.json();
             const updatedProfile = { ...profileData, ...editedData, ...refreshedProfile } as ProfileData;
             
-            // Update this screen's local state
             setProfileData(updatedProfile);
 
-            // ✅ FIX: If the onProfileUpdate prop was provided, call it with the new data.
-            // This "tells" the TeacherDashboard that the profile has changed.
             if (onProfileUpdate) {
                 onProfileUpdate(updatedProfile);
             }
@@ -135,13 +139,23 @@ const ProfileScreen = ({ onBackPress, staticProfileData, onStaticSave, onProfile
     : <DisplayProfileView userProfile={profileData} onEditPress={() => setIsEditing(true)} onBackPress={onBackPress} />;
 };
 
-// ... The rest of the ProfileScreen.js file (DisplayProfileView, EditProfileView, styles) is unchanged ...
-// The provided code below is complete and correct.
 
+// CORRECTED: This component is now smarter about handling image URIs.
 const DisplayProfileView = ({ userProfile, onEditPress, onBackPress }: { userProfile: ProfileData, onEditPress: () => void, onBackPress?: () => void }) => {
-  const profileImageSource = userProfile.profile_image_url
-    ? { uri: `${API_BASE_URL}${userProfile.profile_image_url}` }
-    : require('../assets/profile.png');
+  let profileImageSource;
+  const imageUri = userProfile.profile_image_url;
+
+  if (imageUri) {
+    // Check if the URI is a full URL (local file or remote http). If so, use it directly.
+    // Otherwise, it's a relative path from the server, so prepend the base URL.
+    const fullUri = (imageUri.startsWith('http') || imageUri.startsWith('file'))
+      ? imageUri
+      : `${API_BASE_URL}${imageUri}`;
+    profileImageSource = { uri: fullUri };
+  } else {
+    // If no image URL is provided, use the default placeholder image.
+    profileImageSource = require('../assets/profile.png');
+  }
 
   const showAcademicDetails = userProfile.role !== 'donor';
 
