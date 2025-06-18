@@ -12,18 +12,22 @@ import TeacherNotifications, { initialNotificationsData } from './TeacherNotific
 import ProfileScreen from '../screens/ProfileScreen';
 import AcademicCalendar from './AcademicCalendar';
 // import TeacherHI from './TeacherHI';
-import TeacherEvents from './TeacherEvents';
+// import TeacherEvents from './TeacherEvents';
 import TeacherPTM from './TeacherPTM';
 import TeacherHomework from './TeacherHomework';
 import TeacherResults from './TeacherResults';
 import TeacherSyllabus from './TeacherSyllabus';
-import TeacherCL from './TeacherCL';
+// import TeacherCL from './TeacherCL';
 
 // Dynamic Screens
 import TimetableScreen from '../screens/TimetableScreen';
 import AttendanceScreen from '../screens/AttendanceScreen';
 import TeacherHealthAdminScreen from '../screens/health/TeacherHealthAdminScreen';
 import AdminSportsScreen from '../screens/sports/AdminSportsScreen';
+import AdminEventsScreen from '../screens/events/AdminEventsScreen';
+import UserHelpDeskScreen from '../screens/helpdesk/UserHelpDeskScreen';
+import TeacherAdminPTMScreen from '../screens/ptm/TeacherAdminPTMScreen';
+import TeacherAdminLabsScreen from '../screens/labs/TeacherAdminLabsScreen';
 
 // --- Type Definitions (No Changes) ---
 interface ProfileData { fullName: string; class_group: string; profile_image_url?: string; role: string; }
@@ -88,12 +92,12 @@ const TeacherDashboard = () => {
     { id: 'qa14', title: 'Home Work', imageSource: 'https://cdn-icons-png.flaticon.com/128/3150/3150521.png', navigateToTab: 'TeacherHomework' },
     { id: 'qa6', title: 'Results', imageSource: 'https://cdn-icons-png.flaticon.com/128/9913/9913576.png', navigateToTab: 'TeacherResults' },
     { id: 'qa7', title: 'Exam Schedule', imageSource: 'https://cdn-icons-png.flaticon.com/128/4029/4029113.png' },
-    { id: 'qa8', title: 'Digital Labs', imageSource: 'https://cdn-icons-png.flaticon.com/128/9562/9562280.png' },
+    { id: 'qa8', title: 'Digital Labs', imageSource: 'https://cdn-icons-png.flaticon.com/128/9562/9562280.png', navigateToTab: 'TeacherAdminLabsScreen' },
     { id: 'qa9', title: 'Sports', imageSource: 'https://cdn-icons-png.flaticon.com/128/3429/3429456.png', navigateToTab: 'AdminSportsScreen' },
     { id: 'qa10', title: 'Health Info', imageSource: 'https://cdn-icons-png.flaticon.com/128/3004/3004458.png', navigateToTab: 'TeacherHealthAdminScreen' },
-    { id: 'qa11', title: 'PTM', imageSource: 'https://cdn-icons-png.flaticon.com/128/17588/17588666.png', navigateToTab: 'TeacherPTM' },
-    { id: 'qa13', title: 'Events', imageSource: 'https://cdn-icons-png.flaticon.com/128/9592/9592283.png', navigateToTab: 'TeacherEvents' },
-    { id: 'qa16', title: 'Communications', imageSource: 'https://cdn-icons-png.flaticon.com/128/3050/3050525.png', navigateToTab: 'TeacherCL' },
+    { id: 'qa11', title: 'PTM', imageSource: 'https://cdn-icons-png.flaticon.com/128/17588/17588666.png', navigateToTab: 'TeacherAdminPTMScreen' },
+    { id: 'qa13', title: 'Events', imageSource: 'https://cdn-icons-png.flaticon.com/128/9592/9592283.png', navigateToTab: 'AdminEventsScreen' },
+    { id: 'qa16', title: 'Help Desk', imageSource: 'https://cdn-icons-png.flaticon.com/128/4961/4961736.png', navigateToTab: 'UserHelpDeskScreen' },
   ];
 
   const renderContent = () => {
@@ -105,14 +109,16 @@ const TeacherDashboard = () => {
       case 'calendar': return <AcademicCalendar />;
       case 'profile': return <ProfileScreen onBackPress={handleBack} />;
       case 'TeacherHealthAdminScreen': return ( <> <ContentScreenHeader title="Health Information" onBack={handleBack} /> <TeacherHealthAdminScreen /> </> );
-      case 'TeacherEvents': return ( <> <ContentScreenHeader title="Events" onBack={handleBack} /> <TeacherEvents /> </> );
+      case 'AdminEventsScreen': return ( <> <ContentScreenHeader title="Events" onBack={handleBack} /> <AdminEventsScreen /> </> );
       case 'TeacherPTM': return ( <> <ContentScreenHeader title="Parents-Teachers Meetings" onBack={handleBack} /> <TeacherPTM /> </> );
       case 'TeacherHomework': return ( <> <ContentScreenHeader title="Home Work" onBack={handleBack} /> <TeacherHomework /> </> );
       case 'TeacherResults': return ( <> <ContentScreenHeader title="Results" onBack={handleBack} /> <TeacherResults /> </> );
-      case 'TeacherCL': return ( <> <ContentScreenHeader title="Communications" onBack={handleBack} /> <TeacherCL /> </> );
+      case 'UserHelpDeskScreen': return ( <> <ContentScreenHeader title="Help Desk" onBack={handleBack} /> <UserHelpDeskScreen /> </> );
       case 'TeacherSyllabus': return ( <> <ContentScreenHeader title="Syllabus" onBack={handleBack} /> <TeacherSyllabus /> </> );
       case 'Timetable': return ( <> <ContentScreenHeader title="My Timetable" onBack={handleBack} /> <TimetableScreen /> </> );
       case 'AdminSportsScreen': return ( <> <ContentScreenHeader title="Sports" onBack={handleBack} /> <AdminSportsScreen /> </> );
+      case 'TeacherAdminPTMScreen': return ( <> <ContentScreenHeader title="Meetings" onBack={handleBack} /> <TeacherAdminPTMScreen /> </> );
+      case 'TeacherAdminLabsScreen': return ( <> <ContentScreenHeader title="Digital Labs" onBack={handleBack} /> <TeacherAdminLabsScreen /> </> );
       // ==================== MODIFIED CODE START ====================
       // This now renders the AttendanceScreen without any parameters,
       // which will cause it to show our new summary view.

@@ -16,6 +16,10 @@ import TimetableScreen from '../screens/TimetableScreen';
 import AttendanceScreen from '../screens/AttendanceScreen';
 import TeacherHealthAdminScreen from '../screens/health/TeacherHealthAdminScreen';
 import AdminSportsScreen from '../screens/sports/AdminSportsScreen';
+import AdminEventsScreen from '../screens/events/AdminEventsScreen';
+import AdminHelpDeskScreen from '../screens/helpdesk/AdminHelpDeskScreen';
+import TeacherAdminPTMScreen from '../screens/ptm/TeacherAdminPTMScreen';
+import TeacherAdminLabsScreen from '../screens/labs/TeacherAdminLabsScreen';
 
 interface ProfileData {
   full_name: string;
@@ -67,13 +71,13 @@ const AdminDashboard = () => {
     { id: 'qa4', title: 'Syllabus', imageSource: 'https://cdn-icons-png.flaticon.com/128/4728/4728712.png' },
     { id: 'qa6', title: 'Reports', imageSource: 'https://cdn-icons-png.flaticon.com/128/5369/5369986.png' },
     { id: 'qa7', title: 'Schedule', imageSource: 'https://cdn-icons-png.flaticon.com/128/4029/4029113.png' },
-    { id: 'qa8', title: 'Digital Labs', imageSource: 'https://cdn-icons-png.flaticon.com/128/9562/9562280.png' },
+    { id: 'qa8', title: 'Digital Labs', imageSource: 'https://cdn-icons-png.flaticon.com/128/9562/9562280.png', navigateToTab: 'TeacherAdminLabsScreen' },
     { id: 'qa9', title: 'Sports', imageSource: 'https://cdn-icons-png.flaticon.com/128/3429/3429456.png', navigateToTab: 'AdminSportsScreen' },
-    { id: 'qa10', title: 'PTM', imageSource: 'https://cdn-icons-png.flaticon.com/128/17588/17588666.png' },
-    { id: 'qa11', title: 'Events', imageSource: 'https://cdn-icons-png.flaticon.com/128/16917/16917970.png' },
+    { id: 'qa10', title: 'PTM', imageSource: 'https://cdn-icons-png.flaticon.com/128/17588/17588666.png', navigateToTab: 'TeacherAdminPTMScreen' },
+    { id: 'qa11', title: 'Events', imageSource: 'https://cdn-icons-png.flaticon.com/128/9592/9592283.png', navigateToTab: 'AdminEventsScreen' },
     { id: 'qa12', title: 'Health Info', imageSource: 'https://cdn-icons-png.flaticon.com/128/3004/3004458.png', navigateToTab: 'TeacherHealthAdminScreen' },
     { id: 'qa13', title: 'Staff Management', imageSource: 'https://cdn-icons-png.flaticon.com/128/10692/10692138.png' },
-    { id: 'qa14', title: 'Help Desk', imageSource: 'https://cdn-icons-png.flaticon.com/128/4840/4840332.png' },
+    { id: 'qa14', title: 'Help Desk', imageSource: 'https://cdn-icons-png.flaticon.com/128/4961/4961736.png', navigateToTab: 'AdminHelpDeskScreen' },
   ];
 
   const handleLogout = () => { Alert.alert("Logout", "Are you sure?", [{ text: "Cancel", style: "cancel" }, { text: "Logout", onPress: logout, style: "destructive" }]); };
@@ -97,6 +101,11 @@ const AdminDashboard = () => {
       case 'Attendance': return ( <><ContentScreenHeader title="Attendance" onBack={handleBack} /><AttendanceScreen /></> );
       case 'TeacherHealthAdminScreen': return ( <> <ContentScreenHeader title="Health Information" onBack={handleBack} /> <TeacherHealthAdminScreen /> </> );
       case 'AdminSportsScreen': return ( <> <ContentScreenHeader title="Sports" onBack={handleBack} /> <AdminSportsScreen /> </> );
+      case 'AdminEventsScreen': return ( <> <ContentScreenHeader title="Events" onBack={handleBack} /> <AdminEventsScreen /> </> );
+      case 'AdminHelpDeskScreen': return ( <> <ContentScreenHeader title="Help Desk" onBack={handleBack} /> <AdminHelpDeskScreen /> </> );
+      case 'TeacherAdminPTMScreen': return ( <> <ContentScreenHeader title="Meetings" onBack={handleBack} /> <TeacherAdminPTMScreen /> </> );
+      case 'TeacherAdminLabsScreen': return ( <> <ContentScreenHeader title="Digital Labs" onBack={handleBack} /> <TeacherAdminLabsScreen /> </> );
+
       default: return ( <View style={styles.fallbackContent}><Text style={styles.fallbackText}>Content for '{activeTab}' is not available.</Text><TouchableOpacity onPress={handleBack}><Text style={styles.fallbackLink}>Go to Home</Text></TouchableOpacity></View> );
     }
   };

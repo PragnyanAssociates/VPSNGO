@@ -12,11 +12,11 @@ import { API_BASE_URL } from '../../apiConfig';
 // --- COMPONENT IMPORTS (As per your original file structure) ---
 import StudentNotifications, { initialNotificationsData } from './StudentNotifications';
 import AcademicCalendar from './AcademicCalendar';
-import StudentHelpdesk from './StudentHelpdesk';
+// import StudentHelpdesk from './StudentHelpdesk';
 // import StudentSports from './StudentSports';
-import StudentEvents from './StudentEvents';
-import StudentPTM from './StudentPTM';
-import StudentLabs from './StudentLabs';
+// import StudentEvents from './StudentEvents';
+// import StudentPTM from './StudentPTM';
+// import StudentLabs from './StudentLabs';
 import StudentHomework from './StudentHomework';
 import StudentResults from './StudentResults';
 import StudentSchedule from './StudentSchedule';
@@ -31,6 +31,10 @@ import TimetableScreen from '../screens/TimetableScreen';
 import AttendanceScreen from '../screens/AttendanceScreen';
 import StudentHealthScreen from '../screens/health/StudentHealthScreen';
 import StudentSportsScreen from '../screens/sports/StudentSportsScreen';
+import StudentEventsScreen from '../screens/events/StudentEventsScreen';
+import UserHelpDeskScreen from '../screens/helpdesk/UserHelpDeskScreen';
+import StudentPTMScreen from '../screens/ptm/StudentPTMScreen';
+import StudentLabsScreen from '../screens/labs/StudentLabsScreen';
 
 // We no longer need the old static imports
 // import StudentAttendance from './StudentAttendance';
@@ -95,12 +99,12 @@ const StudentDashboard = () => {
     { id: 'qa14', title: 'Home Work', imageSource: 'https://cdn-icons-png.flaticon.com/128/3150/3150521.png', navigateToTab: 'StudentHomework' },
     { id: 'qa6', title: 'Results', imageSource: 'https://cdn-icons-png.flaticon.com/128/9913/9913576.png', navigateToTab: 'StudentResults' },
     { id: 'qa7', title: 'Exam Schedule', imageSource: 'https://cdn-icons-png.flaticon.com/128/4029/4029113.png', navigateToTab: 'StudentSchedule' },
-    { id: 'qa8', title: 'Digital Labs', imageSource: 'https://cdn-icons-png.flaticon.com/128/9562/9562280.png', navigateToTab: 'StudentLabs' },
+    { id: 'qa8', title: 'Digital Labs', imageSource: 'https://cdn-icons-png.flaticon.com/128/9562/9562280.png', navigateToTab: 'StudentLabsScreen' },
     { id: 'qa9', title: 'Sports', imageSource: 'https://cdn-icons-png.flaticon.com/128/3429/3429456.png', navigateToTab: 'StudentSportsScreen' },
     { id: 'qa10', title: 'Health Info', imageSource: 'https://cdn-icons-png.flaticon.com/128/3004/3004458.png', navigateToTab: 'StudentHealthScreen' },
-    { id: 'qa11', title: 'PTM', imageSource: 'https://cdn-icons-png.flaticon.com/128/17588/17588666.png', navigateToTab: 'StudentPTM' },
-    { id: 'qa13', title: 'Events', imageSource: 'https://cdn-icons-png.flaticon.com/128/9592/9592283.png', navigateToTab: 'StudentEvents' },
-    { id: 'qa12', title: 'Help Desk', imageSource: 'https://cdn-icons-png.flaticon.com/128/4961/4961736.png', navigateToTab: 'StudentHelpdesk' },
+    { id: 'qa11', title: 'PTM', imageSource: 'https://cdn-icons-png.flaticon.com/128/17588/17588666.png', navigateToTab: 'StudentPTMScreen' },
+    { id: 'qa13', title: 'Events', imageSource: 'https://cdn-icons-png.flaticon.com/128/9592/9592283.png', navigateToTab: 'StudentEventsScreen' },
+    { id: 'qa12', title: 'Help Desk', imageSource: 'https://cdn-icons-png.flaticon.com/128/4961/4961736.png', navigateToTab: 'UserHelpDeskScreen' },
   ];
 
   const handleLogout = () => {
@@ -120,11 +124,11 @@ const StudentDashboard = () => {
       case 'calendar': return <AcademicCalendar onBackPress={() => setActiveTab('home')} />;
       case 'profile': return <ProfileScreen onBackPress={() => setActiveTab('home')} />;
       case 'StudentHealthScreen': return ( <><ContentScreenHeader title="Health Information" /><StudentHealthScreen /></> );
-      case 'StudentHelpdesk': return ( <><ContentScreenHeader title="Help Desk" /><StudentHelpdesk /></> );
+      case 'UserHelpDeskScreen': return ( <><ContentScreenHeader title="Help Desk" /><UserHelpDeskScreen /></> );
       case 'StudentSportsScreen': return ( <><ContentScreenHeader title="Sports" /><StudentSportsScreen /></> );
-      case 'StudentEvents': return ( <><ContentScreenHeader title="Events" /><StudentEvents /></> );
-      case 'StudentPTM': return ( <><ContentScreenHeader title="Parents-Teachers Meetings" /><StudentPTM /></> );
-      case 'StudentLabs': return ( <><ContentScreenHeader title="Digital Labs" /><StudentLabs /></> );
+      case 'StudentEventsScreen': return ( <><ContentScreenHeader title="Events" /><StudentEventsScreen /></> );
+      case 'StudentPTMScreen': return ( <><ContentScreenHeader title="Parents-Teachers Meetings" /><StudentPTMScreen /></> );
+      case 'StudentLabsScreen': return ( <><ContentScreenHeader title="Digital Labs" /><StudentLabsScreen /></> );
       case 'StudentHomework': return ( <><ContentScreenHeader title="Home Work" /><StudentHomework /></> );
       case 'StudentResults': return ( <><ContentScreenHeader title="Results" /><StudentResults /></> );
       case 'StudentSchedule': return ( <><ContentScreenHeader title="Exam Schedules" /><StudentSchedule /></> );

@@ -1,40 +1,60 @@
-import 'react-native-gesture-handler';
-import React from 'react';
-import { enableScreens } from 'react-native-screens';
-import { NavigationContainer } from '@react-navigation/native';
-import { createStackNavigator } from '@react-navigation/stack';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
+// 📂 File: App.tsx (FINAL AND COMPLETE WITH DEEP LINKING)
 
-// --- System & Auth Imports ---
+import 'react-native-gesture-handler';
+import React, { useEffect } from 'react'; // ✅ Import useEffect
+import { NavigationContainer, useNavigationContainerRef } from '@react-navigation/native'; // ✅ Import useNavigationContainerRef
+import { createStackNavigator } from '@react-navigation/stack';
+import { View, ActivityIndicator, StyleSheet, Linking } from 'react-native'; // ✅ Import Linking
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 
 // --- Screen Imports (Your full list) ---
 
-// Generic Screens
+// Public (Pre-Login) Screens
 import WelcomePage from './src/components/WelcomePage';
 import HomeScreen from './src/screens/HomeScreen';
 import LoginScreen from './src/screens/LoginScreen';
-import ProfileScreen from './src/screens/ProfileScreen';
-import ForgotPasswordScreen from './src/components/ForgotPasswordScreen';
+import DonorRegistrationScreen from './src/screens/DonorRegistrationScreen';
+import ForgotPasswordScreen from './src/screens/ForgotPasswordScreen';
 import AboutUs from './src/components/AboutUs';
-import AcademicCalendar from './src/components/AcademicCalendar';
 import { TransportFeatureNavigator } from './src/components/Transport';
-import TimetableScreen from './src/screens/TimetableScreen';   // 👈 Import Timetable
-import AttendanceScreen from './src/screens/AttendanceScreen'; // 👈 Import Attendance
+import ResetPasswordScreen from './src/screens/ResetPasswordScreen';
 
-// Admin
+// Authenticated Dashboards
 import AdminDashboard from './src/components/AdminDashboard';
+import TeacherDashboard from './src/components/TeacherDashboard';
+import StudentDashboard from './src/components/StudentDashboard';
+import DonorDashboard from './src/components/DonorDashboard';
+
+// Shared Authenticated Sub-screens
+import ProfileScreen from './src/screens/ProfileScreen';
+import AcademicCalendar from './src/components/AcademicCalendar';
+import TimetableScreen from './src/screens/TimetableScreen';
+import AttendanceScreen from './src/screens/AttendanceScreen';
+import PhysicsSyllabus from './src/components/PhysicsSyllabus';
+
+// Admin-Specific Screens
 import AdminNotifications from './src/components/AdminNotifications';
 import AdminLM from './src/components/AdminLM';
-// import AdminStudentProfiles from './src/components/AdminStudentProfiles';
 import AdminForgotPasswordScreen from './src/components/AdminForgotPasswordScreen';
+import AdminHelpDeskScreen from './src/screens/helpdesk/AdminHelpDeskScreen';
+import AdminEventsScreen from './src/screens/events/AdminEventsScreen';
+import TeacherAdminPTMScreen from './src/screens/ptm/TeacherAdminPTMScreen';
 
-// Student
-import StudentDashboard from './src/components/StudentDashboard';
+// Teacher-Specific Screens
+import TeacherNotifications from './src/components/TeacherNotifications';
+import TeacherTB from './src/components/TeacherTB';
+import TeacherPTM from './src/components/TeacherPTM';
+import TeacherHomework from './src/components/TeacherHomework';
+import TeacherSyllabus from './src/components/TeacherSyllabus';
+import TeacherAttendance from './src/components/TeacherAttendance';
+import TeacherResults from './src/components/TeacherResults';
+import TeacherHealthAdminScreen from './src/screens/health/TeacherHealthAdminScreen';
+import TeacherAdminLabsScreen from './src/screens/labs/TeacherAdminLabsScreen';
+
+// Student-Specific Screens
 import StudentNotifications from './src/components/StudentNotifications';
 import StudentHealthScreen from './src/screens/health/StudentHealthScreen';
 import StudentHelpdesk from './src/components/StudentHelpdesk';
-import StudentEvents from './src/components/StudentEvents';
 import StudentPTM from './src/components/StudentPTM';
 import StudentLabs from './src/components/StudentLabs';
 import StudentHomework from './src/components/StudentHomework';
@@ -47,104 +67,79 @@ import StudentTB from './src/components/StudentTB';
 import StudentSyllabus from './src/components/StudentSyllabus';
 import StudentExams from './src/components/StudentExams';
 import StudentSportsScreen from './src/screens/sports/StudentSportsScreen';
+import StudentEventsScreen from './src/screens/events/StudentEventsScreen';
+import StudentPTMScreen from './src/screens/ptm/StudentPTMScreen';
 
-// Subjects
-import PhysicsSyllabus from './src/components/PhysicsSyllabus';
-
-// Teacher
-import TeacherDashboard from './src/components/TeacherDashboard';
-import TeacherNotifications from './src/components/TeacherNotifications';
-import TeacherTB from './src/components/TeacherTB';
-import TeacherCL from './src/components/TeacherCL';
-import TeacherEvents from './src/components/TeacherEvents';
-import TeacherPTM from './src/components/TeacherPTM';
-import TeacherHomework from './src/components/TeacherHomework';
-import TeacherSyllabus from './src/components/TeacherSyllabus';
-import TeacherAttendance from './src/components/TeacherAttendance';
-// import TeacherHealthAdminScreen from './src/components/TeacherHI';
-import TeacherResults from './src/components/TeacherResults';
-import TeacherHealthAdminScreen from './src/screens/health/TeacherHealthAdminScreen';
-
-// Donor
-import DonorDashboard from './src/components/DonorDashboard';
+// Donor-Specific Screens
 import DonorNotifications from './src/components/DonorNotifications';
-import DonorHelp from './src/components/DonorHelp';
 import DonorSuggestions from './src/components/DonorSuggestions';
 import DonorReceipts from './src/components/DonorReceipts';
 import DonorPayments from './src/components/DonorPayments';
 import DonorSponsor from './src/components/DonorSponsor';
 import DonorSI from './src/components/DonorSI';
 
+// Unified Help Desk Screen for authenticated users
+import UserHelpDeskScreen from './src/screens/helpdesk/UserHelpDeskScreen';
 
-enableScreens();
 const Stack = createStackNavigator();
 
-// ✅ STACK 1: Screens available when the user is LOGGED OUT
+// --- STACK 1: Screens available BEFORE a user logs in ---
 const PublicStack = () => (
   <Stack.Navigator initialRouteName="WelcomePage" screenOptions={{ headerShown: false }}>
-    {/* General Public Screens */}
     <Stack.Screen name="WelcomePage" component={WelcomePage} />
     <Stack.Screen name="HomeScreen" component={HomeScreen} />
     <Stack.Screen name="Login" component={LoginScreen} />
+    <Stack.Screen name="DonorRegistration" component={DonorRegistrationScreen} />
     <Stack.Screen name="ForgotPasswordScreen" component={ForgotPasswordScreen} />
     <Stack.Screen name="AboutUs" component={AboutUs} />
     <Stack.Screen name="Transport" component={TransportFeatureNavigator} />
-    <Stack.Screen name="AcademicCalendar" component={AcademicCalendar} />
-    
-    {/* Donor Screens are Public */}
-    <Stack.Screen name="DonorDashboard" component={DonorDashboard} />
-    <Stack.Screen name="DonorNotifications" component={DonorNotifications} />
-    <Stack.Screen name="DonorHelp" component={DonorHelp} />
-    <Stack.Screen name="DonorSuggestions" component={DonorSuggestions} />
-    <Stack.Screen name="DonorReceipts" component={DonorReceipts} />
-    <Stack.Screen name="DonorPayments" component={DonorPayments} />
-    <Stack.Screen name="DonorSponsor" component={DonorSponsor} />
-    <Stack.Screen name="DonorSI" component={DonorSI} />
+    <Stack.Screen name="ResetPasswordScreen" component={ResetPasswordScreen} />
   </Stack.Navigator>
 );
 
-// ✅ STACK 2: Screens available only when the user is LOGGED IN
+// --- STACK 2: Screens available ONLY AFTER a user logs in ---
 const AuthenticatedStack = () => {
   const { user } = useAuth();
+  const getInitialRouteName = () => {
+    switch (user?.role) {
+      case 'admin':   return 'AdminDashboard';
+      case 'teacher': return 'TeacherDashboard';
+      case 'donor':   return 'DonorDashboard';
+      case 'student': return 'StudentDashboard';
+      default:        return 'StudentDashboard';
+    }
+  };
 
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
-      {/* Role-based Dashboards are the entry points */}
-      {user?.role === 'admin' && <Stack.Screen name="AdminDashboard" component={AdminDashboard} />}
-      {user?.role === 'teacher' && <Stack.Screen name="TeacherDashboard" component={TeacherDashboard} />}
-      {user?.role === 'student' && <Stack.Screen name="StudentDashboard" component={StudentDashboard} />}
-
-      {/* 
-        All other screens that require a user to be logged in are defined here.
-        This allows any dashboard to navigate to them.
-      */}
+    <Stack.Navigator initialRouteName={getInitialRouteName()} screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="AdminDashboard" component={AdminDashboard} />
+      <Stack.Screen name="TeacherDashboard" component={TeacherDashboard} />
+      <Stack.Screen name="StudentDashboard" component={StudentDashboard} />
+      <Stack.Screen name="DonorDashboard" component={DonorDashboard} />
       <Stack.Screen name="Profile" component={ProfileScreen} />
-       <Stack.Screen name="Timetable" component={TimetableScreen} options={{ headerShown: false }} />
-      <Stack.Screen name="Attendance" component={AttendanceScreen} options={{ title: 'Attendance' }} /> 
-
-      {/* Admin Sub-screens */}
+      <Stack.Screen name="AcademicCalendar" component={AcademicCalendar} />
+      <Stack.Screen name="Timetable" component={TimetableScreen} />
+      <Stack.Screen name="Attendance" component={AttendanceScreen} />
+      <Stack.Screen name="PhysicsSyllabus" component={PhysicsSyllabus} />
+      <Stack.Screen name="UserHelpDesk" component={UserHelpDeskScreen} />
       <Stack.Screen name="AdminNotifications" component={AdminNotifications} />
       <Stack.Screen name="AdminLM" component={AdminLM} />
       <Stack.Screen name="AdminForgotPasswordScreen" component={AdminForgotPasswordScreen} />
-
-      {/* Teacher Sub-screens */}
+      <Stack.Screen name="AdminHelpDeskScreen" component={AdminHelpDeskScreen} />
+      <Stack.Screen name="AdminEventsScreen" component={AdminEventsScreen} />
       <Stack.Screen name="TeacherNotifications" component={TeacherNotifications} />
       <Stack.Screen name="TeacherTB" component={TeacherTB} />
-      <Stack.Screen name="TeacherCL" component={TeacherCL} />
-      <Stack.Screen name="TeacherEvents" component={TeacherEvents} />
       <Stack.Screen name="TeacherPTM" component={TeacherPTM} />
       <Stack.Screen name="TeacherHomework" component={TeacherHomework} />
       <Stack.Screen name="TeacherSyllabus" component={TeacherSyllabus} />
       <Stack.Screen name="TeacherAttendance" component={TeacherAttendance} />
       <Stack.Screen name="TeacherHealthAdminScreen" component={TeacherHealthAdminScreen} />
       <Stack.Screen name="TeacherResults" component={TeacherResults} />
-
-      {/* Student Sub-screens */}
       <Stack.Screen name="StudentNotifications" component={StudentNotifications} />
       <Stack.Screen name="StudentHealthScreen" component={StudentHealthScreen} />
       <Stack.Screen name="StudentHelpdesk" component={StudentHelpdesk} />
       <Stack.Screen name="StudentSportsScreen" component={StudentSportsScreen} />
-      <Stack.Screen name="StudentEvents" component={StudentEvents} />
+      <Stack.Screen name="StudentEventsScreen" component={StudentEventsScreen} />
       <Stack.Screen name="StudentPTM" component={StudentPTM} />
       <Stack.Screen name="StudentLabs" component={StudentLabs} />
       <Stack.Screen name="StudentHomework" component={StudentHomework} />
@@ -156,17 +151,52 @@ const AuthenticatedStack = () => {
       <Stack.Screen name="StudentTB" component={StudentTB} />
       <Stack.Screen name="StudentSyllabus" component={StudentSyllabus} />
       <Stack.Screen name="StudentExams" component={StudentExams} />
-      
-      {/* Subject Screens */}
-      <Stack.Screen name="PhysicsSyllabus" component={PhysicsSyllabus} />
+      <Stack.Screen name="DonorNotifications" component={DonorNotifications} />
+      <Stack.Screen name="DonorSuggestions" component={DonorSuggestions} />
+      <Stack.Screen name="DonorReceipts" component={DonorReceipts} />
+      <Stack.Screen name="DonorPayments" component={DonorPayments} />
+      <Stack.Screen name="DonorSponsor" component={DonorSponsor} />
+      <Stack.Screen name="DonorSI" component={DonorSI} />
+      <Stack.Screen name="TeacherAdminPTMScreen" component={TeacherAdminPTMScreen} />
+      <Stack.Screen name="StudentPTMScreen" component={StudentPTMScreen} />
+      <Stack.Screen name="TeacherAdminLabsScreen" component={TeacherAdminLabsScreen} />
     </Stack.Navigator>
   );
 };
 
 
-// Main router that chooses which stack to show
+// --- Main Router ---
 const AppNavigator = () => {
   const { user, isLoading } = useAuth();
+  const navigationRef = useNavigationContainerRef(); // ✅ Create a ref
+
+  // ✅ This object defines your app's custom URL scheme and how to map it to screens
+  const linking = {
+    prefixes: ['vspngo://'],
+    config: {
+      screens: {
+        // This name MUST match the screen name in the PublicStack
+        ResetPasswordScreen: 'reset-password/:token',
+      },
+    },
+  };
+
+  // ✅ This effect listens for incoming deep links while the app is already running
+  useEffect(() => {
+    const onReceiveURL = ({ url }: { url: string }) => {
+      // This function can be expanded to handle more complex links later if needed
+      console.log("Deep link received: ", url);
+    };
+
+    // Set up the event listener
+    const subscription = Linking.addEventListener('url', onReceiveURL);
+
+    // Clean up the listener when the component is unmounted
+    return () => {
+      subscription.remove();
+    };
+  }, []);
+
 
   if (isLoading) {
     return (
@@ -176,14 +206,14 @@ const AppNavigator = () => {
     );
   }
 
+  // ✅ The `linking` object is passed to the NavigationContainer to handle all deep links
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef} linking={linking} fallback={<ActivityIndicator color="#008080" />}>
       {user ? <AuthenticatedStack /> : <PublicStack />}
     </NavigationContainer>
   );
 };
 
-// Main App component
 export default function App() {
   return (
     <AuthProvider>

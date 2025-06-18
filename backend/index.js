@@ -8,6 +8,9 @@ const cors = require('cors');
 const multer = require('multer');
 const jwt = require('jsonwebtoken'); // 👈 ADD THIS LINE
 const path = require('path');
+// ... after const path = require('path');
+const crypto = require('crypto');
+const { sendPasswordResetEmail } = require('./mailer');
 
 const app = express();
 const PORT = 3001;
@@ -29,18 +32,155 @@ const db = mysql.createPool({
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
     database: process.env.DB_NAME || 'school_db',
-    jsonColumns: ['subjects_taught'],
+    
 });
 
+// 📂 File: backend/server.js (Replace all user, profile, and password reset routes with this block)
+
 // ==========================================================
-// --- USER API ROUTES ---
+// --- USER, PROFILE & PASSWORD API ROUTES ---
 // ==========================================================
-app.post('/api/login', async (req, res) => { const { username, password } = req.body; try { const [rows] = await db.query('SELECT * FROM users WHERE username = ?', [username]); const user = rows[0]; if (!user || !(await bcrypt.compare(password, user.password))) { return res.status(401).json({ message: 'Error: Invalid username or password.' }); } const { password: _, ...userData } = user; res.status(200).json({ message: 'Login successful!', user: userData }); } catch (error) { res.status(500).json({ message: 'Error: Database connection failed.' }); }});
-app.get('/api/users', async (req, res) => { try { const [rows] = await db.query('SELECT id, username, full_name, role, class_group, subjects_taught FROM users'); res.status(200).json(rows); } catch (error) { console.error("GET /api/users Error:", error); res.status(500).json({ message: 'Error: Could not get users.' }); }});
-app.post('/api/users', async (req, res) => { const { username, password, full_name, role, class_group, subjects_taught } = req.body; const subjectsJson = (role === 'teacher' && Array.isArray(subjects_taught)) ? JSON.stringify(subjects_taught) : null; try { const hashedPassword = await bcrypt.hash(password, 10); await db.query('INSERT INTO users (username, password, full_name, role, class_group, subjects_taught) VALUES (?, ?, ?, ?, ?, ?)', [username, hashedPassword, full_name, role, class_group, subjectsJson]); res.status(201).json({ message: 'User created successfully!' }); } catch (error) { if (error.code === 'ER_DUP_ENTRY') { return res.status(409).json({ message: 'Error: This username already exists.' }); } console.error("POST /api/users Error:", error); res.status(500).json({ message: 'Error: Could not create user.' }); }});
-app.put('/api/users/:id', async (req, res) => { const { id } = req.params; const { username, password, full_name, role, class_group, subjects_taught } = req.body; const subjectsJson = (role === 'teacher' && Array.isArray(subjects_taught)) ? JSON.stringify(subjects_taught) : null; try { let query, queryParams; if (password && password.trim() !== '') { const hashedPassword = await bcrypt.hash(password, 10); query = 'UPDATE users SET username = ?, password = ?, full_name = ?, role = ?, class_group = ?, subjects_taught = ? WHERE id = ?'; queryParams = [username, hashedPassword, full_name, role, class_group, subjectsJson, id]; } else { query = 'UPDATE users SET username = ?, full_name = ?, role = ?, class_group = ?, subjects_taught = ? WHERE id = ?'; queryParams = [username, full_name, role, class_group, subjectsJson, id]; } const [result] = await db.query(query, queryParams); if (result.affectedRows === 0) { return res.status(404).json({ message: 'Error: User not found.' }); } res.status(200).json({ message: 'User updated successfully!' }); } catch (error) { if (error.code === 'ER_DUP_ENTRY') { return res.status(409).json({ message: 'Error: This username is already taken.' }); } console.error(`PUT /api/users/${id} Error:`, error); res.status(500).json({ message: 'Error: Could not update user.' }); }});
-app.patch('/api/users/:id/reset-password', async (req, res) => { const { id } = req.params; const { newPassword } = req.body; if (!newPassword || newPassword.trim() === '') { return res.status(400).json({ message: 'Error: New password cannot be empty.' }); } try { const hashedPassword = await bcrypt.hash(newPassword, 10); const [result] = await db.query('UPDATE users SET password = ? WHERE id = ?', [hashedPassword, id]); if (result.affectedRows === 0) { return res.status(404).json({ message: 'Error: User not found.' }); } res.status(200).json({ message: 'Password has been reset successfully!' }); } catch (error) { console.error('Error resetting password:', error); res.status(500).json({ message: 'Error: Could not reset password.' }); }});
-app.delete('/api/users/:id', async (req, res) => { const { id } = req.params; try { await db.query('DELETE FROM users WHERE id = ?', [id]); res.status(200).json({ message: 'User deleted successfully.' }); } catch (error) { res.status(500).json({ message: 'Error: Could not delete user.' }); }});
+
+app.post('/api/login', async (req, res) => {
+    const { username, password } = req.body;
+    try {
+        const [rows] = await db.query('SELECT * FROM users WHERE username = ?', [username]);
+        const user = rows[0];
+        if (!user || !(await bcrypt.compare(password, user.password))) {
+            return res.status(401).json({ message: 'Error: Invalid username or password.' });
+        }
+        if (user.subjects_taught && typeof user.subjects_taught === 'string') {
+            try { user.subjects_taught = JSON.parse(user.subjects_taught); } 
+            catch (e) { user.subjects_taught = []; }
+        }
+        const { password: _, ...userData } = user;
+        const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, process.env.JWT_SECRET || 'YOUR_SUPER_SECRET_KEY', { expiresIn: '24h' });
+        res.status(200).json({ message: 'Login successful!', user: userData, token: token });
+    } catch (error) { res.status(500).json({ message: 'Error: Database connection failed.' }); }
+});
+
+app.get('/api/users', async (req, res) => {
+    try {
+        const query = `
+            SELECT u.id, u.username, u.full_name, u.role, u.class_group, u.subjects_taught, p.email, p.phone, p.address 
+            FROM users u LEFT JOIN user_profiles p ON u.id = p.user_id`;
+        const [rows] = await db.query(query);
+        const usersWithParsedSubjects = rows.map(user => {
+            if (user.subjects_taught && typeof user.subjects_taught === 'string') {
+                try { user.subjects_taught = JSON.parse(user.subjects_taught); } catch (e) { user.subjects_taught = []; }
+            }
+            return user;
+        });
+        res.status(200).json(usersWithParsedSubjects);
+    } catch (error) { res.status(500).json({ message: 'Error: Could not get users.' }); }
+});
+
+app.post('/api/users', async (req, res) => {
+    const { username, password, full_name, email, role, class_group, subjects_taught } = req.body;
+    const subjectsJson = (role === 'teacher' && Array.isArray(subjects_taught)) ? JSON.stringify(subjects_taught) : null;
+    const connection = await db.getConnection();
+    try {
+        await connection.beginTransaction();
+        const hashedPassword = await bcrypt.hash(password, 10);
+        const [userResult] = await connection.query(
+            'INSERT INTO users (username, password, full_name, role, class_group, subjects_taught) VALUES (?, ?, ?, ?, ?, ?)',
+            [username, hashedPassword, full_name, role, class_group, subjectsJson]
+        );
+        const newUserId = userResult.insertId;
+        await connection.query('INSERT INTO user_profiles (user_id, email) VALUES (?, ?)', [newUserId, email || null]);
+        await connection.commit();
+        res.status(201).json({ message: 'User and profile created successfully!' });
+    } catch (error) {
+        await connection.rollback();
+        if (error.code === 'ER_DUP_ENTRY') return res.status(409).json({ message: 'Error: This username already exists.' });
+        res.status(500).json({ message: 'Error: Could not create user.' });
+    } finally { connection.release(); }
+});
+
+app.get('/api/profiles/:userId', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const sql = `SELECT u.*, p.email, p.dob, p.gender, p.phone, p.address, p.profile_image_url, p.admission_date, p.roll_no FROM users u LEFT JOIN user_profiles p ON u.id = p.user_id WHERE u.id = ?`;
+        const [rows] = await db.query(sql, [userId]);
+        if (rows.length === 0) return res.status(404).json({ message: 'User not found' });
+        res.json(rows[0]);
+    } catch (error) { res.status(500).json({ message: 'Database error fetching profile' }); }
+});
+
+app.put('/api/profiles/:userId', upload.single('profileImage'), async (req, res) => {
+    const userId = parseInt(req.params.userId, 10);
+    const { full_name, class_group, email, dob, gender, phone, address, roll_no, admission_date } = req.body;
+    const connection = await db.getConnection();
+    try {
+        await connection.beginTransaction();
+        if (full_name !== undefined || class_group !== undefined) {
+            await connection.query('UPDATE users SET full_name = ?, class_group = ? WHERE id = ?', [full_name, class_group, userId]);
+        }
+        let profile_image_url = req.body.profile_image_url === 'null' ? null : req.body.profile_image_url;
+        if (req.file) profile_image_url = `/uploads/${req.file.filename}`;
+        const profileSql = `INSERT INTO user_profiles (user_id, email, dob, gender, phone, address, profile_image_url, admission_date, roll_no) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE email = VALUES(email), dob = VALUES(dob), gender = VALUES(gender), phone = VALUES(phone), address = VALUES(address), profile_image_url = VALUES(profile_image_url), admission_date = VALUES(admission_date), roll_no = VALUES(roll_no)`;
+        await connection.query(profileSql, [userId, email, dob, gender, phone, address, profile_image_url, admission_date, roll_no]);
+        await connection.commit();
+        res.status(200).json({ message: 'Profile updated successfully!', profile_image_url: profile_image_url });
+    } catch (error) {
+        await connection.rollback();
+        res.status(500).json({ message: 'An error occurred while updating the profile.' });
+    } finally { connection.release(); }
+});
+
+app.patch('/api/users/:id/reset-password', async (req, res) => {
+    const { id } = req.params;
+    const { newPassword } = req.body;
+    if (!newPassword) return res.status(400).json({ message: 'New password cannot be empty.' });
+    try {
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        const [result] = await db.query('UPDATE users SET password = ? WHERE id = ?', [hashedPassword, id]);
+        if (result.affectedRows === 0) return res.status(404).json({ message: 'User not found.' });
+        res.status(200).json({ message: 'Password has been reset successfully!' });
+    } catch (error) { res.status(500).json({ message: 'Could not reset password.' }); }
+});
+
+app.delete('/api/users/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const [result] = await db.query('DELETE FROM users WHERE id = ?', [id]);
+        if (result.affectedRows === 0) return res.status(404).json({ message: 'User not found.' });
+        res.status(200).json({ message: 'User deleted successfully.' });
+    } catch (error) { res.status(500).json({ message: 'Error: Could not delete user.' }); }
+});
+
+// --- SELF-SERVICE PASSWORD RESET API ROUTES (DONOR-ONLY) ---
+app.post('/api/forgot-password', async (req, res) => {
+    const { email } = req.body;
+    try {
+        if (!email) return res.status(400).json({ message: 'Email address is required.' });
+        const [profileRows] = await db.query('SELECT user_id FROM user_profiles WHERE email = ?', [email]);
+        if (profileRows.length === 0) return res.status(200).json({ message: 'If an account with that email exists, a password reset link has been sent.' });
+        const user_id = profileRows[0].user_id;
+        const [userRows] = await db.query('SELECT role FROM users WHERE id = ?', [user_id]);
+        if (userRows.length === 0 || userRows[0].role !== 'donor') return res.status(200).json({ message: 'If a Donor account with that email exists, a password reset link has been sent.' });
+        const resetToken = crypto.randomBytes(20).toString('hex');
+        const tokenExpiry = new Date(Date.now() + 3600000);
+        await db.query('UPDATE users SET reset_password_token = ?, reset_password_expires = ? WHERE id = ?', [resetToken, tokenExpiry, user_id]);
+        await sendPasswordResetEmail(email, resetToken);
+        res.status(200).json({ message: 'If an account with that email exists, a password reset link has been sent.' });
+    } catch (error) { res.status(500).json({ message: 'An unexpected error occurred.' }); }
+});
+
+app.post('/api/reset-password', async (req, res) => {
+    const { token, newPassword } = req.body;
+    try {
+        if (!token || !newPassword) return res.status(400).json({ message: 'Token and new password are required.' });
+        const [rows] = await db.query('SELECT id FROM users WHERE reset_password_token = ? AND reset_password_expires > NOW()', [token]);
+        const user = rows[0];
+        if (!user) return res.status(400).json({ message: 'Password reset token is invalid or has expired.' });
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        await db.query('UPDATE users SET password = ?, reset_password_token = NULL, reset_password_expires = NULL WHERE id = ?', [hashedPassword, user.id]);
+        res.status(200).json({ message: 'Password has been successfully reset. You can now log in.' });
+    } catch (error) { res.status(500).json({ message: 'An error occurred.' }); }
+});
+
+
 
 // --- CALENDAR API ROUTES ---
 app.get('/api/calendar', async (req, res) => { try { const [rows] = await db.query('SELECT *, DATE_FORMAT(event_date, "%Y-%m-%d") AS event_date FROM calendar_events ORDER BY event_date ASC, time ASC'); const groupedEvents = rows.reduce((acc, event) => { const dateKey = event.event_date; if (!acc[dateKey]) { acc[dateKey] = []; } acc[dateKey].push(event); return acc; }, {}); res.status(200).json(groupedEvents); } catch (error) { console.error(error); res.status(500).json({ message: 'Error: Could not get calendar events.' }); }});
@@ -313,6 +453,510 @@ app.put('/api/sports/application/remarks', async (req, res) => {
         await db.query('UPDATE activity_registrations SET remarks = ? WHERE id = ?', [remarks, registrationId]);
         res.status(200).json({ message: 'Remarks updated successfully!' });
     } catch (error) { res.status(500).json({ message: 'Error updating remarks.' }); }
+});
+
+// ==========================================================
+// --- EVENTS API ROUTES (NEW) ---
+// ==========================================================
+
+// STUDENT: Get all upcoming events, along with the student's RSVP status for each.
+app.get('/api/events/all-for-student/:userId', async (req, res) => {
+    const { userId } = req.params;
+    const query = `
+        SELECT e.*, er.status as rsvp_status
+        FROM events e
+        LEFT JOIN event_rsvps er ON e.id = er.event_id AND er.student_id = ?
+        WHERE e.event_datetime >= CURDATE()
+        ORDER BY e.event_datetime ASC`;
+    try {
+        const [events] = await db.query(query, [userId]);
+        res.json(events);
+    } catch (error) { console.error(error); res.status(500).json({ message: 'Error fetching events.' }); }
+});
+
+// STUDENT: RSVP for an event.
+app.post('/api/events/rsvp', async (req, res) => {
+    const { eventId, userId } = req.body;
+    try {
+        await db.query('INSERT INTO event_rsvps (event_id, student_id) VALUES (?, ?)', [eventId, userId]);
+        res.status(201).json({ message: 'RSVP successful! Awaiting approval.' });
+    } catch (error) {
+        if (error.code === 'ER_DUP_ENTRY') {
+            return res.status(409).json({ message: 'You have already RSVP\'d for this event.' });
+        }
+        res.status(500).json({ message: 'Error processing RSVP.' });
+    }
+});
+
+// ADMIN/TEACHER: Create a new event.
+app.post('/api/events', async (req, res) => {
+    const { title, category, event_datetime, location, description, rsvp_required, created_by } = req.body;
+    const query = 'INSERT INTO events (title, category, event_datetime, location, description, rsvp_required, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)';
+    try {
+        await db.query(query, [title, category, event_datetime, location, description, rsvp_required, created_by]);
+        res.status(201).json({ message: 'Event created successfully!' });
+    } catch (error) { console.error(error); res.status(500).json({ message: 'Error creating event.' }); }
+});
+
+// ADMIN/TEACHER: Get all events for the management view.
+app.get('/api/events/all-for-admin', async (req, res) => {
+    const query = `
+        SELECT e.*, COUNT(er.id) as rsvp_count 
+        FROM events e
+        LEFT JOIN event_rsvps er ON e.id = er.event_id AND er.status = 'Applied'
+        GROUP BY e.id ORDER BY e.event_datetime DESC`;
+    try {
+        const [events] = await db.query(query);
+        res.json(events);
+    } catch (error) { console.error(error); res.status(500).json({ message: 'Error fetching admin event list.' }); }
+});
+
+// ADMIN/TEACHER: Get all RSVPs (all statuses) for a specific event.
+app.get('/api/events/rsvps/:eventId', async (req, res) => {
+    const { eventId } = req.params;
+    const query = `
+        SELECT r.id as rsvp_id, r.status, u.id as student_id, u.full_name, r.rsvp_date
+        FROM event_rsvps r
+        JOIN users u ON r.student_id = u.id
+        WHERE r.event_id = ?
+        ORDER BY r.rsvp_date DESC`;
+    try {
+        const [rsvps] = await db.query(query, [eventId]);
+        res.json(rsvps);
+    } catch (error) { console.error(error); res.status(500).json({ message: 'Error fetching RSVPs.' }); }
+});
+
+// ADMIN/TEACHER: Update an RSVP status (Approve/Reject).
+app.put('/api/events/rsvp/status', async (req, res) => {
+    const { rsvpId, status } = req.body;
+    try {
+        await db.query('UPDATE event_rsvps SET status = ? WHERE id = ?', [status, rsvpId]);
+        res.status(200).json({ message: `RSVP status updated.` });
+    } catch (error) { console.error(error); res.status(500).json({ message: 'Error updating RSVP status.' }); }
+});
+
+// STUDENT: Get full details for a SINGLE event, including their specific RSVP.
+app.get('/api/events/details/:eventId/:userId', async (req, res) => {
+    const { eventId, userId } = req.params;
+
+    // First query: Get the main event details
+    const eventQuery = 'SELECT * FROM events WHERE id = ?';
+    
+    // Second query: Get the specific student's RSVP for this event
+    const rsvpQuery = 'SELECT * FROM event_rsvps WHERE event_id = ? AND student_id = ?';
+
+    try {
+        const [eventResult] = await db.query(eventQuery, [eventId]);
+        if (eventResult.length === 0) {
+            return res.status(404).json({ message: 'Event not found.' });
+        }
+        
+        const [rsvpResult] = await db.query(rsvpQuery, [eventId, userId]);
+
+        const eventDetails = eventResult[0];
+        const rsvpDetails = rsvpResult.length > 0 ? rsvpResult[0] : null;
+
+        // Combine the results into a single response object
+        res.json({
+            event: eventDetails,
+            rsvp: rsvpDetails
+        });
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Error fetching event details.' });
+    }
+});
+
+// ==========================================================
+// --- HELP DESK API ROUTES (NEW) ---
+// ==========================================================
+
+// ANY USER: Get all FAQs
+app.get('/api/helpdesk/faqs', async (req, res) => {
+    try {
+        const [faqs] = await db.query('SELECT * FROM faqs ORDER BY id');
+        res.json(faqs);
+    } catch (error) { res.status(500).json({ message: 'Error fetching FAQs.' }); }
+});
+
+// STUDENT/TEACHER: Submit a new ticket
+app.post('/api/helpdesk/submit', async (req, res) => {
+    const { userId, subject, description } = req.body;
+    try {
+        await db.query('INSERT INTO helpdesk_tickets (user_id, subject, description) VALUES (?, ?, ?)', [userId, subject, description]);
+        res.status(201).json({ message: 'Query submitted successfully! We will get back to you soon.' });
+    } catch (error) { res.status(500).json({ message: 'Error submitting query.' }); }
+});
+
+// STUDENT/TEACHER: Get history of their own tickets
+app.get('/api/helpdesk/my-tickets/:userId', async (req, res) => {
+    const { userId } = req.params;
+    const query = 'SELECT id, subject, status, last_updated_at FROM helpdesk_tickets WHERE user_id = ? ORDER BY last_updated_at DESC';
+    try {
+        const [tickets] = await db.query(query, [userId]);
+        res.json(tickets);
+    } catch (error) { res.status(500).json({ message: 'Error fetching your tickets.' }); }
+});
+
+// ADMIN: Get all tickets from all users for the management dashboard
+app.get('/api/helpdesk/all-tickets', async (req, res) => {
+    const { status } = req.query; // Filter by status, e.g., ?status=Open
+    let query = `
+    SELECT t.id, t.subject, t.status, t.last_updated_at, u.full_name as user_name, u.role, u.class_group
+    FROM helpdesk_tickets t
+    JOIN users u ON t.user_id = u.id `;
+    const params = [];
+    if (status) {
+        query += 'WHERE t.status = ? ';
+        params.push(status);
+    }
+    query += 'ORDER BY t.last_updated_at DESC';
+    try {
+        const [tickets] = await db.query(query, params);
+        res.json(tickets);
+    } catch (error) { res.status(500).json({ message: 'Error fetching all tickets.' }); }
+});
+
+// ANY USER: Get full conversation for a single ticket
+app.get('/api/helpdesk/ticket/:ticketId', async (req, res) => {
+    try {
+        const ticketQuery = 'SELECT t.*, u.full_name as user_name, u.role, u.class_group FROM helpdesk_tickets t JOIN users u ON t.user_id = u.id WHERE t.id = ?';
+        const repliesQuery = 'SELECT r.*, u.full_name, u.role FROM ticket_replies r JOIN users u ON r.user_id = u.id WHERE r.ticket_id = ? ORDER BY r.created_at ASC';
+        
+        const [[ticket]] = await db.query(ticketQuery, [req.params.ticketId]);
+        const [replies] = await db.query(repliesQuery, [req.params.ticketId]);
+
+        if (!ticket) return res.status(404).json({ message: 'Ticket not found.' });
+        res.json({ ticket, replies });
+    } catch (error) { res.status(500).json({ message: 'Error fetching ticket details.' }); }
+});
+
+// ANY USER: Post a reply to a ticket
+// 📂 File: backend/server.js (Replace this route)
+
+// ANY USER: Post a reply to a ticket
+// 📂 File: backend/server.js (Replace the existing route with this)
+
+// ANY USER: Post a reply to a ticket
+app.post('/api/helpdesk/reply', async (req, res) => {
+    const { ticketId, userId, replyText } = req.body;
+    const connection = await db.getConnection();
+    try {
+        await connection.beginTransaction();
+
+        // Step 1: Insert the new reply into the conversation history.
+        await connection.query(
+            'INSERT INTO ticket_replies (ticket_id, user_id, reply_text) VALUES (?, ?, ?)',
+            [ticketId, userId, replyText]
+        );
+        
+        // Step 2: Update the parent ticket's timestamp. This bumps the ticket to the top of lists sorted by recent activity.
+        // It does NOT change the status.
+        await connection.query(
+            'UPDATE helpdesk_tickets SET last_updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+            [ticketId]
+        );
+
+        await connection.commit();
+        res.status(201).json({ message: 'Reply posted successfully.' });
+    } catch (error) {
+        await connection.rollback();
+        console.error("Reply Error:", error);
+        res.status(500).json({ message: 'Error posting reply.' });
+    } finally {
+        connection.release();
+    }
+});
+
+// ADMIN: Change a ticket's status
+app.put('/api/helpdesk/ticket/status', async (req, res) => {
+    const { ticketId, status, adminId, adminName } = req.body;
+    const connection = await db.getConnection();
+    try {
+        await connection.beginTransaction();
+        await connection.query('UPDATE helpdesk_tickets SET status = ? WHERE id = ?', [status, ticketId]);
+        // Add an automatic reply to the log when status changes
+        const autoReply = `Admin ${adminName} has updated the status to: ${status}.`;
+        await connection.query('INSERT INTO ticket_replies (ticket_id, user_id, reply_text) VALUES (?, ?, ?)', [ticketId, adminId, autoReply]);
+        await connection.commit();
+        res.status(200).json({ message: 'Status updated.' });
+    } catch (error) {
+        await connection.rollback();
+        res.status(500).json({ message: 'Error updating status.' });
+    } finally {
+        connection.release();
+    }
+});
+
+
+// ==========================================================
+// --- DONOR HELP DESK API ROUTES (NEW - PUBLIC & ADMIN) ---
+// ==========================================================
+
+// PUBLIC: A donor submits a new query
+app.post('/api/donor/submit-query', async (req, res) => {
+    const { donor_name, donor_email, subject, description } = req.body;
+    try {
+        const [result] = await db.query(
+            'INSERT INTO donor_queries (donor_name, donor_email, subject, description) VALUES (?, ?, ?, ?)',
+            [donor_name, donor_email, subject, description]
+        );
+        res.status(201).json({ 
+            message: 'Query submitted! Please save your Ticket ID to check the status later.',
+            ticketId: result.insertId // Send the new ID back to the donor
+        });
+    } catch (error) { res.status(500).json({ message: 'Error submitting query.' }); }
+});
+
+// PUBLIC: A donor checks the status and history of their query using a Ticket ID
+app.get('/api/donor/query-status/:ticketId', async (req, res) => {
+    const { ticketId } = req.params;
+    try {
+        const [[queryDetails]] = await db.query('SELECT * FROM donor_queries WHERE id = ?', [ticketId]);
+        if (!queryDetails) return res.status(404).json({ message: 'Ticket ID not found.' });
+        
+        const [replies] = await db.query('SELECT * FROM donor_query_replies WHERE query_id = ? ORDER BY created_at ASC', [ticketId]);
+        res.json({ details: queryDetails, replies });
+    } catch (error) { res.status(500).json({ message: 'Error fetching query status.' }); }
+});
+
+// ADMIN: Get all donor queries for the management dashboard
+app.get('/api/admin/donor-queries', async (req, res) => {
+    const { status } = req.query;
+    let query = 'SELECT * FROM donor_queries ';
+    const params = [];
+    if (status) {
+        query += 'WHERE status = ? ';
+        params.push(status);
+    }
+    query += 'ORDER BY last_updated_at DESC';
+    try {
+        const [queries] = await db.query(query, params);
+        res.json(queries);
+    } catch (error) { res.status(500).json({ message: 'Error fetching donor queries.' }); }
+});
+
+// ADMIN: Post a reply to a donor's query
+app.post('/api/admin/donor-reply', async (req, res) => {
+    const { queryId, replyText } = req.body;
+    const connection = await db.getConnection();
+    try {
+        await connection.beginTransaction();
+        await connection.query('INSERT INTO donor_query_replies (query_id, is_admin_reply, reply_text) VALUES (?, TRUE, ?)', [queryId, replyText]);
+        // Set status to In Progress when admin replies
+        await connection.query("UPDATE donor_queries SET status = 'In Progress', last_updated_at = CURRENT_TIMESTAMP WHERE id = ?", [queryId]);
+        await connection.commit();
+        res.status(201).json({ message: 'Reply posted.' });
+    } catch (error) {
+        await connection.rollback();
+        res.status(500).json({ message: 'Error posting reply.' });
+    } finally {
+        connection.release();
+    }
+});
+
+// ADMIN: Change a donor query's status
+app.put('/api/admin/donor-query/status', async (req, res) => {
+    const { queryId, status } = req.body;
+    try {
+        await db.query('UPDATE donor_queries SET status = ?, last_updated_at = CURRENT_TIMESTAMP WHERE id = ?', [status, queryId]);
+        res.status(200).json({ message: `Status updated to ${status}.` });
+    } catch (error) { res.status(500).json({ message: 'Error updating status.' }); }
+});
+
+
+
+// ==========================================================
+// --- PARENT-TEACHER MEETING (PTM) API ROUTES (CORRECTED) ---
+// ==========================================================
+// This version REMOVES token authentication to match your Health Info module's pattern.
+
+// GET all meetings (Now public, no token needed)
+app.get('/api/ptm', async (req, res) => {
+    try {
+        const query = `SELECT * FROM ptm_meetings ORDER BY meeting_datetime DESC`;
+        const [meetings] = await db.query(query);
+        res.status(200).json(meetings);
+    } catch (error) {
+        console.error("GET /api/ptm Error:", error);
+        res.status(500).json({ message: 'Error fetching PTM schedules.' });
+    }
+});
+
+// GET list of all teachers for the form (Now public, no token needed)
+app.get('/api/ptm/teachers', async (req, res) => {
+    try {
+        const [teachers] = await db.query("SELECT id, full_name FROM users WHERE role = 'teacher' ORDER BY full_name ASC");
+        res.status(200).json(teachers);
+    } catch (error) {
+        console.error("GET /api/ptm/teachers Error:", error);
+        res.status(500).json({ message: 'Could not fetch the list of teachers.' });
+    }
+});
+
+// POST a new meeting
+app.post('/api/ptm', async (req, res) => {
+    const { meeting_datetime, teacher_id, subject_focus, notes } = req.body;
+    
+    if (!meeting_datetime || !teacher_id || !subject_focus) {
+        return res.status(400).json({ message: 'Meeting Date, Teacher, and Subject are required.' });
+    }
+
+    try {
+        const [[teacher]] = await db.query('SELECT full_name FROM users WHERE id = ?', [teacher_id]);
+        if (!teacher) {
+            return res.status(404).json({ message: 'Selected teacher not found.' });
+        }
+        const query = `INSERT INTO ptm_meetings (meeting_datetime, teacher_id, teacher_name, subject_focus, notes) VALUES (?, ?, ?, ?, ?)`;
+        await db.query(query, [meeting_datetime, teacher_id, teacher.full_name, subject_focus, notes || null]);
+        res.status(201).json({ message: 'Meeting scheduled successfully!' });
+    } catch (error) {
+        console.error("POST /api/ptm Error:", error);
+        res.status(500).json({ message: 'An error occurred while scheduling the meeting.' });
+    }
+});
+
+// PUT (update) an existing meeting
+app.put('/api/ptm/:id', async (req, res) => {
+    const { id } = req.params;
+    const { status, notes } = req.body;
+
+    if (status === undefined || notes === undefined) {
+         return res.status(400).json({ message: 'Status and Notes must be provided for an update.' });
+    }
+
+    try {
+        const query = 'UPDATE ptm_meetings SET status = ?, notes = ? WHERE id = ?';
+        const [result] = await db.query(query, [status, notes, id]);
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: 'Meeting not found.' });
+        }
+        res.status(200).json({ message: 'Meeting updated successfully!' });
+    } catch (error) {
+        console.error("PUT /api/ptm/:id Error:", error);
+        res.status(500).json({ message: 'An error occurred while updating the meeting.' });
+    }
+});
+
+// DELETE a meeting
+app.delete('/api/ptm/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const query = 'DELETE FROM ptm_meetings WHERE id = ?';
+        const [result] = await db.query(query, [id]);
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: 'Meeting not found.' });
+        }
+        res.status(200).json({ message: 'Meeting deleted successfully.' });
+    } catch (error) {
+        console.error("DELETE /api/ptm/:id Error:", error);
+        res.status(500).json({ message: 'An error occurred while deleting the meeting.' });
+    }
+});
+
+
+// ==========================================================
+// --- DIGITAL LABS API ROUTES (NEW) ---
+// ==========================================================
+// This section handles creating, fetching, and managing digital lab resources.
+// It uses the 'upload' multer instance you already configured.
+
+// GET all digital labs (Publicly accessible for students to view)
+app.get('/api/labs', async (req, res) => {
+    try {
+        const query = `SELECT * FROM digital_labs ORDER BY created_at DESC`;
+        const [labs] = await db.query(query);
+        res.status(200).json(labs);
+    } catch (error) {
+        console.error("GET /api/labs Error:", error);
+        res.status(500).json({ message: 'Error fetching digital labs.' });
+    }
+});
+
+// POST a new digital lab (Admin/Teacher only)
+// 'upload.single('coverImage')' handles the file upload.
+app.post('/api/labs', upload.fields([{ name: 'coverImage', maxCount: 1 }, { name: 'labFile', maxCount: 1 }]), async (req, res) => {
+    const { title, subject, lab_type, description, access_url, created_by } = req.body;
+
+    // The req.files object will contain the uploaded files
+    const coverImageFile = req.files['coverImage'] ? req.files['coverImage'][0] : null;
+    const labFile = req.files['labFile'] ? req.files['labFile'][0] : null;
+
+    const cover_image_url = coverImageFile ? `/uploads/${coverImageFile.filename}` : null;
+    const file_path = labFile ? `/uploads/${labFile.filename}` : null;
+    
+    // A lab must have either an external URL or an uploaded file
+    if (!access_url && !file_path) {
+        return res.status(400).json({ message: 'You must provide either an Access URL or upload a Lab File.' });
+    }
+
+    try {
+        const query = `
+            INSERT INTO digital_labs (title, subject, lab_type, description, access_url, file_path, cover_image_url, created_by) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `;
+        // Note: access_url can be null if a file is uploaded, and vice-versa
+        await db.query(query, [title, subject, lab_type, description, access_url || null, file_path, cover_image_url, created_by || null]);
+        res.status(201).json({ message: 'Digital lab created successfully!' });
+    } catch (error) {
+        console.error("POST /api/labs Error:", error);
+        res.status(500).json({ message: 'Error creating digital lab.' });
+    }
+});
+
+// ... inside the DIGITAL LABS API ROUTES section ...
+
+// PUT (update) an existing lab (Admin/Teacher only)
+// This handles updating text fields and optionally a new cover image.
+// PUT (update) an existing lab (Corrected to handle optional file uploads)
+app.put('/api/labs/:id', upload.fields([{ name: 'coverImage', maxCount: 1 }, { name: 'labFile', maxCount: 1 }]), async (req, res) => {
+    const { id } = req.params;
+    const { title, subject, lab_type, description, access_url } = req.body;
+    
+    try {
+        const [existingLab] = await db.query('SELECT cover_image_url, file_path FROM digital_labs WHERE id = ?', [id]);
+        if (existingLab.length === 0) {
+            return res.status(404).json({ message: 'Lab not found.' });
+        }
+
+        const coverImageFile = req.files['coverImage'] ? req.files['coverImage'][0] : null;
+        const labFile = req.files['labFile'] ? req.files['labFile'][0] : null;
+
+        // Use new file if uploaded, otherwise keep the existing path
+        let cover_image_url = coverImageFile ? `/uploads/${coverImageFile.filename}` : existingLab[0].cover_image_url;
+        let file_path = labFile ? `/uploads/${labFile.filename}` : existingLab[0].file_path;
+
+        const query = `
+            UPDATE digital_labs SET 
+            title = ?, subject = ?, lab_type = ?, description = ?, access_url = ?, file_path = ?, cover_image_url = ?
+            WHERE id = ?
+        `;
+        await db.query(query, [title, subject, lab_type, description, access_url || null, file_path, cover_image_url, id]);
+        res.status(200).json({ message: 'Digital lab updated successfully!' });
+    } catch (error) {
+        console.error("PUT /api/labs/:id Error:", error);
+        res.status(500).json({ message: 'Error updating digital lab.' });
+    }
+});
+
+// ... your existing DELETE route for /api/labs/:id
+
+
+// DELETE a digital lab (Admin/Teacher only)
+app.delete('/api/labs/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        // You might want to add logic here to delete the associated image file from the /uploads folder
+        const [result] = await db.query('DELETE FROM digital_labs WHERE id = ?', [id]);
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: 'Digital lab not found.' });
+        }
+        res.status(200).json({ message: 'Digital lab deleted successfully.' });
+    } catch (error) {
+        console.error("DELETE /api/labs/:id Error:", error);
+        res.status(500).json({ message: 'Error deleting digital lab.' });
+    }
 });
 
 // Start the server

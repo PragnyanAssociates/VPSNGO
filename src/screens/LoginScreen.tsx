@@ -1,7 +1,8 @@
-// 📂 File: src/screens/LoginScreen.tsx (FINAL - COPY/PASTE THIS)
+// 📂 File: src/screens/LoginScreen.tsx (FINAL - With Donor Links and Corrected Login)
 
 import React, { useState } from "react";
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, Image, Alert, ActivityIndicator, KeyboardAvoidingView, Platform } from "react-native";
+import { useNavigation } from "@react-navigation/native";
 import { useAuth } from '../context/AuthContext';
 import { API_BASE_URL } from '../../apiConfig';
 
@@ -11,12 +12,18 @@ type LoginScreenProps = {
   route: { params: { role: 'admin' | 'teacher' | 'student' | 'donor'; } }
 };
 
+// Define a more specific type for the navigation prop
+type NavigationProp = {
+  navigate: (screen: string) => void;
+};
+
 export default function LoginScreen({ route }: LoginScreenProps) {
   const { role } = route.params;
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const { login } = useAuth();
+  const navigation = useNavigation<NavigationProp>(); // Initialize navigation
 
   const handleLogin = async () => {
     if (!username || !password) {
@@ -37,7 +44,8 @@ export default function LoginScreen({ route }: LoginScreenProps) {
           setIsLoggingIn(false);
           return;
         }
-        await login(data.user);
+        // ✅ CORRECTED: Pass both the user and the token from the backend
+        await login(data.user, data.token);
       } else {
         Alert.alert("Login Failed", data.message || "Invalid username or password.");
       }
@@ -68,9 +76,25 @@ export default function LoginScreen({ route }: LoginScreenProps) {
             <Text style={styles.label}>Password</Text>
             <TextInput style={styles.input} placeholder="Enter password" secureTextEntry value={password} onChangeText={setPassword} />
           </View>
+          
+          {/* --- ADDITION 1: Conditional "Forgot Password?" Link --- */}
+          {role === 'donor' && (
+            <TouchableOpacity onPress={() => navigation.navigate('ForgotPasswordScreen')}>
+                <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
+            </TouchableOpacity>
+          )}
+
           <TouchableOpacity style={styles.loginButton} onPress={handleLogin} disabled={isLoggingIn}>
             {isLoggingIn ? (<ActivityIndicator color="#fff" />) : (<Text style={styles.loginButtonText}>Login</Text>)}
           </TouchableOpacity>
+
+          {/* --- ADDITION 2: Conditional "Register" Link --- */}
+          {role === 'donor' && (
+            <TouchableOpacity onPress={() => navigation.navigate('DonorRegistration')}>
+              <Text style={styles.registerText}>Don't have an account? <Text style={{fontWeight: 'bold'}}>Register Here</Text></Text>
+            </TouchableOpacity>
+          )}
+
         </View>
         <View style={styles.footer}>
           <Text style={styles.footerText}>© 2025 Your School. All rights reserved.</Text>
@@ -90,10 +114,22 @@ const styles = StyleSheet.create({
   inputContainer: { marginBottom: 20 },
   label: { fontSize: 16, marginBottom: 5, color: '#333' },
   input: { height: 50, borderColor: "#ddd", borderWidth: 1, borderRadius: 25, paddingHorizontal: 20, backgroundColor: "#fff", fontSize: 16 },
-  loginButton: { backgroundColor: "#007bff", height: 50, borderRadius: 25, justifyContent: "center", alignItems: "center", marginBottom: 20, elevation: 2 },
+  loginButton: { backgroundColor: "#007bff", height: 50, borderRadius: 25, justifyContent: "center", alignItems: "center", marginTop: 10, marginBottom: 20, elevation: 2 },
   loginButtonText: { color: "#fff", fontSize: 18, fontWeight: "bold" },
   footer: { backgroundColor: "#e0f2f7", paddingVertical: 20, alignItems: "center", borderTopWidth: 1, borderTopColor: "#b2ebf2" },
   footerText: { color: "#555", fontSize: 16, fontStyle: "italic" },
   schoolSubName: { fontSize: 15, fontWeight: "300", color: "#008080" },
   schoolqt: { fontSize: 12, color: "#008080" },
+  // --- ADDITION 3: New styles for the links ---
+  forgotPasswordText: { 
+    textAlign: 'right', 
+    color: '#007bff', 
+    marginBottom: 20, 
+    fontWeight: '600' 
+  },
+  registerText: { 
+    textAlign: 'center', 
+    color: '#555', 
+    fontSize: 16 
+  },
 });

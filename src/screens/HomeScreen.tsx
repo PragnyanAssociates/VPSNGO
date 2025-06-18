@@ -18,15 +18,13 @@ export default function HomeScreen() {
     { id: 3, name: "Student",   icon: "https://cdn-icons-png.flaticon.com/128/2784/2784403.png", type: 'login',    target: 'student' },
     { id: 4, name: "Teacher",   icon: "https://cdn-icons-png.freepik.com/256/14416/14416005.png?semt=ais_hybrid", type: 'login',    target: 'teacher' },
     { id: 5, name: "Transport", icon: "https://cdn-icons-png.flaticon.com/128/207/207178.png", type: 'navigate', target: 'Transport' },
-    { id: 6, name: "Donor",     icon: "https://cdn-icons-png.flaticon.com/128/10880/10880476.png", type: 'navigate', target: 'DonorDashboard' },
+    { id: 6, name: "Donor",     icon: "https://cdn-icons-png.flaticon.com/128/10880/10880476.png", type: 'login',    target: 'donor' },
   ];
 
-  const handleRolePress = (item: typeof roles[0]) => {
+ const handleRolePress = (item: typeof roles[0]) => {
     if (item.type === 'login') {
-      // For Admin, Student, Teacher -> go to the Login screen
       navigation.navigate('Login', { role: item.target });
     } else if (item.type === 'navigate') {
-      // For About Us, Transport, Donor -> go directly to their respective screens
       navigation.navigate(item.target);
     }
   };
@@ -57,7 +55,6 @@ export default function HomeScreen() {
   );
 }
 
-// Styles remain unchanged
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f8f8ff" },
   header: { backgroundColor: "#e0f2f7", paddingTop: 50, paddingBottom: 30, alignItems: "center", justifyContent: "center", borderBottomWidth: 1, borderBottomColor: "#b2ebf2" },

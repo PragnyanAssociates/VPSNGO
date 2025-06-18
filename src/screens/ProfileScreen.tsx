@@ -1,3 +1,5 @@
+// 📂 File: src/screens/ProfileScreen.tsx (COMPLETE AND CORRECTED)
+
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Image,
@@ -69,67 +71,52 @@ const ProfileScreen = ({ onBackPress, staticProfileData, onStaticSave, onProfile
 
   const handleSave = async (editedData: ProfileData, newImage: Asset | null) => {
     setIsSaving(true);
-
     try {
-        if (onStaticSave) {
-            // This is the logic for the static "Donor" profile.
-            await onStaticSave(editedData, newImage);
-
-            // CORRECTED: Optimistically update the local state to immediately show changes.
-            const updatedProfile = { ...profileData, ...editedData } as ProfileData;
-            if (newImage && newImage.uri) {
-                // Use the local URI of the newly selected image for immediate display.
-                updatedProfile.profile_image_url = newImage.uri;
-            }
-            setProfileData(updatedProfile);
-            setIsEditing(false);
-
-        } else if (user) {
-            // This is the logic for the logged-in Teacher.
-            const formData = new FormData();
-            Object.entries(editedData).forEach(([key, value]) => {
-                if (value != null) { 
-                    formData.append(key, String(value));
-                }
-            });
-
-            if (newImage && newImage.uri) {
-                formData.append('profileImage', {
-                    uri: newImage.uri,
-                    type: newImage.type || 'image/jpeg',
-                    name: newImage.fileName || `profile-${Date.now()}.jpg`
-                } as any);
-            }
-
-            const response = await fetch(`${API_BASE_URL}/api/profiles/${user.id}`, {
-                method: 'PUT',
-                body: formData,
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.message || 'Failed to save profile to the server.');
-            }
-
-            const refreshedProfile = await response.json();
-            const updatedProfile = { ...profileData, ...editedData, ...refreshedProfile } as ProfileData;
-            
-            setProfileData(updatedProfile);
-
-            if (onProfileUpdate) {
-                onProfileUpdate(updatedProfile);
-            }
-            
-            Alert.alert('Success', 'Profile updated successfully!');
-            setIsEditing(false);
+      if (onStaticSave) {
+        await onStaticSave(editedData, newImage);
+        const updatedProfile = { ...profileData, ...editedData } as ProfileData;
+        if (newImage && newImage.uri) {
+          updatedProfile.profile_image_url = newImage.uri;
         }
+        setProfileData(updatedProfile);
+        setIsEditing(false);
+      } else if (user) {
+        const formData = new FormData();
+        Object.entries(editedData).forEach(([key, value]) => {
+          if (value != null) {
+            formData.append(key, String(value));
+          }
+        });
+        if (newImage && newImage.uri) {
+          formData.append('profileImage', {
+            uri: newImage.uri,
+            type: newImage.type || 'image/jpeg',
+            name: newImage.fileName || `profile-${Date.now()}.jpg`
+          } as any);
+        }
+        const response = await fetch(`${API_BASE_URL}/api/profiles/${user.id}`, {
+          method: 'PUT',
+          body: formData,
+        });
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || 'Failed to save profile.');
+        }
+        const refreshedProfile = await response.json();
+        const updatedProfile = { ...profileData, ...editedData, ...refreshedProfile } as ProfileData;
+        setProfileData(updatedProfile);
+        if (onProfileUpdate) {
+          onProfileUpdate(updatedProfile);
+        }
+        Alert.alert('Success', 'Profile updated successfully!');
+        setIsEditing(false);
+      }
     } catch (error: any) {
-        Alert.alert('Update Failed', error.message);
+      Alert.alert('Update Failed', error.message);
     } finally {
-        setIsSaving(false);
+      setIsSaving(false);
     }
   };
-
 
   if (isLoading) return <View style={styles.centered}><ActivityIndicator size="large" color={PRIMARY_COLOR} /></View>;
   if (!profileData) return <View style={styles.centered}><Text>Profile not available.</Text></View>;
@@ -139,21 +126,14 @@ const ProfileScreen = ({ onBackPress, staticProfileData, onStaticSave, onProfile
     : <DisplayProfileView userProfile={profileData} onEditPress={() => setIsEditing(true)} onBackPress={onBackPress} />;
 };
 
-
-// CORRECTED: This component is now smarter about handling image URIs.
 const DisplayProfileView = ({ userProfile, onEditPress, onBackPress }: { userProfile: ProfileData, onEditPress: () => void, onBackPress?: () => void }) => {
   let profileImageSource;
   const imageUri = userProfile.profile_image_url;
 
   if (imageUri) {
-    // Check if the URI is a full URL (local file or remote http). If so, use it directly.
-    // Otherwise, it's a relative path from the server, so prepend the base URL.
-    const fullUri = (imageUri.startsWith('http') || imageUri.startsWith('file'))
-      ? imageUri
-      : `${API_BASE_URL}${imageUri}`;
+    const fullUri = (imageUri.startsWith('http') || imageUri.startsWith('file')) ? imageUri : `${API_BASE_URL}${imageUri}`;
     profileImageSource = { uri: fullUri };
   } else {
-    // If no image URL is provided, use the default placeholder image.
     profileImageSource = require('../assets/profile.png');
   }
 
@@ -166,7 +146,9 @@ const DisplayProfileView = ({ userProfile, onEditPress, onBackPress }: { userPro
           <TouchableOpacity onPress={onBackPress} style={styles.headerButton}>
             <MaterialIcons name="arrow-back" size={24} color={PRIMARY_COLOR} />
           </TouchableOpacity>
-        ) : <View style={{ width: 40 }} />}
+        ) : (
+          <View style={styles.headerButton} />
+        )}
         <Text style={styles.headerTitle}>My Profile</Text>
         <TouchableOpacity onPress={onEditPress} style={styles.headerButton}>
           <MaterialIcons name="edit" size={24} color={PRIMARY_COLOR} />
@@ -212,53 +194,31 @@ const EditProfileView = ({ userProfile, onSave, onCancel, isSaving }: { userProf
       try {
         const granted = await PermissionsAndroid.request(
           PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
-          {
-            title: 'Permission to access gallery',
-            message: 'App needs access to your gallery to choose a profile picture.',
-            buttonNeutral: 'Ask Me Later',
-            buttonNegative: 'Cancel',
-            buttonPositive: 'OK',
-          }
+          { title: 'Gallery Access Permission', message: 'App needs access to your gallery.', buttonPositive: 'OK' }
         );
         return granted === PermissionsAndroid.RESULTS.GRANTED;
-      } catch (err) {
-        console.warn(err);
-        return false;
-      }
+      } catch (err) { return false; }
     }
     return true;
   };
 
   const handleChoosePhoto = async () => {
     const hasPermission = await requestGalleryPermission();
-    if (!hasPermission) {
-      Alert.alert('Permission Denied', 'Gallery access is required to select an image.');
-      return;
-    }
-
+    if (!hasPermission) return;
     try {
-      const result = await launchImageLibrary({ mediaType: 'photo', quality: 0.8, includeBase64: false });
-
-      if (result.didCancel) {
-        console.log('User cancelled image picker');
-      } else if (result.assets && result.assets.length > 0) {
+      const result = await launchImageLibrary({ mediaType: 'photo', quality: 0.8 });
+      if (result.assets && result.assets.length > 0) {
         setNewImage(result.assets[0]);
-      } else {
-        Alert.alert('Error', 'No image selected or an error occurred.');
       }
-    } catch (error) {
-      console.error('Image picker error:', error);
-      Alert.alert('Error', 'Failed to open image library.');
-    }
+    } catch (error) { console.error('Image picker error:', error); }
   };
 
-  const handleChange = (field: keyof ProfileData, value: string) =>
-    setEditedData(prev => ({ ...prev, [field]: value }));
+  const handleChange = (field: keyof ProfileData, value: string) => setEditedData(prev => ({ ...prev, [field]: value }));
 
   const imageSource = newImage?.uri
     ? { uri: newImage.uri }
     : (editedData.profile_image_url
-      ? { uri: `${API_BASE_URL}${editedData.profile_image_url}` }
+      ? (editedData.profile_image_url.startsWith('http') || editedData.profile_image_url.startsWith('file') ? { uri: editedData.profile_image_url } : { uri: `${API_BASE_URL}${editedData.profile_image_url}` })
       : require('../assets/profile.png'));
 
   const showAcademicFields = userProfile.role !== 'donor';
@@ -324,7 +284,7 @@ const styles = StyleSheet.create({
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1, shadowRadius: 4, elevation: 3, borderBottomWidth: 1, borderBottomColor: BORDER_COLOR
   },
-  headerButton: { padding: 5, minWidth: 40, alignItems: 'center' },
+  headerButton: { padding: 5, minWidth: 60, alignItems: 'center' },
   headerButtonText: { color: PRIMARY_COLOR, fontSize: 16, fontWeight: '600' },
   headerTitle: { color: PRIMARY_COLOR, fontSize: 20, fontWeight: 'bold' },
   container: { padding: 15, paddingBottom: 40 },
@@ -332,7 +292,7 @@ const styles = StyleSheet.create({
   profileImage: { width: 100, height: 100, borderRadius: 50, borderWidth: 3, borderColor: PRIMARY_COLOR, marginBottom: 10 },
   profileName: { fontSize: 24, fontWeight: 'bold', color: TEXT_COLOR_DARK },
   profileRole: { fontSize: 16, color: TEXT_COLOR_MEDIUM, marginTop: 5 },
-  detailsCard: { backgroundColor: 'white', borderRadius: 10, padding: 20, marginBottom: 15, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 2 },
+  detailsCard: { backgroundColor: 'white', borderRadius: 10, padding: 20, marginBottom: 15, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2, elevation: 2 },
   cardTitle: { fontSize: 18, fontWeight: 'bold', color: PRIMARY_COLOR, marginBottom: 15, borderBottomWidth: 1, borderBottomColor: '#e5e7eb', paddingBottom: 10 },
   detailRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
   detailLabel: { fontSize: 15, fontWeight: '600', color: TEXT_COLOR_MEDIUM, flex: 1 },

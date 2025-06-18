@@ -1,16 +1,11 @@
-<!-- 📂 File: android/app/src/main/AndroidManifest.xml (CORRECTED) -->
+<!-- 📂 File: android/app/src/main/AndroidManifest.xml (FINAL CORRECTED VERSION) -->
 
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- All permissions MUST go here, at the top level -->
     <uses-permission android:name="android.permission.INTERNET" />
-
-    <!-- Permissions for react-native-image-picker -->
     <uses-permission android:name="android.permission.CAMERA" />
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" /> <!-- For Android 13+ -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
-    
-    <!-- WRITE permission with maxSdkVersion is the correct way for older Android -->
     <uses-permission 
         android:name="android.permission.WRITE_EXTERNAL_STORAGE" 
         android:maxSdkVersion="28" />
@@ -27,7 +22,7 @@
       
       <meta-data
           android:name="com.google.android.geo.API_KEY"
-          android:value="YOUR_ACTUAL_API_KEY_HERE"/>
+          android:value="AIzaSyByYtzA7J3SvVUSuO6uzG7IUOpCSoqK_iM"/>
       
       <activity
         android:name=".MainActivity"
@@ -36,10 +31,33 @@
         android:launchMode="singleTask"
         android:windowSoftInputMode="adjustResize"
         android:exported="true">
+        
+        <!-- This is the intent filter that makes your app appear on the home screen -->
         <intent-filter>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent-filter>
+
+        <!-- ✅ FIX: The deep link intent filter is now correctly placed INSIDE the activity tag -->
+        <intent-filter>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.DEFAULT" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="vspngo" />
+        </intent-filter>
+
       </activity>
     </application>
+     <!-- ✅ ADD THIS ENTIRE BLOCK HERE -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="http" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+        <package android:name="com.google.android.youtube" />
+    </queries>
 </manifest>
