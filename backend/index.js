@@ -959,6 +959,324 @@ app.delete('/api/labs/:id', async (req, res) => {
     }
 });
 
+
+// ==========================================================
+// --- HOMEWORK & ASSIGNMENTS API ROUTES (CORRECTED & FINAL) ---
+// ==========================================================
+
+// --- UTILITY ROUTES (FOR HOMEWORK FORMS) ---
+
+// Get a list of all unique student class groups
+app.get('/api/student-classes', async (req, res) => {
+    try {
+        const query = `
+            SELECT DISTINCT class_group FROM users 
+            WHERE role = 'student' AND class_group IS NOT NULL AND class_group <> '' AND class_group <> 'N/A'
+            ORDER BY class_group ASC`;
+        const [rows] = await db.query(query);
+        res.json(rows.map(r => r.class_group));
+    } catch (error) { 
+        console.error('Error fetching student classes:', error);
+        res.status(500).json({ message: 'Error fetching student classes.' }); 
+    }
+});
+
+// Get all subjects for a selected class from the timetable
+app.get('/api/subjects-for-class/:classGroup', async (req, res) => {
+    const { classGroup } = req.params;
+    try {
+        const query = "SELECT DISTINCT subject_name FROM timetables WHERE class_group = ? ORDER BY subject_name";
+        const [rows] = await db.query(query, [classGroup]);
+        res.json(rows.map(r => r.subject_name));
+    } catch (error) { 
+        console.error('Error fetching subjects for class:', error);
+        res.status(500).json({ message: 'Error fetching subjects.' }); 
+    }
+});
+
+
+// --- TEACHER / ADMIN ROUTES ---
+
+// Get assignment history for a specific teacher
+app.get('/api/homework/teacher/:teacherId', async (req, res) => {
+    const { teacherId } = req.params;
+    try {
+        const query = `
+            SELECT a.*, (SELECT COUNT(*) FROM homework_submissions s WHERE s.assignment_id = a.id) as submission_count
+            FROM homework_assignments a
+            WHERE a.teacher_id = ? ORDER BY a.created_at DESC`;
+        const [assignments] = await db.query(query, [teacherId]);
+        res.json(assignments);
+    } catch (error) { 
+        console.error('Error fetching teacher assignments:', error);
+        res.status(500).json({ message: 'Error fetching created assignments.' }); 
+    }
+});
+
+// Create a new homework assignment
+app.post('/api/homework', upload.single('attachment'), async (req, res) => {
+    const { title, description, class_group, subject, due_date, teacher_id } = req.body;
+    const attachment_path = req.file ? `/uploads/${req.file.filename}` : null;
+    try {
+        const query = `INSERT INTO homework_assignments (title, description, class_group, subject, due_date, teacher_id, attachment_path) VALUES (?, ?, ?, ?, ?, ?, ?)`;
+        await db.query(query, [title, description, class_group, subject, due_date, teacher_id, attachment_path]);
+        res.status(201).json({ message: 'Homework created successfully.' });
+    } catch (error) { 
+        console.error('Error creating homework:', error);
+        res.status(500).json({ message: 'Error creating homework.' }); 
+    }
+});
+
+// Update an existing homework assignment (Note: uses POST for multipart/form-data compatibility)
+app.post('/api/homework/:assignmentId', upload.single('attachment'), async (req, res) => {
+    const { assignmentId } = req.params;
+    const { title, description, class_group, subject, due_date, existing_attachment_path } = req.body;
+    
+    try {
+        // If a new file is uploaded, use its path. Otherwise, use the existing path sent from the client.
+        let attachment_path = existing_attachment_path || null;
+        if (req.file) { 
+            attachment_path = `/uploads/${req.file.filename}`; 
+        }
+
+        const query = `UPDATE homework_assignments SET title = ?, description = ?, class_group = ?, subject = ?, due_date = ?, attachment_path = ? WHERE id = ?`;
+        await db.query(query, [title, description, class_group, subject, due_date, attachment_path, assignmentId]);
+        res.status(200).json({ message: 'Homework updated successfully.' });
+    } catch (error) { 
+        console.error('Error updating homework:', error);
+        res.status(500).json({ message: 'Error updating homework.' }); 
+    }
+});
+
+// Delete a homework assignment
+app.delete('/api/homework/:assignmentId', async (req, res) => {
+    const { assignmentId } = req.params;
+    try {
+        // Note: For a robust system, you'd also delete associated submission files from the /uploads folder.
+        // This query also relies on cascading deletes in the DB or deleting submissions first.
+        // Assuming `homework_submissions` has an ON DELETE CASCADE for `assignment_id` foreign key.
+        await db.query('DELETE FROM homework_assignments WHERE id = ?', [assignmentId]);
+        res.status(200).json({ message: 'Homework and all its submissions deleted.' });
+    } catch (error) { 
+        console.error('Error deleting homework:', error);
+        res.status(500).json({ message: 'Error deleting homework.' }); 
+    }
+});
+
+// Get all submissions for a specific assignment
+app.get('/api/homework/submissions/:assignmentId', async (req, res) => {
+    const { assignmentId } = req.params;
+    try {
+        const query = `
+            SELECT s.*, u.full_name as student_name 
+            FROM homework_submissions s
+            JOIN users u ON s.student_id = u.id
+            WHERE s.assignment_id = ? ORDER BY s.submitted_at DESC`;
+        const [submissions] = await db.query(query, [assignmentId]);
+        res.json(submissions);
+    } catch (error) { 
+        console.error('Error fetching submissions:', error);
+        res.status(500).json({ message: 'Error fetching submissions.' }); 
+    }
+});
+
+// Grade a submission
+app.put('/api/homework/grade/:submissionId', async (req, res) => {
+    const { submissionId } = req.params;
+    const { grade, remarks } = req.body;
+    try {
+        const query = `UPDATE homework_submissions SET grade = ?, remarks = ?, status = 'Graded' WHERE id = ?`;
+        await db.query(query, [grade || null, remarks || null, submissionId]);
+        res.status(200).json({ message: 'Submission graded successfully.' });
+    } catch (error) { 
+        console.error('Error grading submission:', error);
+        res.status(500).json({ message: 'Error grading submission.' }); 
+    }
+});
+
+
+// --- STUDENT ROUTES ---
+
+// Get all assignments for a student's class
+app.get('/api/homework/student/:studentId/:classGroup', async (req, res) => {
+    const { studentId, classGroup } = req.params;
+    try {
+        const query = `
+            SELECT 
+                a.id, a.title, a.description, a.subject, a.due_date, a.attachment_path,
+                s.id as submission_id, 
+                s.submitted_at, 
+                s.status, 
+                s.grade, 
+                s.remarks
+            FROM homework_assignments a
+            LEFT JOIN homework_submissions s ON a.id = s.assignment_id AND s.student_id = ?
+            WHERE a.class_group = ? 
+            ORDER BY a.due_date DESC, a.id DESC`;
+        const [assignments] = await db.query(query, [studentId, classGroup]);
+        // Process status to be more reliable
+        const processedAssignments = assignments.map(a => ({
+            ...a,
+            status: a.submission_id ? (a.status || 'Submitted') : 'Pending'
+        }));
+        res.json(processedAssignments);
+    } catch (error) { 
+        console.error('Error fetching student assignments:', error);
+        res.status(500).json({ message: 'Error fetching assignments.' }); 
+    }
+});
+
+// ✅ --- NEW ROUTE ADDED TO FIX THE SUBMISSION ERROR --- ✅
+// Student submits a homework file
+// The frontend sends the file under the field name 'submission'
+app.post('/api/homework/submit/:assignmentId', upload.single('submission'), async (req, res) => {
+    const { assignmentId } = req.params;
+    const { student_id } = req.body;
+    
+    if (!req.file) {
+        return res.status(400).json({ message: 'No file was uploaded.' });
+    }
+    
+    const submission_path = `/uploads/${req.file.filename}`;
+    
+    try {
+        // First, check if a submission already exists to prevent duplicates
+        const [existing] = await db.query(
+            'SELECT id FROM homework_submissions WHERE assignment_id = ? AND student_id = ?',
+            [assignmentId, student_id]
+        );
+
+        if (existing.length > 0) {
+            return res.status(409).json({ message: 'You have already submitted this homework.' });
+        }
+
+        const query = `
+            INSERT INTO homework_submissions (assignment_id, student_id, submission_path, status) 
+            VALUES (?, ?, ?, 'Submitted')
+        `;
+        await db.query(query, [assignmentId, student_id, submission_path]);
+        res.status(201).json({ message: 'Homework submitted successfully.' });
+    } catch (error) {
+        console.error('Error submitting homework:', error);
+        res.status(500).json({ message: 'Database error during homework submission.' });
+    }
+});
+
+
+// ==========================================================
+// --- EXAM SCHEDULE API ROUTES ---
+// ==========================================================
+
+// --- TEACHER / ADMIN ROUTES ---
+
+// Get all exam schedules created (for the main list view)
+app.get('/api/exam-schedules', async (req, res) => {
+    try {
+        const query = `
+            SELECT es.id, es.title, es.class_group, u.full_name as created_by
+            FROM exam_schedules es
+            JOIN users u ON es.created_by_id = u.id
+            ORDER BY es.updated_at DESC
+        `;
+        const [schedules] = await db.query(query);
+        res.json(schedules);
+    } catch (error) {
+        console.error("Error fetching exam schedules:", error);
+        res.status(500).json({ message: "Failed to fetch exam schedules." });
+    }
+});
+
+// Get a single, detailed exam schedule for editing
+app.get('/api/exam-schedules/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const query = `SELECT * FROM exam_schedules WHERE id = ?`;
+        const [schedules] = await db.query(query, [id]);
+        if (schedules.length === 0) {
+            return res.status(404).json({ message: "Schedule not found." });
+        }
+        res.json(schedules[0]);
+    } catch (error) {
+        console.error("Error fetching single exam schedule:", error);
+        res.status(500).json({ message: "Failed to fetch schedule details." });
+    }
+});
+
+// Create a new exam schedule
+app.post('/api/exam-schedules', async (req, res) => {
+    const { class_group, title, subtitle, schedule_data, created_by_id } = req.body;
+    if (!class_group || !title || !schedule_data || !created_by_id) {
+        return res.status(400).json({ message: "Missing required fields." });
+    }
+    try {
+        const query = `
+            INSERT INTO exam_schedules (class_group, title, subtitle, schedule_data, created_by_id)
+            VALUES (?, ?, ?, ?, ?)
+        `;
+        // Ensure schedule_data is stored as a JSON string
+        await db.query(query, [class_group, title, subtitle, JSON.stringify(schedule_data), created_by_id]);
+        res.status(201).json({ message: "Exam schedule created successfully." });
+    } catch (error) {
+        console.error("Error creating exam schedule:", error);
+        res.status(500).json({ message: "Failed to create exam schedule." });
+    }
+});
+
+// Update an existing exam schedule
+app.put('/api/exam-schedules/:id', async (req, res) => {
+    const { id } = req.params;
+    const { class_group, title, subtitle, schedule_data } = req.body;
+    try {
+        const query = `
+            UPDATE exam_schedules 
+            SET class_group = ?, title = ?, subtitle = ?, schedule_data = ?
+            WHERE id = ?
+        `;
+        await db.query(query, [class_group, title, subtitle, JSON.stringify(schedule_data), id]);
+        res.status(200).json({ message: "Exam schedule updated successfully." });
+    } catch (error) {
+        console.error("Error updating exam schedule:", error);
+        res.status(500).json({ message: "Failed to update exam schedule." });
+    }
+});
+
+// Delete an exam schedule
+app.delete('/api/exam-schedules/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        await db.query('DELETE FROM exam_schedules WHERE id = ?', [id]);
+        res.status(200).json({ message: "Exam schedule deleted successfully." });
+    } catch (error) {
+        console.error("Error deleting exam schedule:", error);
+        res.status(500).json({ message: "Failed to delete exam schedule." });
+    }
+});
+
+
+// --- STUDENT ROUTE ---
+
+// Get the latest exam schedule for the student's class
+app.get('/api/exam-schedules/class/:classGroup', async (req, res) => {
+    const { classGroup } = req.params;
+    try {
+        const query = `
+            SELECT * FROM exam_schedules 
+            WHERE class_group = ? 
+            ORDER BY updated_at DESC 
+            LIMIT 1
+        `;
+        const [schedules] = await db.query(query, [classGroup]);
+        if (schedules.length === 0) {
+            return res.status(404).json({ message: "No exam schedule found for your class." });
+        }
+        res.json(schedules[0]);
+    } catch (error) {
+        console.error("Error fetching student exam schedule:", error);
+        res.status(500).json({ message: "Failed to fetch exam schedule." });
+    }
+});
+
+
 // Start the server
 app.listen(PORT, () => {
     console.log(`✅ Backend server is running on http://localhost:${PORT}`);

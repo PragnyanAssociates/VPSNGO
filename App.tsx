@@ -39,6 +39,8 @@ import AdminForgotPasswordScreen from './src/components/AdminForgotPasswordScree
 import AdminHelpDeskScreen from './src/screens/helpdesk/AdminHelpDeskScreen';
 import AdminEventsScreen from './src/screens/events/AdminEventsScreen';
 import TeacherAdminPTMScreen from './src/screens/ptm/TeacherAdminPTMScreen';
+import TeacherAdminHomeworkScreen from './src/screens/homework/TeacherAdminHomeworkScreen';
+import TeacherAdminExamScreen from './src/screens/exams/TeacherAdminExamScreen';
 
 // Teacher-Specific Screens
 import TeacherNotifications from './src/components/TeacherNotifications';
@@ -59,7 +61,7 @@ import StudentPTM from './src/components/StudentPTM';
 import StudentLabs from './src/components/StudentLabs';
 import StudentHomework from './src/components/StudentHomework';
 import StudentResults from './src/components/StudentResults';
-import StudentSchedule from './src/components/StudentSchedule';
+// import StudentSchedule from './src/components/StudentSchedule';
 import StudentSM from './src/components/StudentSM';
 import StudentAttendance from './src/components/StudentAttendance';
 import StudentHistory from './src/components/StudentHistory';
@@ -69,6 +71,7 @@ import StudentExams from './src/components/StudentExams';
 import StudentSportsScreen from './src/screens/sports/StudentSportsScreen';
 import StudentEventsScreen from './src/screens/events/StudentEventsScreen';
 import StudentPTMScreen from './src/screens/ptm/StudentPTMScreen';
+import StudentExamScreen from './src/screens/exams/StudentExamScreen';
 
 // Donor-Specific Screens
 import DonorNotifications from './src/components/DonorNotifications';
@@ -144,7 +147,7 @@ const AuthenticatedStack = () => {
       <Stack.Screen name="StudentLabs" component={StudentLabs} />
       <Stack.Screen name="StudentHomework" component={StudentHomework} />
       <Stack.Screen name="StudentResults" component={StudentResults} />
-      <Stack.Screen name="StudentSchedule" component={StudentSchedule} />
+      <Stack.Screen name="StudentExamScreen" component={StudentExamScreen} />
       <Stack.Screen name="StudentSM" component={StudentSM} />
       <Stack.Screen name="StudentAttendance" component={StudentAttendance} />
       <Stack.Screen name="StudentHistory" component={StudentHistory} />
@@ -160,6 +163,8 @@ const AuthenticatedStack = () => {
       <Stack.Screen name="TeacherAdminPTMScreen" component={TeacherAdminPTMScreen} />
       <Stack.Screen name="StudentPTMScreen" component={StudentPTMScreen} />
       <Stack.Screen name="TeacherAdminLabsScreen" component={TeacherAdminLabsScreen} />
+      <Stack.Screen name="TeacherAdminHomeworkScreen" component={TeacherAdminHomeworkScreen} />
+      <Stack.Screen name="TeacherAdminExamScreen" component={TeacherAdminExamScreen} />
     </Stack.Navigator>
   );
 };

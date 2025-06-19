@@ -12,19 +12,14 @@ import { API_BASE_URL } from '../../apiConfig';
 // --- COMPONENT IMPORTS (As per your original file structure) ---
 import StudentNotifications, { initialNotificationsData } from './StudentNotifications';
 import AcademicCalendar from './AcademicCalendar';
-// import StudentHelpdesk from './StudentHelpdesk';
-// import StudentSports from './StudentSports';
-// import StudentEvents from './StudentEvents';
-// import StudentPTM from './StudentPTM';
-// import StudentLabs from './StudentLabs';
-import StudentHomework from './StudentHomework';
 import StudentResults from './StudentResults';
-import StudentSchedule from './StudentSchedule';
+// import StudentSchedule from './StudentSchedule';
 import StudentSM from './StudentSM';
 import StudentHistory from './StudentHistory';
 import StudentSyllabus from './StudentSyllabus';
 import StudentExams from './StudentExams';
 import ProfileScreen from '../screens/ProfileScreen';
+import StudentExamScreen from '../screens/exams/StudentExamScreen';
 
 // 👈 STEP 1: IMPORT THE NEW DYNAMIC SCREENS
 import TimetableScreen from '../screens/TimetableScreen'; 
@@ -35,6 +30,7 @@ import StudentEventsScreen from '../screens/events/StudentEventsScreen';
 import UserHelpDeskScreen from '../screens/helpdesk/UserHelpDeskScreen';
 import StudentPTMScreen from '../screens/ptm/StudentPTMScreen';
 import StudentLabsScreen from '../screens/labs/StudentLabsScreen';
+import StudentHomeworkScreen from '../screens/homework/StudentHomeworkScreen';
 
 // We no longer need the old static imports
 // import StudentAttendance from './StudentAttendance';
@@ -96,9 +92,9 @@ const StudentDashboard = () => {
     { id: 'qa4', title: 'Syllabus', imageSource: 'https://cdn-icons-png.flaticon.com/128/1584/1584937.png', navigateToTab: 'StudentSyllabus' },
     { id: 'qa15', title: 'Study materials', imageSource: 'https://cdn-icons-png.flaticon.com/128/3273/3273259.png', navigateToTab: 'StudentSM' },
     { id: 'qa5', title: 'Exams', imageSource: 'https://cdn-icons-png.flaticon.com/128/207/207190.png',  navigateToTab: 'StudentExams' },
-    { id: 'qa14', title: 'Home Work', imageSource: 'https://cdn-icons-png.flaticon.com/128/3150/3150521.png', navigateToTab: 'StudentHomework' },
+    { id: 'qa14', title: 'Home Work', imageSource: 'https://cdn-icons-png.flaticon.com/128/11647/11647336.png', navigateToTab: 'StudentHomeworkScreen' },
     { id: 'qa6', title: 'Results', imageSource: 'https://cdn-icons-png.flaticon.com/128/9913/9913576.png', navigateToTab: 'StudentResults' },
-    { id: 'qa7', title: 'Exam Schedule', imageSource: 'https://cdn-icons-png.flaticon.com/128/4029/4029113.png', navigateToTab: 'StudentSchedule' },
+    { id: 'qa7', title: 'Exam Schedule', imageSource: 'https://cdn-icons-png.flaticon.com/128/4029/4029113.png', navigateToTab: 'StudentExamScreen' },
     { id: 'qa8', title: 'Digital Labs', imageSource: 'https://cdn-icons-png.flaticon.com/128/9562/9562280.png', navigateToTab: 'StudentLabsScreen' },
     { id: 'qa9', title: 'Sports', imageSource: 'https://cdn-icons-png.flaticon.com/128/3429/3429456.png', navigateToTab: 'StudentSportsScreen' },
     { id: 'qa10', title: 'Health Info', imageSource: 'https://cdn-icons-png.flaticon.com/128/3004/3004458.png', navigateToTab: 'StudentHealthScreen' },
@@ -129,9 +125,9 @@ const StudentDashboard = () => {
       case 'StudentEventsScreen': return ( <><ContentScreenHeader title="Events" /><StudentEventsScreen /></> );
       case 'StudentPTMScreen': return ( <><ContentScreenHeader title="Parents-Teachers Meetings" /><StudentPTMScreen /></> );
       case 'StudentLabsScreen': return ( <><ContentScreenHeader title="Digital Labs" /><StudentLabsScreen /></> );
-      case 'StudentHomework': return ( <><ContentScreenHeader title="Home Work" /><StudentHomework /></> );
+      case 'StudentHomeworkScreen': return ( <><ContentScreenHeader title="Home Work" /><StudentHomeworkScreen /></> );
       case 'StudentResults': return ( <><ContentScreenHeader title="Results" /><StudentResults /></> );
-      case 'StudentSchedule': return ( <><ContentScreenHeader title="Exam Schedules" /><StudentSchedule /></> );
+      case 'StudentExamScreen': return ( <><ContentScreenHeader title="Exam Schedules" /><StudentExamScreen /></> );
       case 'StudentSM': return ( <><ContentScreenHeader title="Study Materials" /><StudentSM /></> );
       case 'StudentHistory': return ( <><ContentScreenHeader title="Student History" /><StudentHistory /></> );
       case 'StudentExams': return ( <><ContentScreenHeader title="Exams" /><StudentExams /></> );
