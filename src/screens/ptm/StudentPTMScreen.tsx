@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, FlatList, ActivityIndicator, StyleSheet, RefreshControl } from 'react-native';
+import { View, Text, FlatList, ActivityIndicator, StyleSheet, RefreshControl, TouchableOpacity, Linking, Alert } from 'react-native';
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons'; // Import MaterialIcons
 import { MeetingCard, Meeting } from './MeetingCard';
 import { API_BASE_URL } from '../../../apiConfig';
 
@@ -9,11 +10,9 @@ const StudentPTMScreen = () => {
   const [error, setError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // ✅ This function no longer needs the token
   const fetchMeetings = useCallback(async () => {
     try {
       setError(null);
-      // ✅ Removed the Authorization header
       const response = await fetch(`${API_BASE_URL}/api/ptm`);
 
       if (!response.ok) {
@@ -29,7 +28,7 @@ const StudentPTMScreen = () => {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, []); // ✅ Dependency array is now empty
+  }, []);
   
   useEffect(() => {
     fetchMeetings();
@@ -38,6 +37,12 @@ const StudentPTMScreen = () => {
   const onRefresh = () => {
       setIsRefreshing(true);
       fetchMeetings();
+  };
+
+  const handleJoinMeeting = (link: string) => {
+      if(link) {
+          Linking.openURL(link).catch(() => Alert.alert("Error", "Could not open the meeting link."));
+      }
   };
 
   if (isLoading) {
@@ -53,7 +58,8 @@ const StudentPTMScreen = () => {
         <FlatList
             data={meetings}
             keyExtractor={(item) => item.id.toString()}
-            renderItem={({ item }) => <MeetingCard meeting={item} />}
+            // ✅ MODIFIED: Pass isAdmin=false and the join handler to the card
+            renderItem={({ item }) => <MeetingCard meeting={item} isAdmin={false} onJoin={handleJoinMeeting} />}
             ListHeaderComponent={
                 <View style={styles.header}>
                     <Text style={styles.headerIcon}>👥</Text>
@@ -63,39 +69,14 @@ const StudentPTMScreen = () => {
                     </View>
                 </View>
             }
-            ListEmptyComponent={
-                <View style={styles.center}>
-                    <Text style={styles.emptyText}>No meetings have been scheduled.</Text>
-                </View>
-            }
-            refreshControl={
-                <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} colors={["#008080"]}/>
-            }
+            ListEmptyComponent={ <View style={styles.center}><Text style={styles.emptyText}>No meetings have been scheduled.</Text></View> }
+            refreshControl={ <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} colors={["#008080"]}/> }
             contentContainerStyle={{ flexGrow: 1 }}
         />
     </View>
   );
 };
 
-// ... (The styles from the previous answer remain the same)
-const styles = StyleSheet.create({
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
-  errorText: { color: 'red', fontSize: 16, textAlign: 'center' },
-  container: { flex: 1, backgroundColor: '#f0f4f7' },
-  header: { 
-      flexDirection: 'row', 
-      alignItems: 'center', 
-      padding: 20, 
-      borderBottomWidth: 1, 
-      borderBottomColor: '#e2e8f0', 
-      backgroundColor: 'white',
-      marginBottom: 10,
-  },
-  headerIcon: { fontSize: 32, marginRight: 15, color: '#5a67d8' },
-  headerTitle: { fontSize: 22, fontWeight: 'bold', color: '#2d3748' },
-  headerSubtitle: { fontSize: 14, color: '#718096' },
-  emptyText: { textAlign: 'center', fontSize: 16, color: '#718096' },
-});
-
+const styles = StyleSheet.create({ /* Styles remain the same */ center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }, errorText: { color: 'red', fontSize: 16, textAlign: 'center' }, container: { flex: 1, backgroundColor: '#f0f4f7' }, header: { flexDirection: 'row', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: '#e2e8f0', backgroundColor: 'white', marginBottom: 10, }, headerIcon: { fontSize: 32, marginRight: 15, color: '#5a67d8' }, headerTitle: { fontSize: 22, fontWeight: 'bold', color: '#2d3748' }, headerSubtitle: { fontSize: 14, color: '#718096' }, emptyText: { textAlign: 'center', fontSize: 16, color: '#718096' }, });
 
 export default StudentPTMScreen;

@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Linking, Alert } from 'react-native';
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 
 // This interface defines the structure of a single meeting object.
 export interface Meeting {
@@ -10,13 +11,16 @@ export interface Meeting {
   subject_focus: string;
   status: 'Scheduled' | 'Completed';
   notes: string | null;
+  meeting_link?: string | null; // ✅ NEW: Added meeting_link
 }
 
 // These are the props (parameters) that our MeetingCard component accepts.
 interface MeetingCardProps {
   meeting: Meeting;
+  isAdmin: boolean; // ✅ NEW: To differentiate between Teacher/Admin and Student views
   onEdit?: (meeting: Meeting) => void;
   onDelete?: (id: number) => void;
+  onJoin?: (link: string) => void; // ✅ NEW: Handler for the join button
 }
 
 // This helper function takes a date string and makes it look nice and readable.
@@ -34,14 +38,13 @@ const formatMeetingDate = (isoDate: string): string => {
 };
 
 // This is the main MeetingCard component.
-export const MeetingCard = ({ meeting, onEdit, onDelete }: MeetingCardProps) => {
-  const canManage = onEdit && onDelete;
+export const MeetingCard = ({ meeting, isAdmin, onEdit, onDelete, onJoin }: MeetingCardProps) => {
+  
+  const canJoin = !isAdmin && meeting.status === 'Scheduled' && meeting.meeting_link;
 
   return (
     <View style={styles.cardContainer}>
-      {/* ✅ CORRECTED HEADER STRUCTURE */}
       <View style={styles.cardHeader}>
-        {/* Part 1: Icon and Text */}
         <View style={styles.headerLeft}>
             <Text style={styles.icon}>🗓️</Text>
             <View style={styles.headerTextContainer}>
@@ -50,8 +53,8 @@ export const MeetingCard = ({ meeting, onEdit, onDelete }: MeetingCardProps) => 
             </View>
         </View>
 
-        {/* Part 2: Buttons (only if canManage is true) */}
-        {canManage && (
+        {/* ✅ MODIFIED: Show management buttons only for admins */}
+        {isAdmin && (
             <View style={styles.cardActions}>
               <TouchableOpacity onPress={() => onEdit(meeting)} style={[styles.actionBtn, styles.editBtn]}>
                 <Text style={styles.editBtnText}>Edit</Text>
@@ -63,7 +66,6 @@ export const MeetingCard = ({ meeting, onEdit, onDelete }: MeetingCardProps) => 
         )}
       </View>
 
-      {/* The rest of the card remains the same */}
       <View style={styles.cardBody}>
         <View style={styles.detailRow}>
             <Text style={styles.icon}>🧑‍🏫</Text>
@@ -81,6 +83,15 @@ export const MeetingCard = ({ meeting, onEdit, onDelete }: MeetingCardProps) => 
             </View>
         </View>
       </View>
+
+      {/* ✅ NEW: Conditionally render the "Join Meeting" button for students */}
+      {canJoin && (
+          <TouchableOpacity style={styles.joinButton} onPress={() => onJoin(meeting.meeting_link)}>
+              <MaterialIcons name="videocam" size={18} color="white" />
+              <Text style={styles.joinButtonText}>Join Meeting</Text>
+          </TouchableOpacity>
+      )}
+
       <View style={styles.notesContainer}>
         <Text style={styles.notesTitle}>Notes/Summary:</Text>
         <View style={styles.notesBox}>
@@ -91,7 +102,7 @@ export const MeetingCard = ({ meeting, onEdit, onDelete }: MeetingCardProps) => 
   );
 };
 
-// ✅ CORRECTED STYLESHEET
+// ✅ ADDED NEW STYLES for the Join button
 const styles = StyleSheet.create({
     cardContainer: {
         backgroundColor: '#ffffff',
@@ -105,11 +116,10 @@ const styles = StyleSheet.create({
         shadowRadius: 3.84,
         elevation: 5,
     },
-    // --- Style changes are here ---
     cardHeader: {
-        flexDirection: 'row',       // Arrange items horizontally
-        justifyContent: 'space-between', // Push items to opposite ends
-        alignItems: 'center',       // Vertically align items in the middle
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
         paddingBottom: 16,
         marginBottom: 16,
         borderBottomWidth: 1,
@@ -118,14 +128,13 @@ const styles = StyleSheet.create({
     headerLeft: {
         flexDirection: 'row',
         alignItems: 'center',
-        flex: 1, // Allow this side to take up available space
-        paddingRight: 10, // Add some space before the buttons
+        flex: 1,
+        paddingRight: 10,
     },
     cardActions: {
-        flexDirection: 'row', // Arrange buttons horizontally
+        flexDirection: 'row',
         gap: 8,
     },
-    // --- End of style changes ---
     actionBtn: {
         paddingVertical: 6,
         paddingHorizontal: 12,
@@ -151,4 +160,20 @@ const styles = StyleSheet.create({
     notesTitle: { fontSize: 14, color: '#718096', fontWeight: '500', marginBottom: 8 },
     notesBox: { backgroundColor: '#f7f9fc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 8, padding: 12 },
     notesText: { color: '#4a5568', fontSize: 15, lineHeight: 22 },
+    joinButton: {
+      flexDirection: 'row',
+      backgroundColor: '#5a67d8', // A nice purple for video calls
+      paddingVertical: 12,
+      borderRadius: 8,
+      justifyContent: 'center',
+      alignItems: 'center',
+      marginTop: 15, // Space above the notes section
+      marginBottom: 10,
+    },
+    joinButtonText: {
+        color: 'white',
+        fontWeight: 'bold',
+        marginLeft: 8,
+        fontSize: 16
+    }
 });

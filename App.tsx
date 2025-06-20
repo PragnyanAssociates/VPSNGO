@@ -40,7 +40,7 @@ import AdminHelpDeskScreen from './src/screens/helpdesk/AdminHelpDeskScreen';
 import AdminEventsScreen from './src/screens/events/AdminEventsScreen';
 import TeacherAdminPTMScreen from './src/screens/ptm/TeacherAdminPTMScreen';
 import TeacherAdminHomeworkScreen from './src/screens/homework/TeacherAdminHomeworkScreen';
-import TeacherAdminExamScreen from './src/screens/exams/TeacherAdminExamScreen';
+import TeacherAdminExamScreen from './src/screens/exams_Schedule/TeacherAdminExamScreen';
 
 // Teacher-Specific Screens
 import TeacherNotifications from './src/components/TeacherNotifications';
@@ -52,6 +52,7 @@ import TeacherAttendance from './src/components/TeacherAttendance';
 import TeacherResults from './src/components/TeacherResults';
 import TeacherHealthAdminScreen from './src/screens/health/TeacherHealthAdminScreen';
 import TeacherAdminLabsScreen from './src/screens/labs/TeacherAdminLabsScreen';
+import TeacherAdminMaterialsScreen from './src/screens/study-materials/TeacherAdminMaterialsScreen';
 
 // Student-Specific Screens
 import StudentNotifications from './src/components/StudentNotifications';
@@ -62,16 +63,18 @@ import StudentLabs from './src/components/StudentLabs';
 import StudentHomework from './src/components/StudentHomework';
 import StudentResults from './src/components/StudentResults';
 // import StudentSchedule from './src/components/StudentSchedule';
-import StudentSM from './src/components/StudentSM';
+// import StudentSM from './src/components/StudentSM';
 import StudentAttendance from './src/components/StudentAttendance';
 import StudentHistory from './src/components/StudentHistory';
 import StudentTB from './src/components/StudentTB';
 import StudentSyllabus from './src/components/StudentSyllabus';
-import StudentExams from './src/components/StudentExams';
+
+import StudentExamsScreen from './src/screens/exams/StudentExamsScreen';
 import StudentSportsScreen from './src/screens/sports/StudentSportsScreen';
 import StudentEventsScreen from './src/screens/events/StudentEventsScreen';
 import StudentPTMScreen from './src/screens/ptm/StudentPTMScreen';
-import StudentExamScreen from './src/screens/exams/StudentExamScreen';
+import StudentExamScreen from './src/screens/exams_Schedule/StudentExamScreen';
+import StudentMaterialsScreen from './src/screens/study-materials/StudentMaterialsScreen';
 
 // Donor-Specific Screens
 import DonorNotifications from './src/components/DonorNotifications';
@@ -148,12 +151,12 @@ const AuthenticatedStack = () => {
       <Stack.Screen name="StudentHomework" component={StudentHomework} />
       <Stack.Screen name="StudentResults" component={StudentResults} />
       <Stack.Screen name="StudentExamScreen" component={StudentExamScreen} />
-      <Stack.Screen name="StudentSM" component={StudentSM} />
+      <Stack.Screen name="StudentMaterialsScreen" component={StudentMaterialsScreen} />
       <Stack.Screen name="StudentAttendance" component={StudentAttendance} />
       <Stack.Screen name="StudentHistory" component={StudentHistory} />
       <Stack.Screen name="StudentTB" component={StudentTB} />
       <Stack.Screen name="StudentSyllabus" component={StudentSyllabus} />
-      <Stack.Screen name="StudentExams" component={StudentExams} />
+      <Stack.Screen name="StudentExamsScreen" component={StudentExamsScreen} />
       <Stack.Screen name="DonorNotifications" component={DonorNotifications} />
       <Stack.Screen name="DonorSuggestions" component={DonorSuggestions} />
       <Stack.Screen name="DonorReceipts" component={DonorReceipts} />
@@ -165,6 +168,7 @@ const AuthenticatedStack = () => {
       <Stack.Screen name="TeacherAdminLabsScreen" component={TeacherAdminLabsScreen} />
       <Stack.Screen name="TeacherAdminHomeworkScreen" component={TeacherAdminHomeworkScreen} />
       <Stack.Screen name="TeacherAdminExamScreen" component={TeacherAdminExamScreen} />
+      <Stack.Screen name="TeacherAdminMaterialsScreen" component={TeacherAdminMaterialsScreen} />
     </Stack.Navigator>
   );
 };

@@ -1,10 +1,9 @@
-// 📂 File: src/screens/homework/TeacherAdminHomeworkScreen.tsx (DEFINITIVE FINAL VERSION - VERIFIED)
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, FlatList, StyleSheet, ActivityIndicator, TouchableOpacity, Alert, Modal, TextInput, ScrollView, Linking } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { Picker } from '@react-native-picker/picker';
-import FilePicker, { types } from 'react-native-file-picker';
+// ✅ IMPORT THE NEW, WORKING LIBRARY
+import { launchImageLibrary } from 'react-native-image-picker';
 import { useAuth } from '../../context/AuthContext';
 import { API_BASE_URL } from '../../../apiConfig';
 
@@ -92,18 +91,15 @@ const AssignmentList = ({ onSelectAssignment }: { onSelectAssignment: (assignmen
         const formattedDate = date.toISOString().split('T')[0];
         setNewAssignment({ title: assignment.title, description: assignment.description, due_date: formattedDate });
         setAttachment(assignment.attachment_path ? { name: assignment.attachment_path.split('/').pop() } : null);
-        
         const fetchedSubjects = await handleClassChange(assignment.class_group);
-        
         if (fetchedSubjects.includes(assignment.subject)) {
             setSelectedSubject(assignment.subject);
         }
-        
         setIsModalVisible(true);
     };
 
     const handleDelete = (assignment: any) => {
-        Alert.alert("Confirm Delete", `Are you sure you want to delete "${assignment.title}"? This will also delete all student submissions.`, [
+        Alert.alert("Confirm Delete", `Are you sure you want to delete "${assignment.title}"?`, [
             { text: "Cancel", style: 'cancel' },
             { text: "Delete", style: 'destructive', onPress: async () => {
                 try {
@@ -119,14 +115,11 @@ const AssignmentList = ({ onSelectAssignment }: { onSelectAssignment: (assignmen
     const handleSave = async () => {
         const isEditing = !!editingAssignment;
         const url = isEditing ? `${API_BASE_URL}/api/homework/${editingAssignment.id}` : `${API_BASE_URL}/api/homework`;
-        
         if (!user || !selectedClass || !selectedSubject || !newAssignment.title || !newAssignment.due_date) {
             return Alert.alert("Validation Error", "Title, Class, Subject, and Due Date are required.");
         }
-        
         setIsSaving(true);
         const formData = new FormData();
-
         formData.append('title', newAssignment.title);
         formData.append('description', newAssignment.description || '');
         formData.append('due_date', newAssignment.due_date);
@@ -135,23 +128,16 @@ const AssignmentList = ({ onSelectAssignment }: { onSelectAssignment: (assignmen
         if (!isEditing) { formData.append('teacher_id', user.id); }
 
         if (attachment && attachment.uri) {
-            formData.append('attachment', {
-                uri: attachment.uri,
-                type: attachment.type,
-                name: attachment.name,
-            });
+            formData.append('attachment', { uri: attachment.uri, type: attachment.type, name: attachment.name });
         } else if (isEditing && editingAssignment.attachment_path) {
             formData.append('existing_attachment_path', editingAssignment.attachment_path);
         }
         
         try {
-            const response = await fetch(url, {
-                method: 'POST',
-                body: formData,
-            });
+            // ✅ Note: The Homework route uses POST for both create and update. This is correct.
+            const response = await fetch(url, { method: 'POST', body: formData, headers: {'Content-Type': 'multipart/form-data'} });
             const resData = await response.json();
             if (!response.ok) throw new Error(resData.message || "An error occurred.");
-            
             Alert.alert("Success", `Assignment ${isEditing ? 'updated' : 'created'}!`);
             setIsModalVisible(false);
             fetchTeacherAssignments();
@@ -162,18 +148,24 @@ const AssignmentList = ({ onSelectAssignment }: { onSelectAssignment: (assignmen
         }
     };
 
-    const selectAttachment = async () => {
-        try {
-            const res = await FilePicker.pick({ type: [types.allFiles] });
-            if (res && res.length > 0) {
-                setAttachment(res[0]);
+    // ✅ MODIFIED: This function now uses the reliable react-native-image-picker
+    const selectAttachment = () => {
+        launchImageLibrary({
+            mediaType: 'mixed', // Allows picking any file type, not just images/videos
+        }, (response) => {
+            if (response.didCancel) {
+                console.log('User cancelled file selection');
+            } else if (response.errorCode) {
+                Alert.alert("Error", `Could not select file: ${response.errorMessage}`);
+            } else if (response.assets && response.assets.length > 0) {
+                const selectedFile = response.assets[0];
+                setAttachment({
+                    uri: selectedFile.uri,
+                    type: selectedFile.type,
+                    name: selectedFile.fileName,
+                });
             }
-        } catch (err: any) {
-             if (err.code !== 'DOCUMENT_PICKER_CANCELED') {
-                console.log(err);
-                Alert.alert("Error", "Could not select file.");
-            }
-        }
+        });
     };
     
     return (

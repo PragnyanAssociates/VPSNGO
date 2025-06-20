@@ -11,6 +11,8 @@ const path = require('path');
 // ... after const path = require('path');
 const crypto = require('crypto');
 const { sendPasswordResetEmail } = require('./mailer');
+const fs = require('fs'); // Import the file system module at the top of your file
+
 
 const app = express();
 const PORT = 3001;
@@ -766,13 +768,11 @@ app.put('/api/admin/donor-query/status', async (req, res) => {
 });
 
 
-
 // ==========================================================
-// --- PARENT-TEACHER MEETING (PTM) API ROUTES (CORRECTED) ---
+// --- PARENT-TEACHER MEETING (PTM) API ROUTES (MODIFIED) ---
 // ==========================================================
-// This version REMOVES token authentication to match your Health Info module's pattern.
 
-// GET all meetings (Now public, no token needed)
+// GET all meetings
 app.get('/api/ptm', async (req, res) => {
     try {
         const query = `SELECT * FROM ptm_meetings ORDER BY meeting_datetime DESC`;
@@ -784,7 +784,7 @@ app.get('/api/ptm', async (req, res) => {
     }
 });
 
-// GET list of all teachers for the form (Now public, no token needed)
+// GET list of all teachers for the form
 app.get('/api/ptm/teachers', async (req, res) => {
     try {
         const [teachers] = await db.query("SELECT id, full_name FROM users WHERE role = 'teacher' ORDER BY full_name ASC");
@@ -795,9 +795,10 @@ app.get('/api/ptm/teachers', async (req, res) => {
     }
 });
 
-// POST a new meeting
+// POST a new meeting (with meeting_link)
 app.post('/api/ptm', async (req, res) => {
-    const { meeting_datetime, teacher_id, subject_focus, notes } = req.body;
+    // ✅ ADDED meeting_link
+    const { meeting_datetime, teacher_id, subject_focus, notes, meeting_link } = req.body;
     
     if (!meeting_datetime || !teacher_id || !subject_focus) {
         return res.status(400).json({ message: 'Meeting Date, Teacher, and Subject are required.' });
@@ -808,8 +809,9 @@ app.post('/api/ptm', async (req, res) => {
         if (!teacher) {
             return res.status(404).json({ message: 'Selected teacher not found.' });
         }
-        const query = `INSERT INTO ptm_meetings (meeting_datetime, teacher_id, teacher_name, subject_focus, notes) VALUES (?, ?, ?, ?, ?)`;
-        await db.query(query, [meeting_datetime, teacher_id, teacher.full_name, subject_focus, notes || null]);
+        // ✅ ADDED meeting_link to query
+        const query = `INSERT INTO ptm_meetings (meeting_datetime, teacher_id, teacher_name, subject_focus, notes, meeting_link) VALUES (?, ?, ?, ?, ?, ?)`;
+        await db.query(query, [meeting_datetime, teacher_id, teacher.full_name, subject_focus, notes || null, meeting_link || null]);
         res.status(201).json({ message: 'Meeting scheduled successfully!' });
     } catch (error) {
         console.error("POST /api/ptm Error:", error);
@@ -817,18 +819,20 @@ app.post('/api/ptm', async (req, res) => {
     }
 });
 
-// PUT (update) an existing meeting
+// PUT (update) an existing meeting (with meeting_link)
 app.put('/api/ptm/:id', async (req, res) => {
     const { id } = req.params;
-    const { status, notes } = req.body;
+    // ✅ ADDED meeting_link
+    const { status, notes, meeting_link } = req.body;
 
-    if (status === undefined || notes === undefined) {
-         return res.status(400).json({ message: 'Status and Notes must be provided for an update.' });
+    if (status === undefined) {
+         return res.status(400).json({ message: 'Status must be provided for an update.' });
     }
 
     try {
-        const query = 'UPDATE ptm_meetings SET status = ?, notes = ? WHERE id = ?';
-        const [result] = await db.query(query, [status, notes, id]);
+        // ✅ ADDED meeting_link to query
+        const query = 'UPDATE ptm_meetings SET status = ?, notes = ?, meeting_link = ? WHERE id = ?';
+        const [result] = await db.query(query, [status, notes || null, meeting_link || null, id]);
         if (result.affectedRows === 0) {
             return res.status(404).json({ message: 'Meeting not found.' });
         }
@@ -1275,6 +1279,386 @@ app.get('/api/exam-schedules/class/:classGroup', async (req, res) => {
         res.status(500).json({ message: "Failed to fetch exam schedule." });
     }
 });
+
+
+
+// ==========================================================
+// --- ONLINE EXAMS API ROUTES (ALL MIDDLEWARE REMOVED) ---
+// ==========================================================
+
+// --- TEACHER / ADMIN ROUTES ---
+
+// CREATE a new exam
+app.post('/api/exams', async (req, res) => {
+    const { title, description, class_group, time_limit_mins, questions, teacher_id } = req.body;
+    if (!teacher_id) return res.status(400).json({ message: "A valid Teacher ID is required." });
+    if (!title || !class_group || !questions || !Array.isArray(questions) || questions.length === 0) {
+        return res.status(400).json({ message: "Title, class group, and at least one question are required." });
+    }
+    const connection = await db.getConnection();
+    try {
+        await connection.beginTransaction();
+        const total_marks = questions.reduce((sum, q) => sum + (parseInt(q.marks, 10) || 0), 0);
+        await connection.query('INSERT INTO exams (title, description, class_group, time_limit_mins, created_by, total_marks, status) VALUES (?, ?, ?, ?, ?, ?, ?)', [title, description, class_group, time_limit_mins, teacher_id, total_marks, 'published']);
+        const [lastIdResult] = await connection.query('SELECT LAST_INSERT_ID() as exam_id');
+        const exam_id = lastIdResult[0].exam_id;
+        if (questions.length > 0) {
+            const questionQuery = 'INSERT INTO exam_questions (exam_id, question_text, question_type, options, correct_answer, marks) VALUES ?';
+            const questionValues = questions.map(q => [exam_id, q.question_text, q.question_type, q.question_type === 'multiple_choice' ? JSON.stringify(q.options) : null, q.correct_answer, q.marks]);
+            await connection.query(questionQuery, [questionValues]);
+        }
+        await connection.commit();
+        res.status(201).json({ message: 'Exam created successfully!', exam_id });
+    } catch (error) {
+        await connection.rollback();
+        console.error("Error in POST /api/exams:", error);
+        res.status(500).json({ message: 'Failed to create exam.' });
+    } finally {
+        connection.release();
+    }
+});
+
+// READ all exams for a specific teacher
+app.get('/api/exams/teacher/:teacherId', async (req, res) => {
+    try {
+        const { teacherId } = req.params;
+        const query = `SELECT e.*, (SELECT COUNT(*) FROM student_exam_attempts WHERE exam_id = e.exam_id) as submission_count FROM exams e WHERE e.created_by = ? ORDER BY e.created_at DESC`;
+        const [exams] = await db.query(query, [teacherId]);
+        res.json(exams);
+    } catch (error) {
+        console.error("Error in GET /api/exams/teacher/:teacherId:", error);
+        res.status(500).json({ message: 'Error fetching exams from database.' });
+    }
+});
+
+// READ a single exam's full details for editing
+app.get('/api/exams/:examId', async (req, res) => {
+    try {
+        const { examId } = req.params;
+        const [[exam]] = await db.query('SELECT * FROM exams WHERE exam_id = ?', [examId]);
+        if (!exam) return res.status(404).json({ message: 'Exam not found.' });
+        const [questions] = await db.query('SELECT * FROM exam_questions WHERE exam_id = ?', [examId]);
+        res.json({ ...exam, questions });
+    } catch (error) {
+        console.error("Error in GET /api/exams/:examId:", error);
+        res.status(500).json({ message: 'Error fetching exam details.' });
+    }
+});
+
+// UPDATE an existing exam
+app.put('/api/exams/:examId', async (req, res) => {
+    const { examId } = req.params;
+    const { title, description, class_group, time_limit_mins, questions } = req.body;
+    const connection = await db.getConnection();
+    try {
+        await connection.beginTransaction();
+        const total_marks = questions.reduce((sum, q) => sum + (parseInt(q.marks, 10) || 0), 0);
+        await connection.query('UPDATE exams SET title = ?, description = ?, class_group = ?, time_limit_mins = ?, total_marks = ? WHERE exam_id = ?', [title, description, class_group, time_limit_mins, total_marks, examId]);
+        await connection.query('DELETE FROM exam_questions WHERE exam_id = ?', [examId]);
+        if (questions.length > 0) {
+            const questionQuery = 'INSERT INTO exam_questions (exam_id, question_text, question_type, options, correct_answer, marks) VALUES ?';
+            const questionValues = questions.map(q => [examId, q.question_text, q.question_type, q.question_type === 'multiple_choice' ? JSON.stringify(q.options) : null, q.correct_answer, q.marks]);
+            await connection.query(questionQuery, [questionValues]);
+        }
+        await connection.commit();
+        res.status(200).json({ message: 'Exam updated successfully!' });
+    } catch (error) {
+        await connection.rollback();
+        console.error("Error in PUT /api/exams/:examId:", error);
+        res.status(500).json({ message: 'Failed to update exam.' });
+    } finally {
+        connection.release();
+    }
+});
+
+// DELETE an exam
+app.delete('/api/exams/:examId', async (req, res) => {
+    try {
+        const { examId } = req.params;
+        const [result] = await db.query('DELETE FROM exams WHERE exam_id = ?', [examId]);
+        if (result.affectedRows === 0) return res.status(404).json({ message: 'Exam not found.' });
+        res.status(200).json({ message: 'Exam and all related data deleted successfully.' });
+    } catch (error) {
+        console.error("Error in DELETE /api/exams/:examId:", error);
+        res.status(500).json({ message: 'Error deleting exam.' });
+    }
+});
+
+// --- SUBMISSION & GRADING ROUTES ---
+
+// Get all submissions for a specific exam
+app.get('/api/exams/:examId/submissions', async (req, res) => {
+    try {
+        const { examId } = req.params;
+        const query = `SELECT sea.*, u.full_name as student_name FROM student_exam_attempts sea JOIN users u ON sea.student_id = u.id WHERE sea.exam_id = ? AND sea.status IN ('submitted', 'graded') ORDER BY u.full_name ASC`;
+        const [submissions] = await db.query(query, [examId]);
+        res.json(submissions);
+    } catch (error) {
+        console.error("Error in GET /api/exams/:examId/submissions:", error);
+        res.status(500).json({ message: 'Error fetching submissions.' });
+    }
+});
+
+// Get a single student's full submission for grading
+app.get('/api/submissions/:attemptId', async (req, res) => {
+    try {
+        const { attemptId } = req.params;
+        const query = `SELECT eq.question_id, eq.question_text, eq.question_type, eq.options, eq.correct_answer, eq.marks, sa.answer_text, sa.marks_awarded FROM exam_questions eq LEFT JOIN student_answers sa ON eq.question_id = sa.question_id AND sa.attempt_id = ? WHERE eq.exam_id = (SELECT exam_id FROM student_exam_attempts WHERE attempt_id = ?) ORDER BY eq.question_id ASC`;
+        const [details] = await db.query(query, [attemptId, attemptId]);
+        res.json(details);
+    } catch (error) {
+        console.error("Error in GET /api/submissions/:attemptId:", error);
+        res.status(500).json({ message: 'Error fetching submission details.' });
+    }
+});
+
+// Grade a student's submission
+app.post('/api/submissions/:attemptId/grade', async (req, res) => {
+    const { attemptId } = req.params;
+    const { gradedAnswers, teacher_feedback, teacher_id } = req.body; // Added teacher_id for auth
+    const connection = await db.getConnection();
+    try {
+        await connection.beginTransaction();
+        const [[attempt]] = await connection.query('SELECT exam_id, student_id FROM student_exam_attempts WHERE attempt_id = ?', [attemptId]);
+        // Simple auth check: does the exam belong to the teacher grading it?
+        const [[exam]] = await connection.query('SELECT created_by FROM exams WHERE exam_id = ?', [attempt.exam_id]);
+        if (exam.created_by !== parseInt(teacher_id, 10)) {
+            await connection.rollback();
+            return res.status(403).json({ message: 'You are not authorized to grade this exam.' });
+        }
+        
+        const [questions] = await connection.query('SELECT question_id, marks FROM exam_questions WHERE exam_id = ?', [attempt.exam_id]);
+        const marksMap = new Map(questions.map(q => [q.question_id, q.marks]));
+        let final_score = 0;
+        const updatePromises = gradedAnswers.map(ans => {
+            const maxMarks = marksMap.get(parseInt(ans.question_id, 10)) || 0;
+            let awardedMarks = parseInt(ans.marks_awarded, 10) || 0;
+            if (awardedMarks > maxMarks) { awardedMarks = maxMarks; }
+            final_score += awardedMarks;
+            return connection.query('UPDATE student_answers SET marks_awarded = ? WHERE attempt_id = ? AND question_id = ?', [awardedMarks, attemptId, ans.question_id]);
+        });
+        await Promise.all(updatePromises);
+        await connection.query('UPDATE student_exam_attempts SET status = "graded", final_score = ?, teacher_feedback = ? WHERE attempt_id = ?', [final_score, teacher_feedback || null, attemptId]);
+        await connection.commit();
+        res.status(200).json({ message: "Exam graded successfully." });
+    } catch (error) {
+        await connection.rollback();
+        console.error("Error in POST /api/submissions/:attemptId/grade:", error);
+        res.status(500).json({ message: 'Failed to grade exam.' });
+    } finally {
+        connection.release();
+    }
+});
+
+
+// --- STUDENT ROUTES ---
+// We will also remove middleware from student routes for consistency,
+// but they will require a student_id to be passed.
+
+app.get('/api/exams/student/:studentId/:classGroup', async (req, res) => {
+    try {
+        const { studentId, classGroup } = req.params;
+        const query = `SELECT e.exam_id, e.title, e.total_marks, e.time_limit_mins, (SELECT COUNT(*) FROM exam_questions WHERE exam_id = e.exam_id) as question_count, sea.status, sea.attempt_id FROM exams e LEFT JOIN student_exam_attempts sea ON e.exam_id = sea.exam_id AND sea.student_id = ? WHERE e.class_group = ? AND e.status = 'published' ORDER BY e.created_at DESC`;
+        const [exams] = await db.query(query, [studentId, classGroup]);
+        res.json(exams);
+    } catch (error) {
+        console.error("Error in GET /api/exams/student:", error);
+        res.status(500).json({ message: 'Error fetching available exams.' });
+    }
+});
+
+app.post('/api/exams/:examId/start', async (req, res) => {
+    try {
+        const { examId } = req.params;
+        const { student_id } = req.body;
+        if (!student_id) return res.status(400).json({ message: "Student ID is required." });
+
+        const query = `INSERT INTO student_exam_attempts (exam_id, student_id, status, start_time) VALUES (?, ?, 'in_progress', NOW()) ON DUPLICATE KEY UPDATE attempt_id=LAST_INSERT_ID(attempt_id), status='in_progress'`;
+        const [result] = await db.query(query, [examId, student_id]);
+        res.status(201).json({ attempt_id: result.insertId });
+    } catch (error) {
+        console.error("Error in POST /api/exams/:examId/start:", error);
+        res.status(500).json({ message: 'Error starting exam.' });
+    }
+});
+
+app.get('/api/exams/take/:examId', async (req, res) => {
+    try {
+        const { examId } = req.params;
+        const query = `SELECT question_id, question_text, question_type, options, marks FROM exam_questions WHERE exam_id = ? ORDER BY question_id ASC`;
+        const [questions] = await db.query(query, [examId]);
+        res.json(questions);
+    } catch (error) {
+        console.error("Error in GET /api/exams/take/:examId:", error);
+        res.status(500).json({ message: 'Error fetching exam questions.' });
+    }
+});
+
+app.post('/api/attempts/:attemptId/submit', async (req, res) => {
+    const { attemptId } = req.params;
+    const { answers, student_id } = req.body;
+    if (!student_id) return res.status(400).json({ message: "Student ID is required." });
+    
+    const connection = await db.getConnection();
+    try {
+        await connection.beginTransaction();
+        const [[attempt]] = await connection.query('SELECT status, student_id FROM student_exam_attempts WHERE attempt_id = ?', [attemptId]);
+        
+        if (attempt.student_id !== parseInt(student_id, 10)) {
+            await connection.rollback();
+            return res.status(403).json({ message: 'Unauthorized submission.' });
+        }
+        if (!attempt || attempt.status !== 'in_progress') {
+            await connection.rollback();
+            return res.status(409).json({ message: 'This exam has already been submitted.' });
+        }
+        
+        const answerQuery = 'INSERT INTO student_answers (attempt_id, question_id, answer_text) VALUES ?';
+        const answerValues = Object.entries(answers).map(([qid, atext]) => [attemptId, qid, atext]);
+        if (answerValues.length > 0) { await connection.query(answerQuery, [answerValues]); }
+        await connection.query('UPDATE student_exam_attempts SET status = "submitted", end_time = NOW() WHERE attempt_id = ?', [attemptId]);
+        await connection.commit();
+        res.status(200).json({ message: "Exam submitted successfully." });
+    } catch (error) {
+        await connection.rollback();
+        console.error("Error in POST /api/attempts/:attemptId/submit:", error);
+        res.status(500).json({ message: 'Failed to submit exam.' });
+    } finally {
+        connection.release();
+    }
+});
+
+app.get('/api/attempts/:attemptId/result', async (req, res) => {
+    try {
+        const { attemptId } = req.params;
+        const { student_id } = req.query;
+        if (!student_id) return res.status(400).json({ message: "Student ID is required." });
+
+        const [[attemptDetails]] = await db.query('SELECT * FROM student_exam_attempts WHERE attempt_id = ? AND student_id = ?', [attemptId, student_id]);
+        if (!attemptDetails) { return res.status(404).json({ message: "Result not found or access denied." }); }
+        
+        const [[examDetails]] = await db.query('SELECT title, total_marks FROM exams WHERE exam_id = ?', [attemptDetails.exam_id]);
+        const [qnaDetails] = await db.query(`SELECT eq.question_id, eq.question_text, eq.question_type, eq.options, eq.correct_answer, eq.marks, sa.answer_text, sa.marks_awarded FROM exam_questions eq LEFT JOIN student_answers sa ON eq.question_id = sa.question_id AND sa.attempt_id = ? WHERE eq.exam_id = ? ORDER BY eq.question_id ASC`, [attemptId, attemptDetails.exam_id]);
+        res.json({ attempt: attemptDetails, exam: examDetails, details: qnaDetails });
+    } catch (error) {
+        console.error("Error in GET /api/attempts/:attemptId/result:", error);
+        res.status(500).json({ message: 'Error fetching result.' });
+    }
+});
+
+
+// ==========================================================
+// --- STUDY MATERIALS API ROUTES ---
+// ==========================================================
+
+// --- TEACHER / ADMIN ROUTES ---
+
+// CREATE: Upload a new study material
+app.post('/api/study-materials', upload.single('materialFile'), async (req, res) => {
+    const { title, description, class_group, subject, material_type, external_link, uploaded_by } = req.body;
+    const file_path = req.file ? `/uploads/${req.file.filename}` : null;
+
+    if (!title || !class_group || !material_type || !uploaded_by) {
+        return res.status(400).json({ message: "Title, class group, type, and uploader ID are required." });
+    }
+    // A material must have either a file or an external link
+    if (!file_path && !external_link) {
+        return res.status(400).json({ message: "You must provide either a file or an external link." });
+    }
+
+    try {
+        const query = `INSERT INTO study_materials (title, description, class_group, subject, material_type, file_path, external_link, uploaded_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
+        await db.query(query, [title, description, class_group, subject, material_type, file_path, external_link || null, uploaded_by]);
+        res.status(201).json({ message: 'Study material uploaded successfully.' });
+    } catch (error) {
+        console.error("Error creating study material:", error);
+        res.status(500).json({ message: 'Failed to upload study material.' });
+    }
+});
+
+// READ: Get all materials uploaded by a specific teacher
+app.get('/api/study-materials/teacher/:teacherId', async (req, res) => {
+    try {
+        const { teacherId } = req.params;
+        const query = `SELECT * FROM study_materials WHERE uploaded_by = ? ORDER BY created_at DESC`;
+        const [materials] = await db.query(query, [teacherId]);
+        res.json(materials);
+    } catch (error) {
+        console.error("Error fetching teacher's study materials:", error);
+        res.status(500).json({ message: "Failed to fetch study materials." });
+    }
+});
+
+// UPDATE: Edit an existing study material
+app.put('/api/study-materials/:materialId', upload.single('materialFile'), async (req, res) => {
+    const { materialId } = req.params;
+    const { title, description, class_group, subject, material_type, external_link, existing_file_path } = req.body;
+    
+    try {
+        let file_path = existing_file_path || null;
+        if (req.file) {
+            file_path = `/uploads/${req.file.filename}`;
+            // Optional: Delete the old file if a new one is uploaded
+            if (existing_file_path) {
+                fs.unlink(path.join(__dirname, existing_file_path), (err) => {
+                    if (err) console.error("Error deleting old material file:", err);
+                });
+            }
+        }
+
+        const query = `UPDATE study_materials SET title = ?, description = ?, class_group = ?, subject = ?, material_type = ?, file_path = ?, external_link = ? WHERE material_id = ?`;
+        await db.query(query, [title, description, class_group, subject, material_type, file_path, external_link || null, materialId]);
+        res.status(200).json({ message: 'Study material updated successfully.' });
+    } catch (error) {
+        console.error("Error updating study material:", error);
+        res.status(500).json({ message: 'Failed to update study material.' });
+    }
+});
+
+// DELETE: Remove a study material
+app.delete('/api/study-materials/:materialId', async (req, res) => {
+    const { materialId } = req.params;
+    try {
+        // First, get the file path to delete the physical file
+        const [[material]] = await db.query('SELECT file_path FROM study_materials WHERE material_id = ?', [materialId]);
+        
+        // Delete the database record
+        const [result] = await db.query('DELETE FROM study_materials WHERE material_id = ?', [materialId]);
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: 'Material not found.' });
+        }
+
+        // If a file was associated, delete it from the server
+        if (material && material.file_path) {
+            fs.unlink(path.join(__dirname, material.file_path), (err) => {
+                if (err) console.error("Could not delete file from server:", err);
+            });
+        }
+
+        res.status(200).json({ message: 'Study material deleted successfully.' });
+    } catch (error) {
+        console.error("Error deleting study material:", error);
+        res.status(500).json({ message: 'Failed to delete study material.' });
+    }
+});
+
+
+// --- STUDENT ROUTE ---
+
+// READ: Get all materials for a student's class
+app.get('/api/study-materials/student/:classGroup', async (req, res) => {
+    try {
+        const { classGroup } = req.params;
+        const query = `SELECT * FROM study_materials WHERE class_group = ? ORDER BY created_at DESC`;
+        const [materials] = await db.query(query, [classGroup]);
+        res.json(materials);
+    } catch (error) {
+        console.error("Error fetching student's study materials:", error);
+        res.status(500).json({ message: "Failed to fetch study materials." });
+    }
+});
+
 
 
 // Start the server

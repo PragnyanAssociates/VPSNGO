@@ -14,12 +14,13 @@ import StudentNotifications, { initialNotificationsData } from './StudentNotific
 import AcademicCalendar from './AcademicCalendar';
 import StudentResults from './StudentResults';
 // import StudentSchedule from './StudentSchedule';
-import StudentSM from './StudentSM';
+// import StudentSM from './StudentSM';
 import StudentHistory from './StudentHistory';
 import StudentSyllabus from './StudentSyllabus';
-import StudentExams from './StudentExams';
+
+import StudentExamsScreen from '../screens/exams/StudentExamsScreen';
 import ProfileScreen from '../screens/ProfileScreen';
-import StudentExamScreen from '../screens/exams/StudentExamScreen';
+import StudentExamScreen from '../screens/exams_Schedule/StudentExamScreen';
 
 // 👈 STEP 1: IMPORT THE NEW DYNAMIC SCREENS
 import TimetableScreen from '../screens/TimetableScreen'; 
@@ -31,6 +32,7 @@ import UserHelpDeskScreen from '../screens/helpdesk/UserHelpDeskScreen';
 import StudentPTMScreen from '../screens/ptm/StudentPTMScreen';
 import StudentLabsScreen from '../screens/labs/StudentLabsScreen';
 import StudentHomeworkScreen from '../screens/homework/StudentHomeworkScreen';
+import StudentMaterialsScreen from '../screens/study-materials/StudentMaterialsScreen';
 
 // We no longer need the old static imports
 // import StudentAttendance from './StudentAttendance';
@@ -90,8 +92,8 @@ const StudentDashboard = () => {
     { id: 'qa2', title: 'Timetable', imageSource: 'https://cdn-icons-png.flaticon.com/128/1254/1254275.png', navigateToTab: 'Timetable' }, // Changed from 'StudentTB'
     { id: 'qa3', title: 'Attendance', imageSource: 'https://cdn-icons-png.flaticon.com/128/10293/10293877.png', navigateToTab: 'Attendance' }, // Changed from 'StudentAttendance'
     { id: 'qa4', title: 'Syllabus', imageSource: 'https://cdn-icons-png.flaticon.com/128/1584/1584937.png', navigateToTab: 'StudentSyllabus' },
-    { id: 'qa15', title: 'Study materials', imageSource: 'https://cdn-icons-png.flaticon.com/128/3273/3273259.png', navigateToTab: 'StudentSM' },
-    { id: 'qa5', title: 'Exams', imageSource: 'https://cdn-icons-png.flaticon.com/128/207/207190.png',  navigateToTab: 'StudentExams' },
+    { id: 'qa15', title: 'Study materials', imageSource: 'https://cdn-icons-png.flaticon.com/128/3273/3273259.png', navigateToTab: 'StudentMaterialsScreen' },
+    { id: 'qa5', title: 'Exams', imageSource: 'https://cdn-icons-png.flaticon.com/128/207/207190.png',  navigateToTab: 'StudentExamsScreen' },
     { id: 'qa14', title: 'Home Work', imageSource: 'https://cdn-icons-png.flaticon.com/128/11647/11647336.png', navigateToTab: 'StudentHomeworkScreen' },
     { id: 'qa6', title: 'Results', imageSource: 'https://cdn-icons-png.flaticon.com/128/9913/9913576.png', navigateToTab: 'StudentResults' },
     { id: 'qa7', title: 'Exam Schedule', imageSource: 'https://cdn-icons-png.flaticon.com/128/4029/4029113.png', navigateToTab: 'StudentExamScreen' },
@@ -128,9 +130,9 @@ const StudentDashboard = () => {
       case 'StudentHomeworkScreen': return ( <><ContentScreenHeader title="Home Work" /><StudentHomeworkScreen /></> );
       case 'StudentResults': return ( <><ContentScreenHeader title="Results" /><StudentResults /></> );
       case 'StudentExamScreen': return ( <><ContentScreenHeader title="Exam Schedules" /><StudentExamScreen /></> );
-      case 'StudentSM': return ( <><ContentScreenHeader title="Study Materials" /><StudentSM /></> );
+      case 'StudentMaterialsScreen': return ( <><ContentScreenHeader title="Study Materials" /><StudentMaterialsScreen /></> );
       case 'StudentHistory': return ( <><ContentScreenHeader title="Student History" /><StudentHistory /></> );
-      case 'StudentExams': return ( <><ContentScreenHeader title="Exams" /><StudentExams /></> );
+      case 'StudentExamsScreen': return ( <><ContentScreenHeader title="Exams" /><StudentExamsScreen /></> );
       case 'StudentSyllabus': return ( <><ContentScreenHeader title="Syllabus" /><StudentSyllabus /></> );
 
       // 👈 STEP 3: REPLACE THE OLD STATIC COMPONENTS WITH THE NEW DYNAMIC ONES

@@ -1,9 +1,8 @@
-// 📂 File: src/screens/homework/StudentHomeworkScreen.tsx (FINAL - With Corrected Layout & Submission Fix)
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, FlatList, StyleSheet, ActivityIndicator, TouchableOpacity, Alert, Linking } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-import FilePicker, { types } from 'react-native-file-picker';
+// ✅ IMPORT THE NEW, WORKING LIBRARY
+import { launchImageLibrary } from 'react-native-image-picker';
 import { useAuth } from '../../context/AuthContext';
 import { API_BASE_URL } from '../../../apiConfig';
 
@@ -24,7 +23,7 @@ const StudentHomeworkScreen = () => {
             data.sort((a, b) => {
                 if (a.status === 'Pending' && b.status !== 'Pending') return -1;
                 if (a.status !== 'Pending' && b.status === 'Pending') return 1;
-                return new Date(a.due_date).getTime() - new Date(b.due_date).getTime();
+                return new Date(b.due_date).getTime() - new Date(a.due_date).getTime();
             });
             setAssignments(data);
         } catch (e: any) { Alert.alert("Error", e.message); } 
@@ -33,47 +32,53 @@ const StudentHomeworkScreen = () => {
 
     useEffect(() => { fetchAssignments(); }, [fetchAssignments]);
 
+    // ✅ MODIFIED: This function now uses the reliable react-native-image-picker
     const handleSubmission = async (assignmentId: number) => {
         if (!user) return;
-        try {
-            const res = await FilePicker.pick({ type: [types.allFiles] });
-            if (!res || res.length === 0) {
-                // User cancelled the picker
+
+        launchImageLibrary({
+            mediaType: 'mixed', // Allows any file type
+        }, async (response) => {
+            if (response.didCancel) {
+                console.log('User cancelled submission.');
                 return;
             }
-            const fileToUpload = res[0]; 
-
-            setIsSubmitting(assignmentId);
-            const formData = new FormData();
-
-            // The backend route will get the assignmentId from the URL params
-            formData.append('student_id', user.id.toString());
-            formData.append('submission', {
-                uri: fileToUpload.uri,
-                type: fileToUpload.type,
-                name: fileToUpload.name,
-            });
-            
-            // ✅ **CORRECTION:** Do NOT manually set the 'Content-Type' header when using FormData.
-            // The library needs to set it automatically with the correct boundary.
-            const response = await fetch(`${API_BASE_URL}/api/homework/submit/${assignmentId}`, {
-                method: 'POST',
-                body: formData,
-            });
-
-            const resData = await response.json();
-            if (!response.ok) throw new Error(resData.message || 'An unknown error occurred.');
-            
-            Alert.alert("Success", "Homework submitted!");
-            fetchAssignments();
-        } catch (err: any) {
-            if (err.code !== 'DOCUMENT_PICKER_CANCELED') {
-                console.error("Submission Error:", err);
-                Alert.alert("Error", err.message || "Could not submit file.");
+            if (response.errorCode) {
+                Alert.alert('Error', `Could not select file: ${response.errorMessage}`);
+                return;
             }
-        } finally {
-            setIsSubmitting(null);
-        }
+            if (response.assets && response.assets.length > 0) {
+                const fileToUpload = response.assets[0];
+
+                setIsSubmitting(assignmentId);
+                const formData = new FormData();
+                formData.append('student_id', user.id.toString());
+                formData.append('submission', {
+                    uri: fileToUpload.uri,
+                    type: fileToUpload.type,
+                    name: fileToUpload.fileName,
+                });
+
+                try {
+                    const fetchResponse = await fetch(`${API_BASE_URL}/api/homework/submit/${assignmentId}`, {
+                        method: 'POST',
+                        body: formData,
+                        headers: { 'Content-Type': 'multipart/form-data' },
+                    });
+
+                    const resData = await fetchResponse.json();
+                    if (!fetchResponse.ok) throw new Error(resData.message || 'An unknown error occurred.');
+                    
+                    Alert.alert("Success", "Homework submitted!");
+                    fetchAssignments(); // Refresh the list
+                } catch (err: any) {
+                    console.error("Submission Error:", err);
+                    Alert.alert("Error", err.message || "Could not submit file.");
+                } finally {
+                    setIsSubmitting(null);
+                }
+            }
+        });
     };
     
     if (isLoading && assignments.length === 0) {
@@ -112,15 +117,11 @@ const Header = () => (
 
 const AssignmentCard = ({ item, onSubmit, isSubmitting }: { item: any, onSubmit: (id: number) => void, isSubmitting: boolean }) => {
     const getStatusInfo = () => {
-        // Correctly derive status from the joined submission data
         const statusText = item.submission_id ? (item.status || 'Submitted') : 'Pending';
         switch (statusText) {
-            case 'Graded':
-                return { text: 'Graded', color: '#42a5f5', icon: 'check-circle' };
-            case 'Submitted':
-                return { text: 'Submitted', color: '#66bb6a', icon: 'check' };
-            default:
-                return { text: 'Pending', color: '#ffa726', icon: 'pending' };
+            case 'Graded': return { text: 'Graded', color: '#42a5f5', icon: 'check-circle' };
+            case 'Submitted': return { text: 'Submitted', color: '#66bb6a', icon: 'check' };
+            default: return { text: 'Pending', color: '#ffa726', icon: 'pending' };
         }
     };
 
@@ -180,69 +181,23 @@ const DetailRow = ({ icon, label, value }) => (
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#f4f6f8' },
     centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-    header: { 
-        flexDirection: 'row',
-        alignItems: 'center',
-        padding: 20, 
-        backgroundColor: '#fff', 
-        borderBottomWidth: 1, 
-        borderBottomColor: '#eee',
-        marginBottom: 10,
-    },
-    iconCircle: { 
-        width: 50, 
-        height: 50, 
-        borderRadius: 25, 
-        backgroundColor: '#FF7043', 
-        justifyContent: 'center', 
-        alignItems: 'center',
-        marginRight: 15,
-    },
-    headerTextContainer: {
-        flex: 1,
-    },
+    header: { flexDirection: 'row', alignItems: 'center', padding: 20, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#eee', marginBottom: 10 },
+    iconCircle: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#FF7043', justifyContent: 'center', alignItems: 'center', marginRight: 15 },
+    headerTextContainer: { flex: 1 },
     headerTitle: { fontSize: 20, fontWeight: 'bold', color: '#263238' },
     headerSubtitle: { fontSize: 14, color: '#546e7a' },
-    card: { 
-        backgroundColor: '#fff', 
-        borderRadius: 8, 
-        marginHorizontal: 15, 
-        marginVertical: 8, 
-        padding: 15, 
-        elevation: 2,
-        shadowColor: '#000',
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-        shadowOffset: { width: 0, height: 2 },
-        borderLeftWidth: 5 
-    },
+    card: { backgroundColor: '#fff', borderRadius: 8, marginHorizontal: 15, marginVertical: 8, padding: 15, elevation: 2, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, borderLeftWidth: 5 },
     cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 },
     cardTitle: { fontSize: 18, fontWeight: 'bold', color: '#37474f', flex: 1, marginRight: 10 },
     statusBadge: { flexDirection: 'row', alignItems: 'center', paddingVertical: 4, paddingHorizontal: 8, borderRadius: 12 },
     statusText: { color: '#fff', fontSize: 12, fontWeight: 'bold', marginLeft: 4 },
     description: { fontSize: 14, color: '#546e7a', marginBottom: 15, lineHeight: 20 },
-    detailsGrid: {
-        borderTopWidth: 1,
-        borderTopColor: '#f0f0f0',
-        paddingTop: 10,
-    },
+    detailsGrid: { borderTopWidth: 1, borderTopColor: '#f0f0f0', paddingTop: 10 },
     detailRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
     detailLabel: { marginLeft: 10, fontSize: 14, color: '#546e7a', fontWeight: '500' },
     detailValue: { fontSize: 14, color: '#263238', flexShrink: 1 },
-    gradedSection: {
-        marginTop: 10,
-        paddingTop: 10,
-        borderTopWidth: 1,
-        borderTopColor: '#f0f0f0',
-    },
-    remarksText: {
-        marginTop: 5,
-        fontStyle: 'italic',
-        color: '#37474f',
-        backgroundColor: '#f9f9f9',
-        padding: 8,
-        borderRadius: 4
-    },
+    gradedSection: { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#f0f0f0' },
+    remarksText: { marginTop: 5, fontStyle: 'italic', color: '#37474f', backgroundColor: '#f9f9f9', padding: 8, borderRadius: 4 },
     buttonRow: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', marginTop: 15, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#f0f0f0' },
     detailsButton: { flexDirection: 'row', alignItems: 'center', padding: 8, marginRight: 'auto' },
     detailsButtonText: { color: '#42a5f5', marginLeft: 5, fontWeight: 'bold' },
