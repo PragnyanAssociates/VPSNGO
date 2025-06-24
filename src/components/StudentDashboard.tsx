@@ -12,11 +12,8 @@ import { API_BASE_URL } from '../../apiConfig';
 // --- COMPONENT IMPORTS (As per your original file structure) ---
 import StudentNotifications, { initialNotificationsData } from './StudentNotifications';
 import AcademicCalendar from './AcademicCalendar';
-import StudentResults from './StudentResults';
-// import StudentSchedule from './StudentSchedule';
-// import StudentSM from './StudentSM';
-import StudentHistory from './StudentHistory';
-import StudentSyllabus from './StudentSyllabus';
+import StudentResultsScreen from '../screens/results/StudentResultsScreen';
+
 
 import StudentExamsScreen from '../screens/exams/StudentExamsScreen';
 import ProfileScreen from '../screens/ProfileScreen';
@@ -33,6 +30,7 @@ import StudentPTMScreen from '../screens/ptm/StudentPTMScreen';
 import StudentLabsScreen from '../screens/labs/StudentLabsScreen';
 import StudentHomeworkScreen from '../screens/homework/StudentHomeworkScreen';
 import StudentMaterialsScreen from '../screens/study-materials/StudentMaterialsScreen';
+import StudentSyllabusScreen from '../screens/syllabus/StudentSyllabusScreen';
 
 // We no longer need the old static imports
 // import StudentAttendance from './StudentAttendance';
@@ -57,7 +55,7 @@ const TEXT_COLOR_DARK = '#333';
 const TEXT_COLOR_MEDIUM = '#555';
 const BORDER_COLOR = '#b2ebf2';
 
-const StudentDashboard = () => {
+const StudentDashboard = ({ navigation }) => {
   const [activeTab, setActiveTab] = useState('home');
   const { user, logout } = useAuth();
   const [profile, setProfile] = useState<ProfileData | null>(null);
@@ -88,14 +86,13 @@ const StudentDashboard = () => {
 
   // 👈 STEP 2: UPDATE THE NAVIGATION LINKS
   const allQuickAccessItems = [
-    { id: 'qa1', title: 'Student History', imageSource: 'https://cdn-icons-png.flaticon.com/128/4207/4207253.png', navigateToTab: 'StudentHistory' },
     { id: 'qa2', title: 'Timetable', imageSource: 'https://cdn-icons-png.flaticon.com/128/1254/1254275.png', navigateToTab: 'Timetable' }, // Changed from 'StudentTB'
     { id: 'qa3', title: 'Attendance', imageSource: 'https://cdn-icons-png.flaticon.com/128/10293/10293877.png', navigateToTab: 'Attendance' }, // Changed from 'StudentAttendance'
-    { id: 'qa4', title: 'Syllabus', imageSource: 'https://cdn-icons-png.flaticon.com/128/1584/1584937.png', navigateToTab: 'StudentSyllabus' },
+    { id: 'qa4', title: 'Syllabus', imageSource: 'https://cdn-icons-png.flaticon.com/128/1584/1584937.png', navigateToTab: 'StudentSyllabusScreen' },
     { id: 'qa15', title: 'Study materials', imageSource: 'https://cdn-icons-png.flaticon.com/128/3273/3273259.png', navigateToTab: 'StudentMaterialsScreen' },
     { id: 'qa5', title: 'Exams', imageSource: 'https://cdn-icons-png.flaticon.com/128/207/207190.png',  navigateToTab: 'StudentExamsScreen' },
     { id: 'qa14', title: 'Home Work', imageSource: 'https://cdn-icons-png.flaticon.com/128/11647/11647336.png', navigateToTab: 'StudentHomeworkScreen' },
-    { id: 'qa6', title: 'Results', imageSource: 'https://cdn-icons-png.flaticon.com/128/9913/9913576.png', navigateToTab: 'StudentResults' },
+    { id: 'qa6', title: 'Reports', imageSource: 'https://cdn-icons-png.flaticon.com/128/9913/9913576.png', navigateToTab: 'StudentResultsScreen' },
     { id: 'qa7', title: 'Exam Schedule', imageSource: 'https://cdn-icons-png.flaticon.com/128/4029/4029113.png', navigateToTab: 'StudentExamScreen' },
     { id: 'qa8', title: 'Digital Labs', imageSource: 'https://cdn-icons-png.flaticon.com/128/9562/9562280.png', navigateToTab: 'StudentLabsScreen' },
     { id: 'qa9', title: 'Sports', imageSource: 'https://cdn-icons-png.flaticon.com/128/3429/3429456.png', navigateToTab: 'StudentSportsScreen' },
@@ -128,12 +125,12 @@ const StudentDashboard = () => {
       case 'StudentPTMScreen': return ( <><ContentScreenHeader title="Parents-Teachers Meetings" /><StudentPTMScreen /></> );
       case 'StudentLabsScreen': return ( <><ContentScreenHeader title="Digital Labs" /><StudentLabsScreen /></> );
       case 'StudentHomeworkScreen': return ( <><ContentScreenHeader title="Home Work" /><StudentHomeworkScreen /></> );
-      case 'StudentResults': return ( <><ContentScreenHeader title="Results" /><StudentResults /></> );
       case 'StudentExamScreen': return ( <><ContentScreenHeader title="Exam Schedules" /><StudentExamScreen /></> );
       case 'StudentMaterialsScreen': return ( <><ContentScreenHeader title="Study Materials" /><StudentMaterialsScreen /></> );
-      case 'StudentHistory': return ( <><ContentScreenHeader title="Student History" /><StudentHistory /></> );
       case 'StudentExamsScreen': return ( <><ContentScreenHeader title="Exams" /><StudentExamsScreen /></> );
-      case 'StudentSyllabus': return ( <><ContentScreenHeader title="Syllabus" /><StudentSyllabus /></> );
+      case 'StudentSyllabusScreen': return ( <><ContentScreenHeader title="Syllabus" /><StudentSyllabusScreen /></> );
+      // ✅ CRITICAL FIX: Pass the navigation prop down to any screen that needs to navigate further.
+      case 'StudentResultsScreen': return ( <><ContentScreenHeader title="My Reports" /><StudentResultsScreen navigation={navigation} /></> );
 
       // 👈 STEP 3: REPLACE THE OLD STATIC COMPONENTS WITH THE NEW DYNAMIC ONES
       case 'Timetable': // Formerly 'StudentTB'

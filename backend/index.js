@@ -1661,6 +1661,349 @@ app.get('/api/study-materials/student/:classGroup', async (req, res) => {
 
 
 
+// ==========================================================
+// --- PROGRESS REPORTS (RESULTS) API ROUTES ---
+// ==========================================================
+
+// --- TEACHER / ADMIN ROUTES ---
+
+// GET all students in a specific class
+// --- TEACHER / ADMIN ROUTES ---
+
+// GET all students in a specific class
+app.get('/api/reports/class/:classGroup/students', async (req, res) => {
+    try {
+        const { classGroup } = req.params;
+        const query = "SELECT id, full_name FROM users WHERE role = 'student' AND class_group = ?";
+        const [students] = await db.query(query, [classGroup]);
+        res.json(students);
+    } catch (error) {
+        console.error("Error fetching students for class:", error);
+        res.status(500).json({ message: 'Failed to fetch students.' });
+    }
+});
+
+// CREATE a new progress report
+app.post('/api/reports', async (req, res) => {
+    const { reportDetails, subjectsData, uploaded_by } = req.body;
+    const { student_id, class_group, report_title, issue_date, overall_grade, teacher_comments, sgpa, cgpa, total_backlog, result_status } = reportDetails;
+    
+    if (!student_id || !report_title || !issue_date) {
+        return res.status(400).json({ message: "Student, Report Title, and Issue Date are required." });
+    }
+    const connection = await db.getConnection();
+    try {
+        await connection.beginTransaction();
+        const reportQuery = `INSERT INTO progress_reports (student_id, class_group, report_title, issue_date, overall_grade, teacher_comments, sgpa, cgpa, total_backlog, result_status, uploaded_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+        const reportValues = [student_id, class_group, report_title, issue_date, overall_grade, teacher_comments, sgpa || null, cgpa || null, total_backlog || 0, result_status, uploaded_by];
+        const [reportResult] = await connection.query(reportQuery, reportValues);
+        const report_id = reportResult.insertId;
+        if (subjectsData && subjectsData.length > 0) {
+            const subjectsQuery = `INSERT INTO report_subjects (report_id, subject_code, subject_name, credit, grade, grade_point, credit_point) VALUES ?`;
+            const subjectValues = subjectsData.map(s => [ report_id, s.subject_code || null, s.subject_name, s.credit === '' ? null : s.credit, s.grade || null, s.grade_point === '' ? null : s.grade_point, s.credit_point === '' ? null : s.credit_point ]).filter(s => s[2] && s[2].trim() !== '');
+            if (subjectValues.length > 0) {
+                await connection.query(subjectsQuery, [subjectValues]);
+            }
+        }
+        await connection.commit();
+        res.status(201).json({ message: 'Progress report created successfully.', report_id });
+    } catch (error) {
+        await connection.rollback();
+        console.error("Error creating progress report:", error);
+        res.status(500).json({ message: 'Failed to create report.' });
+    } finally {
+        connection.release();
+    }
+});
+
+// UPDATE an existing progress report (FIXED)
+app.put('/api/reports/:reportId', async (req, res) => {
+    const { reportId } = req.params;
+    const { reportDetails, subjectsData } = req.body;
+    const { report_title, issue_date, overall_grade, teacher_comments, sgpa, cgpa, total_backlog, result_status } = reportDetails;
+
+    const connection = await db.getConnection();
+    try {
+        await connection.beginTransaction();
+
+        // Step 1: Update the main report details
+        const reportQuery = `
+            UPDATE progress_reports SET 
+            report_title = ?, issue_date = ?, overall_grade = ?, teacher_comments = ?, 
+            sgpa = ?, cgpa = ?, total_backlog = ?, result_status = ? 
+            WHERE report_id = ?
+        `;
+        // ✅ CRITICAL FIX: Sanitize the issue_date. If it's an empty string, use NULL.
+        const sanitized_issue_date = issue_date === '' ? null : issue_date;
+        await connection.query(reportQuery, [report_title, sanitized_issue_date, overall_grade, teacher_comments, sgpa || null, cgpa || null, total_backlog || 0, result_status, reportId]);
+
+        // Step 2: Delete all old subject entries for this report
+        await connection.query('DELETE FROM report_subjects WHERE report_id = ?', [reportId]);
+        
+        // Step 3: Insert the new, updated list of subjects
+        if (subjectsData && subjectsData.length > 0) {
+            const subjectsQuery = `INSERT INTO report_subjects (report_id, subject_code, subject_name, credit, grade, grade_point, credit_point) VALUES ?`;
+            const subjectValues = subjectsData.map(s => [
+                reportId, s.subject_code || null, s.subject_name,
+                s.credit === '' ? null : s.credit, 
+                s.grade || null,
+                s.grade_point === '' ? null : s.grade_point,
+                s.credit_point === '' ? null : s.credit_point
+            ]).filter(s => s[2] && s[2].trim() !== '');
+            
+            if (subjectValues.length > 0) {
+                await connection.query(subjectsQuery, [subjectValues]);
+            }
+        }
+
+        await connection.commit();
+        res.status(200).json({ message: 'Progress report updated successfully.' });
+    } catch (error) {
+        await connection.rollback();
+        console.error("Error updating progress report:", error);
+        res.status(500).json({ message: 'Failed to update report.' });
+    } finally {
+        connection.release();
+    }
+});
+
+// DELETE a progress report
+app.delete('/api/reports/:reportId', async (req, res) => {
+    try {
+        const { reportId } = req.params;
+        const [result] = await db.query('DELETE FROM progress_reports WHERE report_id = ?', [reportId]);
+        if (result.affectedRows === 0) return res.status(404).json({ message: "Report not found." });
+        res.status(200).json({ message: "Report deleted successfully." });
+    } catch (error) {
+        console.error("Error deleting report:", error);
+        res.status(500).json({ message: "Failed to delete report." });
+    }
+});
+
+
+// --- STUDENT ROUTES ---
+
+// GET all reports for a specific student
+app.get('/api/reports/student/:studentId', async (req, res) => {
+    try {
+        const { studentId } = req.params;
+        const query = `SELECT * FROM progress_reports WHERE student_id = ? ORDER BY issue_date DESC`;
+        const [reports] = await db.query(query, [studentId]);
+        res.json(reports);
+    } catch (error) {
+        console.error("Error fetching student reports:", error);
+        res.status(500).json({ message: "Failed to fetch reports." });
+    }
+});
+
+// GET full details of a single report
+app.get('/api/reports/:reportId/details', async (req, res) => {
+    try {
+        const { reportId } = req.params;
+        const reportQuery = `SELECT pr.*, u.full_name, u.username, up.roll_no FROM progress_reports pr JOIN users u ON pr.student_id = u.id LEFT JOIN user_profiles up ON u.id = up.user_id WHERE pr.report_id = ?`;
+        const subjectsQuery = `SELECT * FROM report_subjects WHERE report_id = ?`;
+        
+        const [[reportDetails]] = await db.query(reportQuery, [reportId]);
+        if (!reportDetails) return res.status(404).json({ message: "Report not found." });
+        
+        const [subjects] = await db.query(subjectsQuery, [reportId]);
+        res.json({ reportDetails, subjects });
+    } catch (error) {
+        console.error("Error fetching report details:", error);
+        res.status(500).json({ message: "Failed to fetch report details." });
+    }
+});
+
+// ==========================================================
+// --- UTILITY & SYLLABUS API ROUTES ---
+// ==========================================================
+
+// GET a unique list of all subjects from the 'users' table
+app.get('/api/subjects/all-unique', async (req, res) => {
+    try {
+        const query = `
+            SELECT subjects_taught 
+            FROM users 
+            WHERE role = 'teacher' AND subjects_taught IS NOT NULL AND subjects_taught <> '' AND subjects_taught <> '[]'
+        `;
+        const [rows] = await db.query(query);
+        const uniqueSubjects = new Set(); 
+        for (const row of rows) {
+            const subjectString = row.subjects_taught;
+            if (!subjectString) continue;
+            const matches = subjectString.match(/["'](.*?)["']/g);
+            if (matches) {
+                for (const match of matches) {
+                    const cleanedSubject = match.substring(1, match.length - 1);
+                    if (cleanedSubject) {
+                        uniqueSubjects.add(cleanedSubject);
+                    }
+                }
+            } else {
+                 if (subjectString.trim()){
+                    uniqueSubjects.add(subjectString.trim());
+                 }
+            }
+        }
+        const finalSubjectsList = Array.from(uniqueSubjects).sort();
+        res.status(200).json(finalSubjectsList);
+    } catch (error) {
+        console.error("[ERROR] in /api/subjects/all-unique:", error);
+        res.status(500).json({ message: 'Could not fetch the list of subjects.' });
+    }
+});
+
+// ADMIN: Create a new syllabus
+app.post('/api/syllabus/create', async (req, res) => {
+    const { class_group, subject_name, lessons, creator_id } = req.body;
+    if (!class_group || !subject_name || !lessons || !creator_id) {
+        return res.status(400).json({ message: "Missing required fields." });
+    }
+    const connection = await db.getConnection();
+    try {
+        await connection.beginTransaction();
+        const [syllabusResult] = await connection.query('INSERT INTO syllabuses (class_group, subject_name, creator_id) VALUES (?, ?, ?)', [class_group, subject_name, creator_id]);
+        const newSyllabusId = syllabusResult.insertId;
+        const lessonValues = lessons.map(lesson => [newSyllabusId, lesson.lessonName, lesson.dueDate]);
+        await connection.query('INSERT INTO syllabus_lessons (syllabus_id, lesson_name, due_date) VALUES ?', [lessonValues]);
+        const [students] = await connection.query("SELECT id FROM users WHERE role = 'student' AND class_group = ?", [class_group]);
+        const [newlyCreatedLessons] = await connection.query('SELECT id FROM syllabus_lessons WHERE syllabus_id = ?', [newSyllabusId]);
+        if (students.length > 0 && newlyCreatedLessons.length > 0) {
+            const progressRecords = [];
+            for (const student of students) {
+                for (const lesson of newlyCreatedLessons) {
+                    progressRecords.push([student.id, lesson.id]);
+                }
+            }
+            await connection.query("INSERT INTO syllabus_progress (student_id, lesson_id) VALUES ?", [progressRecords]);
+        }
+        await connection.commit();
+        res.status(201).json({ message: 'Syllabus created successfully!', syllabusId: newSyllabusId });
+    } catch (error) {
+        await connection.rollback();
+        console.error("Error creating syllabus:", error);
+        if (error.code === 'ER_DUP_ENTRY') return res.status(409).json({ message: 'A syllabus for this class and subject already exists.' });
+        res.status(500).json({ message: 'Error creating syllabus.' });
+    } finally {
+        connection.release();
+    }
+});
+
+// ADMIN: Get all syllabuses for the history view
+app.get('/api/syllabus/all', async (req, res) => {
+    try {
+        const query = `
+            SELECT s.*, u.full_name as creator_name, 
+            (SELECT COUNT(*) FROM syllabus_lessons sl WHERE sl.syllabus_id = s.id) as lesson_count
+            FROM syllabuses s 
+            JOIN users u ON s.creator_id = u.id 
+            ORDER BY s.class_group, s.subject_name`;
+        const [syllabuses] = await db.query(query);
+        res.json(syllabuses);
+    } catch (error) {
+        console.error("Error fetching all syllabuses:", error);
+        res.status(500).json({ message: "Failed to fetch syllabuses." });
+    }
+});
+
+// ADMIN: Get teachers for a specific class and subject from the timetable
+app.get('/api/syllabus/teachers/:classGroup/:subjectName', async (req, res) => {
+    const { classGroup, subjectName } = req.params;
+    if (!classGroup || !subjectName) return res.status(400).json({ message: "Class and Subject are required." });
+    try {
+        const query = `
+            SELECT DISTINCT u.id, u.full_name 
+            FROM users u
+            JOIN timetables t ON u.id = t.teacher_id
+            WHERE t.class_group = ? AND t.subject_name = ? AND u.role = 'teacher'
+            ORDER BY u.full_name;`;
+        const [teachers] = await db.query(query, [classGroup, subjectName]);
+        res.status(200).json(teachers);
+    } catch (error) { console.error("Error fetching teachers for syllabus:", error); res.status(500).json({ message: "Failed to fetch teachers." }); }
+});
+
+// ADMIN: Get detailed progress for a syllabus, showing which teacher updated what
+app.get('/api/syllabus/class-progress/:syllabusId', async (req, res) => {
+    const { syllabusId } = req.params;
+    try {
+        const query = `
+            SELECT 
+                sl.id as lesson_id,
+                sl.lesson_name,
+                sl.due_date,
+                (SELECT sp.status FROM syllabus_progress sp WHERE sp.lesson_id = sl.id LIMIT 1) as status,
+                (SELECT u.full_name FROM users u JOIN syllabus_progress sp ON u.id = sp.last_updated_by WHERE sp.lesson_id = sl.id AND sp.last_updated_by IS NOT NULL LIMIT 1) as updater_name
+            FROM syllabus_lessons sl
+            WHERE sl.syllabus_id = ?
+            ORDER BY sl.due_date ASC;
+        `;
+        const [lessons] = await db.query(query, [syllabusId]);
+        const result = lessons.map(lesson => ({
+            ...lesson,
+            status: lesson.status || 'Pending',
+            updater_name: lesson.updater_name || 'Not yet updated'
+        }));
+        res.status(200).json(result);
+    } catch (error) {
+        console.error("Error fetching admin class progress:", error);
+        res.status(500).json({ message: "Failed to fetch class progress data." });
+    }
+});
+
+// TEACHER: Get syllabus and lessons for a specific class/subject
+app.get('/api/syllabus/teacher/:classGroup/:subjectName', async (req, res) => {
+    const { classGroup, subjectName } = req.params;
+    try {
+        const [[syllabus]] = await db.query('SELECT id, class_group, subject_name FROM syllabuses WHERE class_group = ? AND subject_name = ?', [classGroup, subjectName]);
+        if (!syllabus) return res.status(404).json({ message: 'Syllabus not found for this class and subject.' });
+        const [lessons] = await db.query('SELECT id, lesson_name, due_date FROM syllabus_lessons WHERE syllabus_id = ? ORDER BY due_date ASC', [syllabus.id]);
+        res.json({ ...syllabus, lessons });
+    } catch (error) { console.error("Error fetching teacher syllabus:", error); res.status(500).json({ message: 'Failed to fetch syllabus.' }); }
+});
+
+// TEACHER: Mark a lesson's status for the ENTIRE class
+app.patch('/api/syllabus/lesson-status', async (req, res) => {
+    const { class_group, lesson_id, status, teacher_id } = req.body;
+    if (!class_group || !lesson_id || !status || !teacher_id) {
+        return res.status(400).json({ message: "Invalid data provided." });
+    }
+    try {
+        const query = `
+            UPDATE syllabus_progress sp
+            JOIN users u ON sp.student_id = u.id
+            SET sp.status = ?, sp.last_updated_by = ? 
+            WHERE sp.lesson_id = ? AND u.class_group = ?`;
+        const [result] = await db.query(query, [status, teacher_id, lesson_id, class_group]);
+        res.status(200).json({ message: `Lesson marked as ${status} for ${result.affectedRows} students.` });
+    } catch (error) {
+        console.error("Error updating lesson status:", error);
+        res.status(500).json({ message: 'Error updating lesson status for the class.' });
+    }
+});
+
+// STUDENT: Get their overall progress summary
+app.get('/api/syllabus/student/overview/:studentId', async (req, res) => {
+    const { studentId } = req.params;
+    try {
+        const [totalStats] = await db.query("SELECT status, COUNT(*) as count FROM syllabus_progress WHERE student_id = ? GROUP BY status", [studentId]);
+        const [subjectStats] = await db.query(`SELECT s.id as syllabus_id, s.subject_name, sp.status, COUNT(sp.id) as count FROM syllabus_progress sp JOIN syllabus_lessons sl ON sp.lesson_id = sl.id JOIN syllabuses s ON sl.syllabus_id = s.id WHERE sp.student_id = ? GROUP BY s.id, s.subject_name, sp.status`, [studentId]);
+        res.json({ totalStats, subjectStats });
+    } catch (error) { console.error("Error fetching student overview:", error); res.status(500).json({ message: 'Failed to fetch progress overview.' }); }
+});
+
+// STUDENT: Get their detailed progress for one subject
+app.get('/api/syllabus/student/subject-details/:syllabusId/:studentId', async (req, res) => {
+    const { syllabusId, studentId } = req.params;
+    try {
+        const [[syllabus]] = await db.query('SELECT * FROM syllabuses WHERE id = ?', [syllabusId]);
+        if (!syllabus) return res.status(404).json({ message: 'Syllabus not found.' });
+        const [lessonsWithStatus] = await db.query(`SELECT sl.id, sl.lesson_name, sl.due_date, sp.status FROM syllabus_lessons sl LEFT JOIN syllabus_progress sp ON sl.id = sp.lesson_id AND sp.student_id = ? WHERE sl.syllabus_id = ? ORDER BY sl.due_date ASC`, [studentId, syllabusId]);
+        res.json({ ...syllabus, lessons: lessonsWithStatus });
+    } catch (error) { console.error("Error fetching subject details:", error); res.status(500).json({ message: 'Failed to fetch subject details.' }); }
+});
+
+
+
 // Start the server
 app.listen(PORT, () => {
     console.log(`✅ Backend server is running on http://localhost:${PORT}`);

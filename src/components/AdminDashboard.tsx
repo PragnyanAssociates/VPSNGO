@@ -23,6 +23,9 @@ import TeacherAdminHomeworkScreen from '../screens/homework/TeacherAdminHomework
 import TeacherAdminExamScreen from '../screens/exams_Schedule/TeacherAdminExamScreen';
 import TeacherAdminExamsScreen from '../screens/exams/TeacherAdminExamsScreen';
 import TeacherAdminMaterialsScreen from '../screens/study-materials/TeacherAdminMaterialsScreen';
+import TeacherAdminResultsScreen from '../screens/results/TeacherAdminResultsScreen';
+import AdminSyllabusScreen from '../screens/syllabus/AdminSyllabusScreen';
+
 
 interface ProfileData {
   full_name: string;
@@ -41,7 +44,7 @@ const TEXT_COLOR_DARK = '#333';
 const TEXT_COLOR_MEDIUM = '#555';
 const BORDER_COLOR = '#b2ebf2';
 
-const AdminDashboard = () => {
+const AdminDashboard = ({ navigation }) => {
   const [activeTab, setActiveTab] = useState('home');
   const { user, logout } = useAuth();
   const [profile, setProfile] = useState<ProfileData | null>(null);
@@ -68,11 +71,11 @@ const AdminDashboard = () => {
 
   const allQuickAccessItems = [
     { id: 'qa0', title: 'LM', imageSource: 'https://cdn-icons-png.flaticon.com/128/15096/15096966.png', navigateToTab: 'AdminLM' },
+    { id: 'qa2', title: 'MI', imageSource: 'https://cdn-icons-png.flaticon.com/128/9195/9195955.png' },
+    { id: 'qa4', title: 'Syllabus', imageSource: 'https://cdn-icons-png.flaticon.com/128/4728/4728712.png', navigateToTab: 'AdminSyllabusScreen' },
     { id: 'qa5', title: 'Time Table', imageSource: 'https://cdn-icons-png.flaticon.com/128/1254/1254275.png', navigateToTab: 'Timetable' },
     { id: 'qa3', title: 'Attendance', imageSource: 'https://cdn-icons-png.flaticon.com/128/10293/10293877.png', navigateToTab: 'Attendance' },
-    { id: 'qa2', title: 'MI', imageSource: 'https://cdn-icons-png.flaticon.com/128/9195/9195955.png' },
-    { id: 'qa4', title: 'Syllabus', imageSource: 'https://cdn-icons-png.flaticon.com/128/4728/4728712.png' },
-    { id: 'qa6', title: 'Reports', imageSource: 'https://cdn-icons-png.flaticon.com/128/5369/5369986.png' },
+    { id: 'qa6', title: 'Reports', imageSource: 'https://cdn-icons-png.flaticon.com/128/5369/5369986.png', navigateToTab: 'TeacherAdminResultsScreen' },
     { id: 'qa7', title: 'Exam Schedule', imageSource: 'https://cdn-icons-png.flaticon.com/128/4029/4029113.png', navigateToTab: 'TeacherAdminExamScreen' },
     { id: 'qa8', title: 'Digital Labs', imageSource: 'https://cdn-icons-png.flaticon.com/128/9562/9562280.png', navigateToTab: 'TeacherAdminLabsScreen' },
     { id: 'qa9', title: 'Sports', imageSource: 'https://cdn-icons-png.flaticon.com/128/3429/3429456.png', navigateToTab: 'AdminSportsScreen' },
@@ -84,6 +87,7 @@ const AdminDashboard = () => {
     { id: 'qa15', title: 'Exams', imageSource: 'https://cdn-icons-png.flaticon.com/128/207/207190.png', navigateToTab: 'TeacherAdminExamsScreen' },
     { id: 'qa16', title: 'Study Materials', imageSource: 'https://cdn-icons-png.flaticon.com/128/3273/3273259.png', navigateToTab: 'TeacherAdminMaterialsScreen' },
   ];
+
 
   const handleLogout = () => { Alert.alert("Logout", "Are you sure?", [{ text: "Cancel", style: "cancel" }, { text: "Logout", onPress: logout, style: "destructive" }]); };
   const handleBellIconClick = () => setActiveTab('allNotifications');
@@ -98,7 +102,7 @@ const AdminDashboard = () => {
 
     switch (activeTab) {
       case 'home': return ( <ScrollView style={styles.contentScrollView} contentContainerStyle={styles.contentScrollViewContainer}><View style={styles.dashboardGrid}>{allQuickAccessItems.map(item => ( <DashboardSectionCard key={item.id} title={item.title} imageSource={item.imageSource} onPress={() => { if (item.navigateToTab) { setActiveTab(item.navigateToTab); } else { Alert.alert(item.title, `This feature is coming soon!`); }}}/> ))}</View></ScrollView> );
-      case 'allNotifications': return ( <><ContentScreenHeader title="Notifications" onBack={handleBack} /><AdminNotifications onUnreadCountChange={handleUnreadCountChange} /></> );
+      case 'allNotifications': return ( <><ContentScreenHeader title="Notifications" onBack={handleBack} /><AdminNotifications onUnreadCountChange={setUnreadNotificationsCount} /></> );
       case 'calendar': return <AcademicCalendar onBackPress={handleBack} />;
       case 'profile': return <ProfileScreen onBackPress={handleBack} />;
       case 'AdminLM': return ( <><ContentScreenHeader title="Login Management" onBack={handleBack} /><AdminLM /></> );
@@ -108,12 +112,17 @@ const AdminDashboard = () => {
       case 'AdminSportsScreen': return ( <> <ContentScreenHeader title="Sports" onBack={handleBack} /> <AdminSportsScreen /> </> );
       case 'AdminEventsScreen': return ( <> <ContentScreenHeader title="Events" onBack={handleBack} /> <AdminEventsScreen /> </> );
       case 'AdminHelpDeskScreen': return ( <> <ContentScreenHeader title="Help Desk" onBack={handleBack} /> <AdminHelpDeskScreen /> </> );
-      case 'TeacherAdminPTMScreen': return ( <> <ContentScreenHeader title="Meetings" onBack={handleBack} /> <TeacherAdminPTMScreen /> </> );
+      case 'TeacherAdminPTMScreen': return ( <> <ContentScreenHeader title="Meetings" onBack={handleBack} /> <TeacherAdminPTMScreen navigation={navigation}/> </> );
       case 'TeacherAdminLabsScreen': return ( <> <ContentScreenHeader title="Digital Labs" onBack={handleBack} /> <TeacherAdminLabsScreen /> </> );
       case 'TeacherAdminHomeworkScreen': return ( <> <ContentScreenHeader title="Homework" onBack={handleBack} /> <TeacherAdminHomeworkScreen /> </> );
       case 'TeacherAdminExamScreen': return ( <> <ContentScreenHeader title="Exam Schedule" onBack={handleBack} /> <TeacherAdminExamScreen /> </> );
       case 'TeacherAdminExamsScreen': return ( <> <ContentScreenHeader title="Exams" onBack={handleBack} /> <TeacherAdminExamsScreen /> </> );
       case 'TeacherAdminMaterialsScreen': return ( <> <ContentScreenHeader title="Study Materials" onBack={handleBack} /> <TeacherAdminMaterialsScreen /> </> );
+      case 'AdminSyllabusScreen': return ( <> <ContentScreenHeader title="Syllabus" onBack={handleBack} /> <AdminSyllabusScreen /> </> );
+      
+      // ✅ CRITICAL FIX: Pass the navigation object from the dashboard to the results screen.
+      case 'TeacherAdminResultsScreen': return ( <> <ContentScreenHeader title="Reports" onBack={handleBack} /> <TeacherAdminResultsScreen navigation={navigation} /> </> );
+
 
       default: return ( <View style={styles.fallbackContent}><Text style={styles.fallbackText}>Content for '{activeTab}' is not available.</Text><TouchableOpacity onPress={handleBack}><Text style={styles.fallbackLink}>Go to Home</Text></TouchableOpacity></View> );
     }

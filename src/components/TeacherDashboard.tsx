@@ -11,15 +11,6 @@ import { API_BASE_URL } from '../../apiConfig';
 import TeacherNotifications, { initialNotificationsData } from './TeacherNotifications';
 import ProfileScreen from '../screens/ProfileScreen';
 import AcademicCalendar from './AcademicCalendar';
-// import TeacherHI from './TeacherHI';
-// import TeacherEvents from './TeacherEvents';
-import TeacherPTM from './TeacherPTM';
-// import TeacherHomework from './TeacherHomework';
-import TeacherResults from './TeacherResults';
-import TeacherSyllabus from './TeacherSyllabus';
-// import TeacherCL from './TeacherCL';
-
-// Dynamic Screens
 import TimetableScreen from '../screens/TimetableScreen';
 import AttendanceScreen from '../screens/AttendanceScreen';
 import TeacherHealthAdminScreen from '../screens/health/TeacherHealthAdminScreen';
@@ -32,6 +23,9 @@ import TeacherAdminHomeworkScreen from '../screens/homework/TeacherAdminHomework
 import TeacherAdminExamScreen from '../screens/exams_Schedule/TeacherAdminExamScreen';
 import TeacherAdminExamsScreen from '../screens/exams/TeacherAdminExamsScreen';
 import TeacherAdminMaterialsScreen from '../screens/study-materials/TeacherAdminMaterialsScreen';
+import TeacherAdminResultsScreen from '../screens/results/TeacherAdminResultsScreen';
+import TeacherSyllabusScreen from '../screens/syllabus/TeacherSyllabusScreen';
+
 
 // --- Type Definitions (No Changes) ---
 interface ProfileData { fullName: string; class_group: string; profile_image_url?: string; role: string; }
@@ -54,7 +48,7 @@ const PERIOD_DEFINITIONS = [ { period: 1, start: '09:00', end: '09:45' }, { peri
 const timeToMinutes = (time: string): number => { if (!time || !time.includes(':')) return 0; const [hours, minutes] = time.split(':').map(Number); return hours * 60 + minutes; };
 
 // --- Main Component ---
-const TeacherDashboard = () => {
+const TeacherDashboard = ({ navigation }) => {
   const [activeTab, setActiveTab] = useState('home');
   const { user, logout } = useAuth();
   const [profile, setProfile] = useState<ProfileData | null>(null);
@@ -84,17 +78,13 @@ const TeacherDashboard = () => {
   const getLiveAttendanceParams = () => { /* ... This function's logic is complex and not needed for the new flow, so it's safely ignored ... */ };
 
   const allQuickAccessItems = [
-    { id: 'qa1', title: 'Student History', imageSource: 'https://cdn-icons-png.flaticon.com/128/4207/4207253.png' },
     { id: 'qa2', title: 'Timetable', imageSource: 'https://cdn-icons-png.flaticon.com/128/1254/1254275.png', navigateToTab: 'Timetable' },
-    // ==================== MODIFIED CODE START ====================
-    // This button now simply navigates to the 'Attendance' tab, which will show the new summary view.
     { id: 'qa3', title: 'Attendance', imageSource: 'https://cdn-icons-png.flaticon.com/128/10293/10293877.png', navigateToTab: 'Attendance' },
-    // ===================== MODIFIED CODE END =====================
-    { id: 'qa4', title: 'Syllabus', imageSource: 'https://cdn-icons-png.flaticon.com/128/1584/1584937.png', navigateToTab: 'TeacherSyllabus' },
+    { id: 'qa4', title: 'Syllabus', imageSource: 'https://cdn-icons-png.flaticon.com/128/1584/1584937.png', navigateToTab: 'TeacherSyllabusScreen' },
     { id: 'qa15', title: 'Study materials', imageSource: 'https://cdn-icons-png.flaticon.com/128/3273/3273259.png', navigateToTab: 'TeacherAdminMaterialsScreen' },
     { id: 'qa5', title: 'Exams', imageSource: 'https://cdn-icons-png.flaticon.com/128/207/207190.png', navigateToTab: 'TeacherAdminExamsScreen' },
     { id: 'qa14', title: 'Home Work', imageSource: 'https://cdn-icons-png.flaticon.com/128/11647/11647336.png', navigateToTab: 'TeacherAdminHomeworkScreen' },
-    { id: 'qa6', title: 'Results', imageSource: 'https://cdn-icons-png.flaticon.com/128/9913/9913576.png', navigateToTab: 'TeacherResults' },
+    { id: 'qa6', title: 'Reports', imageSource: 'https://cdn-icons-png.flaticon.com/128/9913/9913576.png', navigateToTab: 'TeacherAdminResultsScreen' },
     { id: 'qa7', title: 'Exam Schedule', imageSource: 'https://cdn-icons-png.flaticon.com/128/4029/4029113.png', navigateToTab: 'TeacherAdminExamScreen' },
     { id: 'qa8', title: 'Digital Labs', imageSource: 'https://cdn-icons-png.flaticon.com/128/9562/9562280.png', navigateToTab: 'TeacherAdminLabsScreen' },
     { id: 'qa9', title: 'Sports', imageSource: 'https://cdn-icons-png.flaticon.com/128/3429/3429456.png', navigateToTab: 'AdminSportsScreen' },
@@ -104,38 +94,40 @@ const TeacherDashboard = () => {
     { id: 'qa16', title: 'Help Desk', imageSource: 'https://cdn-icons-png.flaticon.com/128/4961/4961736.png', navigateToTab: 'UserHelpDeskScreen' },
   ];
 
+
   const renderContent = () => {
     const handleBack = () => setActiveTab('home');
+    const ContentScreenHeader = ({ title }) => ( <View style={styles.contentHeader}><TouchableOpacity onPress={handleBack} style={styles.backButtonGlobal}><MaterialIcons name="arrow-back" size={24} color={PRIMARY_COLOR} /></TouchableOpacity><Text style={styles.contentHeaderTitle}>{title}</Text><View style={{ width: 30 }} /></View> );
     switch (activeTab) {
       case 'home':
-        return ( <ScrollView style={styles.contentScrollView} contentContainerStyle={styles.contentScrollViewContainer}><View style={styles.dashboardGrid}>{allQuickAccessItems.map(item => ( <DashboardSectionCard key={item.id} title={item.title} imageSource={item.imageSource} onPress={() => { if (item.navigateToTab) { setActiveTab(item.navigateToTab); } else { Alert.alert(item.title, `Action for ${item.title}`); } }} /> ))}</View></ScrollView> );
-      case 'allNotifications': return ( <> <ContentScreenHeader title="Notifications" onBack={handleBack} /> <TeacherNotifications onUnreadCountChange={setUnreadNotificationsCount} /> </> );
+        return ( <ScrollView><View style={styles.dashboardGrid}>{allQuickAccessItems.map(item => ( <DashboardSectionCard key={item.id} title={item.title} imageSource={item.imageSource} onPress={() => item.navigateToTab ? setActiveTab(item.navigateToTab) : Alert.alert(item.title, `Coming soon!`)} /> ))}</View></ScrollView> );
+      
+      case 'allNotifications': return ( <><ContentScreenHeader title="Notifications" /><TeacherNotifications onUnreadCountChange={setUnreadNotificationsCount} /></> );
       case 'calendar': return <AcademicCalendar />;
-      case 'profile': return <ProfileScreen onBackPress={handleBack} />;
-      case 'TeacherHealthAdminScreen': return ( <> <ContentScreenHeader title="Health Information" onBack={handleBack} /> <TeacherHealthAdminScreen /> </> );
-      case 'AdminEventsScreen': return ( <> <ContentScreenHeader title="Events" onBack={handleBack} /> <AdminEventsScreen /> </> );
-      case 'TeacherPTM': return ( <> <ContentScreenHeader title="Parents-Teachers Meetings" onBack={handleBack} /> <TeacherPTM /> </> );
-      case 'TeacherAdminHomeworkScreen': return ( <> <ContentScreenHeader title="Home Work" onBack={handleBack} /> <TeacherAdminHomeworkScreen /> </> );
-      case 'TeacherResults': return ( <> <ContentScreenHeader title="Results" onBack={handleBack} /> <TeacherResults /> </> );
-      case 'UserHelpDeskScreen': return ( <> <ContentScreenHeader title="Help Desk" onBack={handleBack} /> <UserHelpDeskScreen /> </> );
-      case 'TeacherSyllabus': return ( <> <ContentScreenHeader title="Syllabus" onBack={handleBack} /> <TeacherSyllabus /> </> );
-      case 'Timetable': return ( <> <ContentScreenHeader title="My Timetable" onBack={handleBack} /> <TimetableScreen /> </> );
-      case 'AdminSportsScreen': return ( <> <ContentScreenHeader title="Sports" onBack={handleBack} /> <AdminSportsScreen /> </> );
-      case 'TeacherAdminPTMScreen': return ( <> <ContentScreenHeader title="Meetings" onBack={handleBack} /> <TeacherAdminPTMScreen /> </> );
-      case 'TeacherAdminLabsScreen': return ( <> <ContentScreenHeader title="Digital Labs" onBack={handleBack} /> <TeacherAdminLabsScreen /> </> );
-      case 'TeacherAdminExamScreen': return ( <> <ContentScreenHeader title="Exam Schedule" onBack={handleBack} /> <TeacherAdminExamScreen /> </> );
-      case 'TeacherAdminExamsScreen': return ( <> <ContentScreenHeader title="Exams" onBack={handleBack} /> <TeacherAdminExamsScreen /> </> );
-      case 'TeacherAdminMaterialsScreen': return ( <> <ContentScreenHeader title="Study Materials" onBack={handleBack} /> <TeacherAdminMaterialsScreen /> </> );
-      // ==================== MODIFIED CODE START ====================
-      // This now renders the AttendanceScreen without any parameters,
-      // which will cause it to show our new summary view.
-      case 'Attendance':
-        return ( <> <ContentScreenHeader title="Attendance Report" onBack={handleBack} /> <AttendanceScreen /> </> );
-      // ===================== MODIFIED CODE END =====================
+      case 'profile': return <ProfileScreen onBackPress={() => setActiveTab('home')} />;
+      case 'TeacherHealthAdminScreen': return ( <><ContentScreenHeader title="Health Information" /><TeacherHealthAdminScreen /></> );
+      case 'AdminEventsScreen': return ( <><ContentScreenHeader title="Events" /><AdminEventsScreen /></> );
+      case 'TeacherAdminHomeworkScreen': return ( <><ContentScreenHeader title="Home Work" /><TeacherAdminHomeworkScreen /></> );
+      case 'UserHelpDeskScreen': return ( <><ContentScreenHeader title="Help Desk" /><UserHelpDeskScreen /></> );
+      case 'Timetable': return ( <><ContentScreenHeader title="My Timetable" /><TimetableScreen /></> );
+      case 'AdminSportsScreen': return ( <><ContentScreenHeader title="Sports" /><AdminSportsScreen /></> );
+      case 'TeacherAdminLabsScreen': return ( <><ContentScreenHeader title="Digital Labs" /><TeacherAdminLabsScreen /></> );
+      case 'TeacherAdminExamScreen': return ( <><ContentScreenHeader title="Exam Schedule" /><TeacherAdminExamScreen /></> );
+      case 'TeacherAdminExamsScreen': return ( <><ContentScreenHeader title="Exams" /><TeacherAdminExamsScreen /></> );
+      case 'TeacherAdminMaterialsScreen': return ( <><ContentScreenHeader title="Study Materials" /><TeacherAdminMaterialsScreen /></> );
+      case 'TeacherSyllabusScreen': return ( <><ContentScreenHeader title="Syllabus" /><TeacherSyllabusScreen /></> );
+      
+      // ✅ CRITICAL FIX: Pass the navigation prop down to any screen that needs to navigate.
+      case 'TeacherAdminPTMScreen': return ( <><ContentScreenHeader title="Meetings" /><TeacherAdminPTMScreen navigation={navigation} /></> );
+      case 'TeacherAdminResultsScreen': return ( <><ContentScreenHeader title="Reports" /><TeacherAdminResultsScreen navigation={navigation} /></> );
+      
+      case 'Attendance': return ( <><ContentScreenHeader title="Attendance Report" /><AttendanceScreen /></> );
+      
       default:
-        return ( <> <ContentScreenHeader title={capitalize(activeTab)} onBack={handleBack} /> <View style={styles.fallbackContent}><Text style={styles.fallbackText}>Content for '{activeTab}' is not available yet.</Text></View> </> );
+        return ( <><ContentScreenHeader title={capitalize(activeTab)} /><View style={styles.fallbackContent}><Text style={styles.fallbackText}>Content not available yet.</Text></View></> );
     }
   };
+
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -203,19 +195,19 @@ const styles = StyleSheet.create({
     contentHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 15, paddingVertical: 12, backgroundColor: SECONDARY_COLOR, borderBottomWidth: 1, borderBottomColor: BORDER_COLOR, },
     backButtonGlobal: { padding: 5 },
     contentHeaderTitle: { fontSize: 20, fontWeight: 'bold', color: PRIMARY_COLOR, textAlign: 'center', flex: 1, },
-    contentScrollView: { flex: 1 },
-    contentScrollViewContainer: { paddingHorizontal: CONTENT_HORIZONTAL_PADDING, paddingTop: 15, paddingBottom: BOTTOM_NAV_HEIGHT + 20 },
-    dashboardGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
+    dashboardGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', padding: CONTENT_HORIZONTAL_PADDING, paddingTop: 15 },
     dashboardCard: { width: (windowWidth - (CONTENT_HORIZONTAL_PADDING * 2) - (CARD_GAP * 2)) / 3, borderRadius: 10, paddingVertical: 15, marginBottom: CARD_GAP, alignItems: 'center', justifyContent: 'center', height: 115, backgroundColor: WHITE, shadowColor: '#455A64', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 3, elevation: 3, borderWidth: 1, borderColor: BORDER_COLOR, },
     cardIconContainer: { width: 45, height: 45, justifyContent: 'center', alignItems: 'center', marginBottom: 8 },
     cardImage: { width: 38, height: 38, resizeMode: 'contain' },
     cardTitle: { fontSize: 11, fontWeight: '600', color: TEXT_COLOR_DARK, textAlign: 'center', lineHeight: 14, paddingHorizontal: 4, },
-    bottomNav: { flexDirection: 'row', backgroundColor: SECONDARY_COLOR, borderTopWidth: 1, borderTopColor: BORDER_COLOR, paddingVertical: Platform.OS === 'ios' ? 10 : 8, paddingBottom: Platform.OS === 'ios' ? 20 : 8, shadowColor: '#455A64', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.05, shadowRadius: 3, elevation: 5, minHeight: BOTTOM_NAV_HEIGHT, },
+    bottomNav: { flexDirection: 'row', backgroundColor: SECONDARY_COLOR, borderTopWidth: 1, borderTopColor: BORDER_COLOR, paddingVertical: Platform.OS === 'ios' ? 10 : 8, paddingBottom: Platform.OS === 'ios' ? 20 : 8, minHeight: BOTTOM_NAV_HEIGHT, },
     navItem: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 5 },
     navText: { fontSize: 10, color: TEXT_COLOR_MEDIUM, marginTop: 3 },
     navTextActive: { color: PRIMARY_COLOR, fontWeight: 'bold' },
     fallbackContent: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20, backgroundColor: TERTIARY_COLOR },
     fallbackText: { fontSize: 16, color: TEXT_COLOR_MEDIUM, textAlign: 'center', marginBottom: 10 },
 });
+
+
 
 export default TeacherDashboard;
