@@ -1,4 +1,4 @@
-// 📂 File: src/screens/StudentDashboard.tsx (UPDATED with Dynamic Components)
+// 📂 File: src/screens/StudentDashboard.tsx (COMPLETE AND RESTYLED)
 
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, SafeAreaView, Dimensions, Image, Platform } from 'react-native';
@@ -9,17 +9,14 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { useAuth } from '../context/AuthContext';
 import { API_BASE_URL } from '../../apiConfig';
 
-// --- COMPONENT IMPORTS (As per your original file structure) ---
+// --- COMPONENT IMPORTS ---
 import StudentNotifications, { initialNotificationsData } from './StudentNotifications';
 import AcademicCalendar from './AcademicCalendar';
 import StudentResultsScreen from '../screens/results/StudentResultsScreen';
-
-
+import TransportScreen from '../screens/transport/TransportScreen';
 import StudentExamsScreen from '../screens/exams/StudentExamsScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import StudentExamScreen from '../screens/exams_Schedule/StudentExamScreen';
-
-// 👈 STEP 1: IMPORT THE NEW DYNAMIC SCREENS
 import TimetableScreen from '../screens/TimetableScreen'; 
 import AttendanceScreen from '../screens/AttendanceScreen';
 import StudentHealthScreen from '../screens/health/StudentHealthScreen';
@@ -31,10 +28,8 @@ import StudentLabsScreen from '../screens/labs/StudentLabsScreen';
 import StudentHomeworkScreen from '../screens/homework/StudentHomeworkScreen';
 import StudentMaterialsScreen from '../screens/study-materials/StudentMaterialsScreen';
 import StudentSyllabusScreen from '../screens/syllabus/StudentSyllabusScreen';
-
-// We no longer need the old static imports
-// import StudentAttendance from './StudentAttendance';
-// import StudentTB from './StudentTB';
+import AboutUs from './AboutUs';
+import ChatAIScreen from '../screens/chatai/ChatAIScreen';
 
 // --- TYPE DEFINITION for profile data from API ---
 interface ProfileData {
@@ -43,17 +38,19 @@ interface ProfileData {
   role: string;
 }
 
-// --- CONSTANTS & COLORS (Unchanged) ---
+// --- CONSTANTS & COLORS (Styled to match Teacher Dashboard) ---
 const { width: windowWidth } = Dimensions.get('window');
 const CARD_GAP = 12;
 const CONTENT_HORIZONTAL_PADDING = 15;
 const BOTTOM_NAV_HEIGHT = 70;
 const PRIMARY_COLOR = '#008080';
 const SECONDARY_COLOR = '#e0f2f7';
-const TERTIARY_COLOR = '#f8f8ff';
-const TEXT_COLOR_DARK = '#333';
-const TEXT_COLOR_MEDIUM = '#555';
-const BORDER_COLOR = '#b2ebf2';
+const TERTIARY_COLOR = '#F4F6F8';
+const TEXT_COLOR_DARK = '#37474F';
+const TEXT_COLOR_MEDIUM = '#566573';
+const BORDER_COLOR = '#E0E0E0';
+const WHITE = '#ffffff';
+const DANGER_COLOR = '#E53935';
 
 const StudentDashboard = ({ navigation }) => {
   const [activeTab, setActiveTab] = useState('home');
@@ -84,22 +81,25 @@ const StudentDashboard = ({ navigation }) => {
   const initialUnreadCount = initialNotificationsData.filter(n => !n.read).length;
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(initialUnreadCount);
 
-  // 👈 STEP 2: UPDATE THE NAVIGATION LINKS
   const allQuickAccessItems = [
-    { id: 'qa2', title: 'Timetable', imageSource: 'https://cdn-icons-png.flaticon.com/128/1254/1254275.png', navigateToTab: 'Timetable' }, // Changed from 'StudentTB'
-    { id: 'qa3', title: 'Attendance', imageSource: 'https://cdn-icons-png.flaticon.com/128/10293/10293877.png', navigateToTab: 'Attendance' }, // Changed from 'StudentAttendance'
+    { id: 'qa2', title: 'Timetable', imageSource: 'https://cdn-icons-png.flaticon.com/128/1254/1254275.png', navigateToTab: 'Timetable' },
+    { id: 'qa3', title: 'Attendance', imageSource: 'https://cdn-icons-png.flaticon.com/128/10293/10293877.png', navigateToTab: 'Attendance' },
     { id: 'qa4', title: 'Syllabus', imageSource: 'https://cdn-icons-png.flaticon.com/128/1584/1584937.png', navigateToTab: 'StudentSyllabusScreen' },
-    { id: 'qa15', title: 'Study materials', imageSource: 'https://cdn-icons-png.flaticon.com/128/3273/3273259.png', navigateToTab: 'StudentMaterialsScreen' },
-    { id: 'qa5', title: 'Exams', imageSource: 'https://cdn-icons-png.flaticon.com/128/207/207190.png',  navigateToTab: 'StudentExamsScreen' },
-    { id: 'qa14', title: 'Home Work', imageSource: 'https://cdn-icons-png.flaticon.com/128/11647/11647336.png', navigateToTab: 'StudentHomeworkScreen' },
-    { id: 'qa6', title: 'Reports', imageSource: 'https://cdn-icons-png.flaticon.com/128/9913/9913576.png', navigateToTab: 'StudentResultsScreen' },
     { id: 'qa7', title: 'Exam Schedule', imageSource: 'https://cdn-icons-png.flaticon.com/128/4029/4029113.png', navigateToTab: 'StudentExamScreen' },
+    { id: 'qa5', title: 'Exams', imageSource: 'https://cdn-icons-png.flaticon.com/128/207/207190.png',  navigateToTab: 'StudentExamsScreen' },
+    { id: 'qa6', title: 'Reports', imageSource: 'https://cdn-icons-png.flaticon.com/128/9913/9913576.png', navigateToTab: 'StudentResultsScreen' },
+    { id: 'qa15', title: 'Study materials', imageSource: 'https://cdn-icons-png.flaticon.com/128/3273/3273259.png', navigateToTab: 'StudentMaterialsScreen' },
+    { id: 'qa14', title: 'Home Work', imageSource: 'https://cdn-icons-png.flaticon.com/128/11647/11647336.png', navigateToTab: 'StudentHomeworkScreen' },
     { id: 'qa8', title: 'Digital Labs', imageSource: 'https://cdn-icons-png.flaticon.com/128/9562/9562280.png', navigateToTab: 'StudentLabsScreen' },
     { id: 'qa9', title: 'Sports', imageSource: 'https://cdn-icons-png.flaticon.com/128/3429/3429456.png', navigateToTab: 'StudentSportsScreen' },
     { id: 'qa10', title: 'Health Info', imageSource: 'https://cdn-icons-png.flaticon.com/128/3004/3004458.png', navigateToTab: 'StudentHealthScreen' },
-    { id: 'qa11', title: 'PTM', imageSource: 'https://cdn-icons-png.flaticon.com/128/17588/17588666.png', navigateToTab: 'StudentPTMScreen' },
     { id: 'qa13', title: 'Events', imageSource: 'https://cdn-icons-png.flaticon.com/128/9592/9592283.png', navigateToTab: 'StudentEventsScreen' },
+    { id: 'qa11', title: 'PTM', imageSource: 'https://cdn-icons-png.flaticon.com/128/17588/17588666.png', navigateToTab: 'StudentPTMScreen' },
+    { id: 'qa1', title: "Transport", imageSource: "https://cdn-icons-png.flaticon.com/128/2945/2945694.png", navigateToTab: 'TransportScreen' },
     { id: 'qa12', title: 'Help Desk', imageSource: 'https://cdn-icons-png.flaticon.com/128/4961/4961736.png', navigateToTab: 'UserHelpDeskScreen' },
+    { id: 'qa18', title: 'Gallery', imageSource: 'https://cdn-icons-png.flaticon.com/128/8418/8418513.png', navigateTo: 'Gallery' },
+    { id: 'qa19', title: 'About Us', imageSource: 'https://cdn-icons-png.flaticon.com/128/3815/3815523.png', navigateToTab: 'AboutUs' },
+    { id: 'qa20', title: 'Chat AI', imageSource: 'https://cdn-icons-png.flaticon.com/128/6028/6028616.png', navigateToTab: 'ChatAI' },
   ];
 
   const handleLogout = () => {
@@ -107,16 +107,34 @@ const StudentDashboard = ({ navigation }) => {
   };
 
   const handleBellIconClick = () => setActiveTab('allNotifications');
-  const handleUnreadCountChange = (count) => setUnreadNotificationsCount(count);
 
   const DashboardSectionCard = ({ title, imageSource, onPress }) => ( <TouchableOpacity style={styles.dashboardCard} onPress={onPress}><View style={styles.cardIconContainer}><Image source={{ uri: imageSource }} style={styles.cardImage} /></View><Text style={styles.cardTitle}>{title}</Text></TouchableOpacity> );
   const ContentScreenHeader = ({ title, onBack = () => setActiveTab('home') }) => ( <View style={styles.contentHeader}><TouchableOpacity onPress={onBack} style={styles.backButtonGlobal}><MaterialIcons name="arrow-back" size={24} color={PRIMARY_COLOR} /></TouchableOpacity><Text style={styles.contentHeaderTitle}>{title}</Text><View style={{ width: 30 }} /></View> );
+  const BottomNavItem = ({ icon, label, isActive, onPress }) => (<TouchableOpacity style={styles.navItem} onPress={onPress}><Icon name={icon} size={isActive ? 24 : 22} color={isActive ? PRIMARY_COLOR : TEXT_COLOR_MEDIUM} /><Text style={[styles.navText, isActive && styles.navTextActive]}>{label}</Text></TouchableOpacity>);
 
   const renderContent = () => {
     switch (activeTab) {
-      case 'home': return ( <ScrollView style={styles.contentScrollView} contentContainerStyle={styles.contentScrollViewContainer}><View style={styles.dashboardGrid}>{allQuickAccessItems.map(item => ( <DashboardSectionCard key={item.id} title={item.title} imageSource={item.imageSource} onPress={() => { if (item.navigateToTab) { setActiveTab(item.navigateToTab); } else { Alert.alert(item.title, `This feature is coming soon!`); }}}/> ))}</View></ScrollView> );
-      case 'allNotifications': return ( <> <ContentScreenHeader title="Notifications" onBack={() => setActiveTab('home')} /> <StudentNotifications onUnreadCountChange={handleUnreadCountChange} /> </> );
-      case 'calendar': return <AcademicCalendar onBackPress={() => setActiveTab('home')} />;
+      case 'home':
+        return ( 
+            <ScrollView>
+                <View style={styles.dashboardGrid}>
+                    {allQuickAccessItems.map(item => ( 
+                        <DashboardSectionCard 
+                            key={item.id} 
+                            title={item.title} 
+                            imageSource={item.imageSource} 
+                            onPress={() => {
+                                if (item.navigateTo) { navigation.navigate(item.navigateTo); } 
+                                else if (item.navigateToTab) { setActiveTab(item.navigateToTab); } 
+                                else { Alert.alert(item.title, `Coming soon!`); }
+                            }} 
+                        /> 
+                    ))}
+                </View>
+            </ScrollView> 
+        );
+      case 'allNotifications': return ( <> <ContentScreenHeader title="Notifications" /> <StudentNotifications onUnreadCountChange={setUnreadNotificationsCount} /> </> );
+      case 'calendar': return <AcademicCalendar />;
       case 'profile': return <ProfileScreen onBackPress={() => setActiveTab('home')} />;
       case 'StudentHealthScreen': return ( <><ContentScreenHeader title="Health Information" /><StudentHealthScreen /></> );
       case 'UserHelpDeskScreen': return ( <><ContentScreenHeader title="Help Desk" /><UserHelpDeskScreen /></> );
@@ -129,25 +147,12 @@ const StudentDashboard = ({ navigation }) => {
       case 'StudentMaterialsScreen': return ( <><ContentScreenHeader title="Study Materials" /><StudentMaterialsScreen /></> );
       case 'StudentExamsScreen': return ( <><ContentScreenHeader title="Exams" /><StudentExamsScreen /></> );
       case 'StudentSyllabusScreen': return ( <><ContentScreenHeader title="Syllabus" /><StudentSyllabusScreen /></> );
-      // ✅ CRITICAL FIX: Pass the navigation prop down to any screen that needs to navigate further.
+      case 'TransportScreen': return ( <><ContentScreenHeader title="Transport" /><TransportScreen /></> );
       case 'StudentResultsScreen': return ( <><ContentScreenHeader title="My Reports" /><StudentResultsScreen navigation={navigation} /></> );
-
-      // 👈 STEP 3: REPLACE THE OLD STATIC COMPONENTS WITH THE NEW DYNAMIC ONES
-      case 'Timetable': // Formerly 'StudentTB'
-        return (
-          <>
-            <ContentScreenHeader title="Time Table" />
-            <TimetableScreen />
-          </>
-        );
-      
-      case 'Attendance': // Formerly 'StudentAttendance'
-        return (
-          <>
-            <ContentScreenHeader title="Attendance" />
-            <AttendanceScreen />
-          </>
-        );
+      case 'Timetable': return ( <><ContentScreenHeader title="Time Table" /><TimetableScreen /></> );
+      case 'Attendance': return ( <><ContentScreenHeader title="Attendance" /><AttendanceScreen /></> );
+      case 'AboutUs': return ( <><ContentScreenHeader title="About Us" /><AboutUs /></> );
+      case 'ChatAI': return ( <><ContentScreenHeader title="AI Assistant" /><ChatAIScreen /></> );
 
       default: return ( <View style={styles.fallbackContent}><Text style={styles.fallbackText}>Content for '{activeTab}' is not available.</Text><TouchableOpacity onPress={() => setActiveTab('home')}><Text style={styles.fallbackLink}>Go to Home</Text></TouchableOpacity></View> );
     }
@@ -165,11 +170,13 @@ const StudentDashboard = ({ navigation }) => {
             </View>
           </View>
           <View style={styles.topBarActions}>
-            <TouchableOpacity onPress={handleBellIconClick} style={styles.notificationBellContainer}>
-              <Image source={{ uri: 'https://cdn-icons-png.flaticon.com/512/3602/3602145.png' }} style={styles.notificationBellIcon} />
-              {unreadNotificationsCount > 0 && ( <View style={styles.notificationCountBubble}><Text style={styles.notificationCountText}>{unreadNotificationsCount}</Text></View> )}
+            <TouchableOpacity onPress={handleBellIconClick} style={styles.iconButton}>
+                <MaterialIcons name="notifications-none" size={26} color={PRIMARY_COLOR} />
+                {unreadNotificationsCount > 0 && ( <View style={styles.notificationCountBubble}><Text style={styles.notificationCountText}>{unreadNotificationsCount}</Text></View> )}
             </TouchableOpacity>
-            <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}><Image source={{ uri: 'https://cdn-icons-png.flaticon.com/512/1828/1828479.png' }} style={styles.logoutIcon} /></TouchableOpacity>
+            <TouchableOpacity onPress={handleLogout} style={styles.iconButton}>
+                <MaterialIcons name="logout" size={24} color={PRIMARY_COLOR} />
+            </TouchableOpacity>
           </View>
         </View>
       )}
@@ -177,47 +184,108 @@ const StudentDashboard = ({ navigation }) => {
       {renderContent()}
 
       <View style={styles.bottomNav}>
-        <TouchableOpacity style={styles.navItem} onPress={() => setActiveTab('home')}><Icon name="home" size={24} color={activeTab === 'home' ? PRIMARY_COLOR : TEXT_COLOR_MEDIUM} /><Text style={[styles.navText, activeTab === 'home' && styles.navTextActive]}>Home</Text></TouchableOpacity>
-        <TouchableOpacity style={styles.navItem} onPress={() => setActiveTab('calendar')}><Icon name="calendar" size={24} color={activeTab === 'calendar' ? PRIMARY_COLOR : TEXT_COLOR_MEDIUM} /><Text style={[styles.navText, activeTab === 'calendar' && styles.navTextActive]}>Calendar</Text></TouchableOpacity>
-        <TouchableOpacity style={styles.navItem} onPress={() => setActiveTab('profile')}><Icon name="user" size={24} color={activeTab === 'profile' ? PRIMARY_COLOR : TEXT_COLOR_MEDIUM} /><Text style={[styles.navText, activeTab === 'profile' && styles.navTextActive]}>Profile</Text></TouchableOpacity>
+        <BottomNavItem icon="home" label="Home" isActive={activeTab === 'home'} onPress={() => setActiveTab('home')} />
+        <BottomNavItem icon="calendar" label="Calendar" isActive={activeTab === 'calendar'} onPress={() => setActiveTab('calendar')} />
+        <BottomNavItem icon="user" label="Profile" isActive={activeTab === 'profile'} onPress={() => setActiveTab('profile')} />
       </View>
     </SafeAreaView>
   );
 };
 
+// --- STYLES (COMPLETE AND MATCHING TEACHER DASHBOARD) ---
 const styles = StyleSheet.create({
-  // --- All your existing styles remain exactly the same ---
-  safeArea: { flex: 1, backgroundColor: TERTIARY_COLOR, },
-  topBar: { backgroundColor: SECONDARY_COLOR, paddingHorizontal: 15, paddingVertical: Platform.OS === 'ios' ? 12 : 15, borderBottomLeftRadius: 20, borderBottomRightRadius: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3, borderBottomWidth: 1, borderBottomColor: BORDER_COLOR, },
-  profileContainer: { flexDirection: 'row', alignItems: 'center', },
-  profileImage: { width: 45, height: 45, borderRadius: 22.5, borderWidth: 2, borderColor: PRIMARY_COLOR, backgroundColor: '#e0e0e0', },
-  profileTextContainer: { marginLeft: 12, },
-  profileNameText: { color: PRIMARY_COLOR, fontSize: 17, fontWeight: 'bold', },
-  profileRoleText: { color: TEXT_COLOR_MEDIUM, fontSize: 13, },
-  topBarActions: { flexDirection: 'row', alignItems: 'center', },
-  notificationBellContainer: { position: 'relative', padding: 8, marginRight: 5, },
-  notificationBellIcon: { width: 24, height: 24, resizeMode: 'contain', tintColor: PRIMARY_COLOR, },
-  notificationCountBubble: { position: 'absolute', top: 3, right: 3, backgroundColor: '#ef4444', borderRadius: 10, minWidth: 20, height: 20, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 5, },
-  notificationCountText: { color: 'white', fontSize: 11, fontWeight: 'bold', },
-  logoutButton: { padding: 8, },
-  logoutIcon: { width: 22, height: 22, resizeMode: 'contain', tintColor: PRIMARY_COLOR, },
-  contentHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 15, paddingVertical: 12, backgroundColor: SECONDARY_COLOR, borderBottomWidth: 1, borderBottomColor: BORDER_COLOR, },
-  backButtonGlobal: { padding: 5, },
-  contentHeaderTitle: { fontSize: 18, fontWeight: 'bold', color: PRIMARY_COLOR, textAlign: 'center', flex: 1, },
-  contentScrollView: { flex: 1, },
-  contentScrollViewContainer: { paddingHorizontal: CONTENT_HORIZONTAL_PADDING, paddingTop: 15, paddingBottom: BOTTOM_NAV_HEIGHT + 20, },
-  dashboardGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', },
-  dashboardCard: { width: (windowWidth - (CONTENT_HORIZONTAL_PADDING * 2) - (CARD_GAP * 2)) / 3, borderRadius: 12, paddingVertical: 15, marginBottom: CARD_GAP, alignItems: 'center', justifyContent: 'flex-start', height: 110, backgroundColor: '#fff', shadowColor: "#000", shadowOffset: { width: 0, height: 1, }, shadowOpacity: 0.10, shadowRadius: 1.84, elevation: 2, },
-  cardIconContainer: { width: 45, height: 45, justifyContent: 'center', alignItems: 'center', marginBottom: 8, },
-  cardImage: { width: 38, height: 38, resizeMode: 'contain', },
-  cardTitle: { fontSize: 11, fontWeight: '600', color: TEXT_COLOR_DARK, textAlign: 'center', lineHeight: 14, paddingHorizontal: 4, marginTop: 'auto', },
-  bottomNav: { flexDirection: 'row', backgroundColor: SECONDARY_COLOR, borderTopWidth: 1, borderTopColor: BORDER_COLOR, paddingVertical: Platform.OS === 'ios' ? 10 : 8, paddingBottom: Platform.OS === 'ios' ? 15 : 8, shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.05, shadowRadius: 3, elevation: 5, minHeight: BOTTOM_NAV_HEIGHT, },
-  navItem: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 5, },
-  navText: { fontSize: 10, color: TEXT_COLOR_MEDIUM, marginTop: 3, },
-  navTextActive: { color: PRIMARY_COLOR, fontWeight: 'bold', },
-  fallbackContent: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20, },
-  fallbackText: { fontSize: 16, color: TEXT_COLOR_MEDIUM, textAlign: 'center', marginBottom: 10, },
-  fallbackLink: { fontSize: 16, color: PRIMARY_COLOR, fontWeight: 'bold', }
+  safeArea: { flex: 1, backgroundColor: TERTIARY_COLOR },
+  topBar: {
+    backgroundColor: SECONDARY_COLOR,
+    paddingHorizontal: 15,
+    paddingVertical: Platform.OS === 'ios' ? 12 : 15,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    shadowColor: '#455A64',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 3,
+    borderBottomWidth: 1,
+    borderBottomColor: BORDER_COLOR,
+  },
+  profileContainer: { flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 10 },
+  profileImage: { width: 45, height: 45, borderRadius: 22.5, borderWidth: 2, borderColor: PRIMARY_COLOR, backgroundColor: '#e0e0e0' },
+  profileTextContainer: { marginLeft: 12, flex: 1 },
+  profileNameText: { color: PRIMARY_COLOR, fontSize: 18, fontWeight: 'bold' },
+  profileRoleText: { color: TEXT_COLOR_MEDIUM, fontSize: 14 },
+  topBarActions: { flexDirection: 'row', alignItems: 'center' },
+  iconButton: { position: 'relative', padding: 8 },
+  notificationCountBubble: {
+    position: 'absolute',
+    top: 3,
+    right: 3,
+    backgroundColor: DANGER_COLOR,
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 5,
+  },
+  notificationCountText: { color: WHITE, fontSize: 11, fontWeight: 'bold' },
+  contentHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 15,
+    paddingVertical: 12,
+    backgroundColor: SECONDARY_COLOR,
+    borderBottomWidth: 1,
+    borderBottomColor: BORDER_COLOR,
+  },
+  backButtonGlobal: { padding: 5 },
+  contentHeaderTitle: { fontSize: 20, fontWeight: 'bold', color: PRIMARY_COLOR, textAlign: 'center', flex: 1 },
+  dashboardGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    padding: CONTENT_HORIZONTAL_PADDING,
+    paddingTop: 15,
+  },
+  dashboardCard: {
+    width: (windowWidth - (CONTENT_HORIZONTAL_PADDING * 2) - (CARD_GAP * 2)) / 3,
+    borderRadius: 10,
+    paddingVertical: 15,
+    marginBottom: CARD_GAP,
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 115,
+    backgroundColor: WHITE,
+    shadowColor: '#455A64',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: BORDER_COLOR,
+  },
+  cardIconContainer: { width: 45, height: 45, justifyContent: 'center', alignItems: 'center', marginBottom: 8 },
+  cardImage: { width: 38, height: 38, resizeMode: 'contain' },
+  cardTitle: { fontSize: 11, fontWeight: '600', color: TEXT_COLOR_DARK, textAlign: 'center', lineHeight: 14, paddingHorizontal: 4 },
+  bottomNav: {
+    flexDirection: 'row',
+    backgroundColor: SECONDARY_COLOR,
+    borderTopWidth: 1,
+    borderTopColor: BORDER_COLOR,
+    paddingVertical: Platform.OS === 'ios' ? 10 : 8,
+    paddingBottom: Platform.OS === 'ios' ? 20 : 8,
+    minHeight: BOTTOM_NAV_HEIGHT,
+  },
+  navItem: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 5 },
+  navText: { fontSize: 10, color: TEXT_COLOR_MEDIUM, marginTop: 3 },
+  navTextActive: { color: PRIMARY_COLOR, fontWeight: 'bold' },
+  fallbackContent: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20, backgroundColor: TERTIARY_COLOR },
+  fallbackText: { fontSize: 16, color: TEXT_COLOR_MEDIUM, textAlign: 'center', marginBottom: 10 },
+  fallbackLink: { fontSize: 16, color: PRIMARY_COLOR, fontWeight: 'bold' } // Added missing fallbackLink style
 });
 
 export default StudentDashboard;

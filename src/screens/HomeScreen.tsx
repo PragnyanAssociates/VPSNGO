@@ -13,12 +13,11 @@ export default function HomeScreen() {
 
   // ✅ THE FIX IS HERE: Changed Donor's action back to 'navigate'
   const roles = [
-    { id: 1, name: "About Us",  icon: "https://cdn-icons-png.flaticon.com/128/3815/3815523.png", type: 'navigate', target: 'AboutUs' },
     { id: 2, name: "Admin",     icon: "https://cdn-icons-png.flaticon.com/512/17003/17003310.png", type: 'login',    target: 'admin' },
     { id: 3, name: "Student",   icon: "https://cdn-icons-png.flaticon.com/128/2784/2784403.png", type: 'login',    target: 'student' },
     { id: 4, name: "Teacher",   icon: "https://cdn-icons-png.freepik.com/256/14416/14416005.png?semt=ais_hybrid", type: 'login',    target: 'teacher' },
-    { id: 5, name: "Transport", icon: "https://cdn-icons-png.flaticon.com/128/207/207178.png", type: 'navigate', target: 'Transport' },
     { id: 6, name: "Donor",     icon: "https://cdn-icons-png.flaticon.com/128/10880/10880476.png", type: 'login',    target: 'donor' },
+    
   ];
 
  const handleRolePress = (item: typeof roles[0]) => {

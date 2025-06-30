@@ -1,4 +1,4 @@
-// 📂 File: src/components/AdminDashboard.tsx (CORRECTED IMPORT PATHS)
+// 📂 File: src/components/AdminDashboard.tsx (CORRECTED LAYOUT)
 
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, SafeAreaView, Dimensions, Image, Platform } from 'react-native';
@@ -25,7 +25,12 @@ import TeacherAdminExamsScreen from '../screens/exams/TeacherAdminExamsScreen';
 import TeacherAdminMaterialsScreen from '../screens/study-materials/TeacherAdminMaterialsScreen';
 import TeacherAdminResultsScreen from '../screens/results/TeacherAdminResultsScreen';
 import AdminSyllabusScreen from '../screens/syllabus/AdminSyllabusScreen';
-
+import TransportScreen from '../screens/transport/TransportScreen';
+import AboutUs from './AboutUs';
+// Import the new Gallery screen
+import GalleryScreen from '../screens/gallery/GalleryScreen';
+import ChatAIScreen from '../screens/chatai/ChatAIScreen';
+import AdminSuggestionsScreen from '../screens/suggestions/AdminSuggestionsScreen';
 
 interface ProfileData {
   full_name: string;
@@ -71,27 +76,29 @@ const AdminDashboard = ({ navigation }) => {
 
   const allQuickAccessItems = [
     { id: 'qa0', title: 'LM', imageSource: 'https://cdn-icons-png.flaticon.com/128/15096/15096966.png', navigateToTab: 'AdminLM' },
-    { id: 'qa2', title: 'MI', imageSource: 'https://cdn-icons-png.flaticon.com/128/9195/9195955.png' },
-    { id: 'qa4', title: 'Syllabus', imageSource: 'https://cdn-icons-png.flaticon.com/128/4728/4728712.png', navigateToTab: 'AdminSyllabusScreen' },
     { id: 'qa5', title: 'Time Table', imageSource: 'https://cdn-icons-png.flaticon.com/128/1254/1254275.png', navigateToTab: 'Timetable' },
     { id: 'qa3', title: 'Attendance', imageSource: 'https://cdn-icons-png.flaticon.com/128/10293/10293877.png', navigateToTab: 'Attendance' },
-    { id: 'qa6', title: 'Reports', imageSource: 'https://cdn-icons-png.flaticon.com/128/5369/5369986.png', navigateToTab: 'TeacherAdminResultsScreen' },
+    { id: 'qa4', title: 'Syllabus', imageSource: 'https://cdn-icons-png.flaticon.com/128/4728/4728712.png', navigateToTab: 'AdminSyllabusScreen' },
     { id: 'qa7', title: 'Exam Schedule', imageSource: 'https://cdn-icons-png.flaticon.com/128/4029/4029113.png', navigateToTab: 'TeacherAdminExamScreen' },
+    { id: 'qa15', title: 'Exams', imageSource: 'https://cdn-icons-png.flaticon.com/128/207/207190.png', navigateToTab: 'TeacherAdminExamsScreen' },
+    { id: 'qa6', title: 'Reports', imageSource: 'https://cdn-icons-png.flaticon.com/128/9913/9913576.png', navigateToTab: 'TeacherAdminResultsScreen' },
+    { id: 'qa16', title: 'Study Materials', imageSource: 'https://cdn-icons-png.flaticon.com/128/3273/3273259.png', navigateToTab: 'TeacherAdminMaterialsScreen' },
+    { id: 'qa13', title: 'Homework', imageSource: 'https://cdn-icons-png.flaticon.com/128/11647/11647336.png', navigateToTab: 'TeacherAdminHomeworkScreen' },
     { id: 'qa8', title: 'Digital Labs', imageSource: 'https://cdn-icons-png.flaticon.com/128/9562/9562280.png', navigateToTab: 'TeacherAdminLabsScreen' },
     { id: 'qa9', title: 'Sports', imageSource: 'https://cdn-icons-png.flaticon.com/128/3429/3429456.png', navigateToTab: 'AdminSportsScreen' },
-    { id: 'qa10', title: 'PTM', imageSource: 'https://cdn-icons-png.flaticon.com/128/17588/17588666.png', navigateToTab: 'TeacherAdminPTMScreen' },
-    { id: 'qa11', title: 'Events', imageSource: 'https://cdn-icons-png.flaticon.com/128/9592/9592283.png', navigateToTab: 'AdminEventsScreen' },
     { id: 'qa12', title: 'Health Info', imageSource: 'https://cdn-icons-png.flaticon.com/128/3004/3004458.png', navigateToTab: 'TeacherHealthAdminScreen' },
-    { id: 'qa13', title: 'Homework', imageSource: 'https://cdn-icons-png.flaticon.com/128/11647/11647336.png', navigateToTab: 'TeacherAdminHomeworkScreen' },
+    { id: 'qa11', title: 'Events', imageSource: 'https://cdn-icons-png.flaticon.com/128/9592/9592283.png', navigateToTab: 'AdminEventsScreen' },
+    { id: 'qa10', title: 'PTM', imageSource: 'https://cdn-icons-png.flaticon.com/128/17588/17588666.png', navigateToTab: 'TeacherAdminPTMScreen' },
+    { id: 'qa17', title: 'Transport', imageSource: 'https://cdn-icons-png.flaticon.com/128/2945/2945694.png', navigateToTab: 'TransportScreen' },    
     { id: 'qa14', title: 'Help Desk', imageSource: 'https://cdn-icons-png.flaticon.com/128/4961/4961736.png', navigateToTab: 'AdminHelpDeskScreen' },
-    { id: 'qa15', title: 'Exams', imageSource: 'https://cdn-icons-png.flaticon.com/128/207/207190.png', navigateToTab: 'TeacherAdminExamsScreen' },
-    { id: 'qa16', title: 'Study Materials', imageSource: 'https://cdn-icons-png.flaticon.com/128/3273/3273259.png', navigateToTab: 'TeacherAdminMaterialsScreen' },
+    { id: 'qa18', title: 'Gallery', imageSource: 'https://cdn-icons-png.flaticon.com/128/8418/8418513.png', navigateToTab: 'Gallery' },
+    { id: 'qa19', title: 'About Us', imageSource: 'https://cdn-icons-png.flaticon.com/128/3815/3815523.png', navigateToTab: 'AboutUs' },
+    { id: 'qa20', title: 'Chat AI', imageSource: 'https://cdn-icons-png.flaticon.com/128/6028/6028616.png', navigateToTab: 'ChatAI' },
+    { id: 'qa21', title: 'Sugestions', imageSource: 'https://cdn-icons-png.flaticon.com/128/9722/9722906.png', navigateToTab: 'AdminSuggestionsScreen' },
   ];
-
 
   const handleLogout = () => { Alert.alert("Logout", "Are you sure?", [{ text: "Cancel", style: "cancel" }, { text: "Logout", onPress: logout, style: "destructive" }]); };
   const handleBellIconClick = () => setActiveTab('allNotifications');
-  const handleUnreadCountChange = (count) => setUnreadNotificationsCount(count);
 
   const DashboardSectionCard = ({ title, imageSource, onPress }) => ( <TouchableOpacity style={styles.dashboardCard} onPress={onPress}><View style={styles.cardIconContainer}><Image source={{ uri: imageSource }} style={styles.cardImage} /></View><Text style={styles.cardTitle}>{title}</Text></TouchableOpacity> );
   
@@ -101,8 +108,32 @@ const AdminDashboard = ({ navigation }) => {
     const handleBack = () => setActiveTab('home');
 
     switch (activeTab) {
-      case 'home': return ( <ScrollView style={styles.contentScrollView} contentContainerStyle={styles.contentScrollViewContainer}><View style={styles.dashboardGrid}>{allQuickAccessItems.map(item => ( <DashboardSectionCard key={item.id} title={item.title} imageSource={item.imageSource} onPress={() => { if (item.navigateToTab) { setActiveTab(item.navigateToTab); } else { Alert.alert(item.title, `This feature is coming soon!`); }}}/> ))}</View></ScrollView> );
-      case 'allNotifications': return ( <><ContentScreenHeader title="Notifications" onBack={handleBack} /><AdminNotifications onUnreadCountChange={setUnreadNotificationsCount} /></> );
+      case 'home': 
+        return ( 
+          <ScrollView style={styles.contentScrollView} contentContainerStyle={styles.contentScrollViewContainer}>
+            <View style={styles.dashboardGrid}>
+              {allQuickAccessItems.map(item => ( 
+                <DashboardSectionCard 
+                  key={item.id} 
+                  title={item.title} 
+                  imageSource={item.imageSource} 
+                  onPress={() => { 
+                    if (item.navigateTo) {
+                        navigation.navigate(item.navigateTo);
+                    } else if (item.navigateToTab) { 
+                        setActiveTab(item.navigateToTab); 
+                    } else { 
+                        Alert.alert(item.title, `This feature is coming soon!`); 
+                    }
+                  }}
+                /> 
+              ))}
+            </View>
+          </ScrollView> 
+        );
+      
+      // All other cases remain the same
+      case 'allNotifications': return ( <><ContentScreenHeader title="Notifications" onBack={handleBack} /><AdminNotifications /></> );
       case 'calendar': return <AcademicCalendar onBackPress={handleBack} />;
       case 'profile': return <ProfileScreen onBackPress={handleBack} />;
       case 'AdminLM': return ( <><ContentScreenHeader title="Login Management" onBack={handleBack} /><AdminLM /></> );
@@ -119,10 +150,14 @@ const AdminDashboard = ({ navigation }) => {
       case 'TeacherAdminExamsScreen': return ( <> <ContentScreenHeader title="Exams" onBack={handleBack} /> <TeacherAdminExamsScreen /> </> );
       case 'TeacherAdminMaterialsScreen': return ( <> <ContentScreenHeader title="Study Materials" onBack={handleBack} /> <TeacherAdminMaterialsScreen /> </> );
       case 'AdminSyllabusScreen': return ( <> <ContentScreenHeader title="Syllabus" onBack={handleBack} /> <AdminSyllabusScreen /> </> );
-      
-      // ✅ CRITICAL FIX: Pass the navigation object from the dashboard to the results screen.
+      case 'TransportScreen': return ( <> <ContentScreenHeader title="Transport" onBack={handleBack} /> <TransportScreen /> </> );
       case 'TeacherAdminResultsScreen': return ( <> <ContentScreenHeader title="Reports" onBack={handleBack} /> <TeacherAdminResultsScreen navigation={navigation} /> </> );
-
+      
+      // New cases for Gallery and AboutUs
+      case 'Gallery': return ( <><ContentScreenHeader title="Gallery" onBack={handleBack} /><GalleryScreen /></> );
+      case 'AboutUs': return ( <><ContentScreenHeader title="About Us" onBack={handleBack} /><AboutUs /></> );
+      case 'ChatAI': return ( <><ContentScreenHeader title="AI Assistant" onBack={handleBack} /><ChatAIScreen /></> );
+      case 'AdminSuggestionsScreen': return ( <><ContentScreenHeader title="Suggestions" onBack={handleBack} /><AdminSuggestionsScreen /></> );
 
       default: return ( <View style={styles.fallbackContent}><Text style={styles.fallbackText}>Content for '{activeTab}' is not available.</Text><TouchableOpacity onPress={handleBack}><Text style={styles.fallbackLink}>Go to Home</Text></TouchableOpacity></View> );
     }
@@ -148,9 +183,13 @@ const AdminDashboard = ({ navigation }) => {
           </View>
         </View>
       )}
-
-      {renderContent()}
-
+      
+      {/* --- FIX IS HERE --- */}
+      {/* This View wrapper ensures the content area is flexible and doesn't push the bottom nav off-screen */}
+      <View style={{ flex: 1 }}>
+        {renderContent()}
+      </View>
+      
       <View style={styles.bottomNav}>
         <TouchableOpacity style={styles.navItem} onPress={() => setActiveTab('home')}><Icon name="home" size={24} color={activeTab === 'home' ? PRIMARY_COLOR : TEXT_COLOR_MEDIUM} /><Text style={[styles.navText, activeTab === 'home' && styles.navTextActive]}>Home</Text></TouchableOpacity>
         <TouchableOpacity style={styles.navItem} onPress={() => setActiveTab('calendar')}><Icon name="calendar" size={24} color={activeTab === 'calendar' ? PRIMARY_COLOR : TEXT_COLOR_MEDIUM} /><Text style={[styles.navText, activeTab === 'calendar' && styles.navTextActive]}>Calendar</Text></TouchableOpacity>
@@ -160,7 +199,7 @@ const AdminDashboard = ({ navigation }) => {
   );
 };
 
-// --- STYLES (Unchanged) ---
+// Styles remain the same
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: TERTIARY_COLOR, },
   topBar: { backgroundColor: SECONDARY_COLOR, paddingHorizontal: 15, paddingVertical: Platform.OS === 'ios' ? 12 : 15, borderBottomLeftRadius: 20, borderBottomRightRadius: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3, borderBottomWidth: 1, borderBottomColor: BORDER_COLOR, },

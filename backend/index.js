@@ -12,6 +12,15 @@ const path = require('path');
 const crypto = require('crypto');
 const { sendPasswordResetEmail } = require('./mailer');
 const fs = require('fs'); // Import the file system module at the top of your file
+const { Client } = require("@googlemaps/google-maps-services-js");
+const googleMapsClient = new Client({});
+const { OpenAI } = require('openai');
+
+// Initialize the OpenAI client with your API key from the .env file
+const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+});
+
 
 
 const app = express();
@@ -29,11 +38,27 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage: storage });
 
+// Multer storage configuration specifically for the Gallery
+const galleryStorage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        cb(null, 'uploads/'); // Assumes 'uploads' folder exists in your backend root
+    },
+    filename: (req, file, cb) => {
+        // Creates a unique filename like 'gallery-media-1678886400000.jpg'
+        cb(null, `gallery-media-${Date.now()}${path.extname(file.originalname)}`);
+    }
+});
+
+const galleryUpload = multer({ storage: galleryStorage });
+
 const db = mysql.createPool({
     host: process.env.DB_HOST,
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
     database: process.env.DB_NAME || 'school_db',
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0
     
 });
 
@@ -2002,6 +2027,512 @@ app.get('/api/syllabus/student/subject-details/:syllabusId/:studentId', async (r
     } catch (error) { console.error("Error fetching subject details:", error); res.status(500).json({ message: 'Failed to fetch subject details.' }); }
 });
 
+
+
+
+// ==========================================================
+// --- TRANSPORT API ROUTES (UPGRADED) ---
+// ==========================================================
+
+// --- ADMIN ROUTES ---
+
+// CREATE a new route by generating coordinates from stop names
+app.post('/api/transport/routes', async (req, res) => {
+    // ✅ ADDED `state` to the destructured body
+    const { route_name, driver_name, driver_phone, conductor_name, conductor_phone, stops, city, state, country, created_by } = req.body;
+
+    if (!process.env.GOOGLE_MAPS_API_KEY) {
+        return res.status(500).json({ message: "Server configuration error: Google Maps API key is missing." });
+    }
+    // ✅ ADDED validation for `state`
+    if (!route_name || !city || !state || !country || !stops || stops.length < 2 || !created_by) {
+        return res.status(400).json({ message: 'All fields including Country, State, City, and at least two boarding points are required.' });
+    }
+
+    // ✅ UPGRADED fullAddress function to be more specific
+    const fullAddress = (point) => `${point}`; // Google Places Autocomplete already provides the full address
+
+    const origin = fullAddress(stops[0].point);
+    const destination = fullAddress(stops[stops.length - 1].point);
+    const waypoints = stops.length > 2 ? stops.slice(1, -1).map(s => fullAddress(s.point)) : [];
+
+    try {
+        const directionsResponse = await googleMapsClient.directions({
+            params: {
+                origin,
+                destination,
+                waypoints,
+                key: process.env.GOOGLE_MAPS_API_KEY,
+            },
+            timeout: 5000,
+        });
+
+        if (directionsResponse.data.status !== 'OK') {
+            throw new Error(`Google Maps Error: ${directionsResponse.data.status}. ${directionsResponse.data.error_message || 'Check your input points.'}`);
+        }
+        const routePolyline = directionsResponse.data.routes[0].overview_polyline.points;
+
+        const connection = await db.getConnection();
+        try {
+            await connection.beginTransaction();
+            // ✅ ADDED `state` to the INSERT query
+            const routeQuery = 'INSERT INTO transport_routes (route_name, driver_name, driver_phone, conductor_name, conductor_phone, city, state, country, route_path_polyline, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
+            const [routeResult] = await connection.query(routeQuery, [route_name, driver_name, driver_phone, conductor_name, conductor_phone, city, state, country, routePolyline, created_by]);
+            const route_id = routeResult.insertId;
+
+            if (stops.length > 0) {
+                const stopsQuery = 'INSERT INTO transport_stops (route_id, stop_name, stop_order) VALUES ?';
+                const stopValues = stops.map((stop, index) => [route_id, stop.point, index + 1]);
+                await connection.query(stopsQuery, [stopValues]);
+            }
+            await connection.commit();
+            res.status(201).json({ message: 'Route created successfully!' });
+        } catch (dbError) {
+            await connection.rollback();
+            throw dbError;
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error("\n--- FULL ERROR OBJECT FROM GOOGLE MAPS (CREATE) ---");
+        if (error.response) {
+            console.error("Status:", error.response.status);
+            console.error("Data:", JSON.stringify(error.response.data, null, 2));
+        } else {
+            console.error(error);
+        }
+        console.error("--- END OF FULL ERROR OBJECT ---\n");
+        const errorMessage = error.response?.data?.error_message || error.message || 'Failed to create route.';
+        res.status(500).json({ message: errorMessage });
+    }
+});
+
+// UPDATE a route and its stops
+app.put('/api/transport/routes/:routeId', async (req, res) => {
+    const { routeId } = req.params;
+    // ✅ ADDED `state`
+    const { route_name, driver_name, driver_phone, conductor_name, conductor_phone, stops, city, state, country } = req.body;
+    
+    if (!process.env.GOOGLE_MAPS_API_KEY) {
+        return res.status(500).json({ message: "Server configuration error: Google Maps API key is missing." });
+    }
+    // ✅ ADDED validation for `state`
+    if (!route_name || !city || !state || !country || !stops || !stops.length) {
+        return res.status(400).json({ message: 'All fields including Country, State, and City are required.' });
+    }
+
+    const fullAddress = (point) => `${point}`; // Google Places Autocomplete already provides the full address
+
+    const origin = fullAddress(stops[0].point);
+    const destination = fullAddress(stops[stops.length - 1].point);
+    const waypoints = stops.length > 2 ? stops.slice(1, -1).map(s => fullAddress(s.point)) : [];
+
+    try {
+        const directionsResponse = await googleMapsClient.directions({
+            params: { origin, destination, waypoints, key: process.env.GOOGLE_MAPS_API_KEY },
+            timeout: 5000,
+        });
+
+        if (directionsResponse.data.status !== 'OK') {
+            throw new Error(`Google Maps Error: ${directionsResponse.data.status}. ${directionsResponse.data.error_message || 'Check your input points.'}`);
+        }
+        const routePolyline = directionsResponse.data.routes[0].overview_polyline.points;
+
+        const connection = await db.getConnection();
+        try {
+            await connection.beginTransaction();
+            // ✅ ADDED `state` to the UPDATE query
+            const routeQuery = 'UPDATE transport_routes SET route_name = ?, driver_name = ?, driver_phone = ?, conductor_name = ?, conductor_phone = ?, city = ?, state = ?, country = ?, route_path_polyline = ? WHERE route_id = ?';
+            await connection.query(routeQuery, [route_name, driver_name, driver_phone, conductor_name, conductor_phone, city, state, country, routePolyline, routeId]);
+            await connection.query('DELETE FROM transport_stops WHERE route_id = ?', [routeId]);
+            if (stops.length > 0) {
+                const stopsQuery = 'INSERT INTO transport_stops (route_id, stop_name, stop_order) VALUES ?';
+                const stopValues = stops.map((stop, index) => [routeId, stop.point, index + 1]);
+                await connection.query(stopsQuery, [stopValues]);
+            }
+            await connection.commit();
+            res.status(200).json({ message: 'Route updated successfully!' });
+        } catch (dbError) {
+            await connection.rollback();
+            throw dbError;
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error("\n--- FULL ERROR OBJECT FROM GOOGLE MAPS (UPDATE) ---");
+        if (error.response) {
+            console.error("Status:", error.response.status);
+            console.error("Data:", JSON.stringify(error.response.data, null, 2));
+        } else {
+            console.error(error);
+        }
+        console.error("--- END OF FULL ERROR OBJECT ---\n");
+        const errorMessage = error.response?.data?.error_message || error.message || 'Failed to update route.';
+        res.status(500).json({ message: errorMessage });
+    }
+});
+
+// DELETE a route
+app.delete('/api/transport/routes/:routeId', async (req, res) => {
+    try {
+        const [result] = await db.query('DELETE FROM transport_routes WHERE route_id = ?', [req.params.routeId]);
+        if (result.affectedRows === 0) return res.status(404).json({ message: 'Route not found.' });
+        res.status(200).json({ message: 'Route deleted successfully.' });
+    } catch (error) {
+        console.error("Error deleting transport route:", error);
+        res.status(500).json({ message: 'Failed to delete route.' });
+    }
+});
+
+// UPDATE a bus's live location
+app.put('/api/transport/routes/:routeId/location', async (req, res) => {
+    const { lat, lng } = req.body;
+    if (!lat || !lng) return res.status(400).json({ message: 'Latitude and Longitude are required.' });
+    try {
+        await db.query('UPDATE transport_routes SET current_lat = ?, current_lng = ?, last_location_update = NOW() WHERE route_id = ?', [lat, lng, req.params.routeId]);
+        res.status(200).json({ message: 'Location updated.' });
+    } catch (error) {
+        console.error("Error updating bus location:", error);
+        res.status(500).json({ message: 'Failed to update location.' });
+    }
+});
+
+
+// --- SHARED ROUTES (FOR ADMIN, TEACHER, STUDENT) ---
+
+// READ all routes (basic info for list view)
+app.get('/api/transport/routes', async (req, res) => {
+    try {
+        const [routes] = await db.query('SELECT route_id, route_name FROM transport_routes ORDER BY route_name ASC');
+        res.json(routes);
+    } catch (error) {
+        console.error("Error fetching all routes:", error);
+        res.status(500).json({ message: 'Failed to fetch routes.' });
+    }
+});
+
+// READ full details of a single route
+app.get('/api/transport/routes/:routeId', async (req, res) => {
+    try {
+        const [routeResult, stopsResult] = await Promise.all([
+            db.query('SELECT * FROM transport_routes WHERE route_id = ?', [req.params.routeId]),
+            db.query('SELECT stop_name as point, stop_order as sno FROM transport_stops WHERE route_id = ? ORDER BY stop_order ASC', [req.params.routeId])
+        ]);
+        
+        const [route] = routeResult[0];
+        if (!route) return res.status(404).json({ message: 'Route not found.' });
+        
+        const stops = stopsResult[0];
+        res.json({ ...route, stops });
+    } catch (error) {
+        console.error("Error fetching route details:", error);
+        res.status(500).json({ message: 'Failed to fetch route details.' });
+    }
+});
+
+
+
+// ==========================================================
+// --- GALLERY API ROUTES (WITHOUT MIDDLEWARE AUTH) ---
+// ==========================================================
+
+// GET: Fetch all gallery items (Open to all)
+app.get('/api/gallery', async (req, res) => {
+    const query = `
+        SELECT g.id, g.title, g.event_date, g.file_path, g.file_type, u.full_name as uploader_name 
+        FROM gallery_items g
+        JOIN users u ON g.uploaded_by = u.id
+        ORDER BY g.event_date DESC, g.created_at DESC
+    `;
+    try {
+        const [items] = await db.query(query);
+        res.status(200).json(items);
+    } catch (error) {
+        console.error("GET /api/gallery Error:", error);
+        res.status(500).json({ message: "Error fetching gallery items." });
+    }
+});
+
+// POST: Upload a new gallery item (Checks for role='admin' in body)
+app.post('/api/gallery/upload', galleryUpload.single('media'), async (req, res) => {
+    // We now expect 'role' and 'adminId' to be sent in the form data from the client
+    const { title, event_date, role, adminId } = req.body;
+    const file = req.file;
+
+    // SECURITY CHECK: Basic role check from request body
+    if (role !== 'admin') {
+        if (file) fs.unlinkSync(file.path); // Clean up uploaded file
+        return res.status(403).json({ message: "Forbidden: Requires Admin Role." });
+    }
+
+    if (!file || !title || !event_date || !adminId) {
+        if (file) fs.unlinkSync(file.path);
+        return res.status(400).json({ message: "Missing required fields: adminId, title, event_date, and a media file." });
+    }
+
+    try {
+        const file_type = file.mimetype.startsWith('image') ? 'photo' : 'video';
+        const file_path = file.path.replace(/\\/g, "/"); // Standardize path
+
+        const query = 'INSERT INTO gallery_items (title, event_date, file_path, file_type, uploaded_by) VALUES (?, ?, ?, ?, ?)';
+        const [result] = await db.query(query, [title, event_date, file_path, file_type, adminId]);
+
+        res.status(201).json({ message: "Media uploaded successfully!", insertId: result.insertId });
+    } catch (error) {
+        if (file) fs.unlinkSync(file.path);
+        console.error("POST /api/gallery/upload Error:", error);
+        res.status(500).json({ message: "Failed to save gallery item to database." });
+    }
+});
+
+// PUT: Update a gallery item's info (Checks for role='admin' in body)
+app.put('/api/gallery/:id', async (req, res) => {
+    const { id } = req.params;
+    const { title, event_date, role } = req.body;
+
+    // SECURITY CHECK: Basic role check from request body
+    if (role !== 'admin') {
+        return res.status(403).json({ message: "Forbidden: Requires Admin Role." });
+    }
+
+    if (!title || !event_date) {
+        return res.status(400).json({ message: "Title and Event Date are required." });
+    }
+
+    try {
+        const query = 'UPDATE gallery_items SET title = ?, event_date = ? WHERE id = ?';
+        const [result] = await db.query(query, [title, event_date, id]);
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: "Item not found." });
+        }
+        res.status(200).json({ message: "Item updated successfully." });
+    } catch (error) {
+        console.error(`PUT /api/gallery/${id} Error:`, error);
+        res.status(500).json({ message: "Failed to update item." });
+    }
+});
+
+// DELETE: Delete a gallery item (Checks for role='admin' in body)
+app.delete('/api/gallery/:id', async (req, res) => {
+    const { id } = req.params;
+    const { role } = req.body; // Expect role in the body for DELETE requests
+
+    // SECURITY CHECK: Basic role check from request body
+    if (role !== 'admin') {
+        return res.status(403).json({ message: "Forbidden: Requires Admin Role." });
+    }
+
+    const connection = await db.getConnection();
+    try {
+        await connection.beginTransaction();
+
+        const [rows] = await connection.query('SELECT file_path FROM gallery_items WHERE id = ?', [id]);
+        if (rows.length === 0) {
+            await connection.rollback();
+            return res.status(404).json({ message: "Item not found." });
+        }
+        const filePath = rows[0].file_path;
+
+        await connection.query('DELETE FROM gallery_items WHERE id = ?', [id]);
+        
+        fs.unlink(filePath, (err) => {
+            if (err) {
+                console.error(`Failed to delete file from disk: ${filePath}`, err);
+            }
+        });
+        
+        await connection.commit();
+        res.status(200).json({ message: "Item deleted successfully." });
+
+    } catch (error) {
+        await connection.rollback();
+        console.error(`DELETE /api/gallery/${id} Error:`, error);
+        res.status(500).json({ message: "An error occurred while deleting the item." });
+    } finally {
+        connection.release();
+    }
+});
+
+
+
+// ==============================
+// --- CHAT-AI API ROUTES ---
+// ==============================
+
+// Get chat history for a specific user
+app.get('/api/chat/history/:userId', async (req, res) => {
+  const { userId } = req.params;
+  if (!userId) return res.status(400).json({ message: 'User ID is required.' });
+
+  try {
+    const query = "SELECT id, role, content, created_at FROM chat_messages WHERE user_id = ? ORDER BY created_at ASC";
+    const [messages] = await db.query(query, [userId]);
+    res.status(200).json(messages);
+  } catch (error) {
+    console.error("GET /api/chat/history Error:", error);
+    res.status(500).json({ message: "Error fetching chat history." });
+  }
+});
+
+// Post a user message and get AI response
+app.post('/api/chat/message', async (req, res) => {
+  const { userId, message } = req.body;
+
+  if (!userId || !message || typeof message !== 'string') {
+    return res.status(400).json({ message: "userId and message are required." });
+  }
+
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    await connection.query(
+      'INSERT INTO chat_messages (user_id, role, content) VALUES (?, ?, ?)',
+      [userId, 'user', message]
+    );
+
+    const [history] = await connection.query(
+      "SELECT role, content FROM chat_messages WHERE user_id = ? ORDER BY created_at DESC LIMIT 10",
+      [userId]
+    );
+
+    const messages = history.reverse().map(m => ({
+      role: m.role === 'ai' ? 'assistant' : 'user',
+      content: m.content,
+    }));
+    messages.push({ role: 'user', content: message });
+
+    const completion = await openai.chat.completions.create({
+      model: "gpt-3.5-turbo",
+      messages: messages,
+    });
+
+    const aiReply = completion.choices[0].message.content;
+
+    await connection.query(
+      'INSERT INTO chat_messages (user_id, role, content) VALUES (?, ?, ?)',
+      [userId, 'ai', aiReply]
+    );
+
+    await connection.commit();
+    res.status(200).json({ reply: aiReply });
+  } catch (error) {
+    await connection.rollback();
+    console.error("POST /api/chat/message Error:", error);
+    res.status(500).json({ message: "An error occurred." });
+  } finally {
+    connection.release();
+  }
+});
+
+
+
+// 📂 File: backend/server.js (Paste this code before the app.listen() call)
+
+// ==========================================================
+// --- SUGGESTIONS API ROUTES (NEW) ---
+// ==========================================================
+
+// DONOR: Get a list of their own suggestion threads
+app.get('/api/suggestions/my-suggestions/:donorId', async (req, res) => {
+    const { donorId } = req.params;
+    const query = 'SELECT * FROM suggestions WHERE donor_id = ? ORDER BY last_reply_at DESC';
+    try {
+        const [suggestions] = await db.query(query, [donorId]);
+        res.json(suggestions);
+    } catch (error) { res.status(500).json({ message: 'Error fetching suggestions.' }); }
+});
+
+// DONOR: Create a new suggestion thread with an initial message/file
+app.post('/api/suggestions', upload.single('attachment'), async (req, res) => {
+    const { donorId, subject, message } = req.body;
+    if (!subject || (!message && !req.file)) {
+        return res.status(400).json({ message: 'A subject and either a message or a file attachment is required.' });
+    }
+    const connection = await db.getConnection();
+    try {
+        await connection.beginTransaction();
+        // Create the main suggestion thread
+        const [suggestionResult] = await connection.query(
+            'INSERT INTO suggestions (donor_id, subject) VALUES (?, ?)',
+            [donorId, subject]
+        );
+        const newSuggestionId = suggestionResult.insertId;
+
+        // Add the first message to the thread
+        const fileUrl = req.file ? `/uploads/${req.file.filename}` : null;
+        const fileName = req.file ? req.file.originalname : null;
+        await connection.query(
+            'INSERT INTO suggestion_messages (suggestion_id, user_id, message_text, file_url, file_name) VALUES (?, ?, ?, ?, ?)',
+            [newSuggestionId, donorId, message, fileUrl, fileName]
+        );
+
+        await connection.commit();
+        res.status(201).json({ message: 'Suggestion submitted successfully!', suggestionId: newSuggestionId });
+    } catch (error) {
+        await connection.rollback();
+        console.error("Suggestion Post Error:", error);
+        res.status(500).json({ message: 'Error submitting suggestion.' });
+    } finally {
+        connection.release();
+    }
+});
+
+// ADMIN/DONOR: Get a full conversation for a single suggestion thread
+app.get('/api/suggestions/:suggestionId', async (req, res) => {
+    const { suggestionId } = req.params;
+    try {
+        const [[thread]] = await db.query('SELECT s.*, u.full_name as donor_name FROM suggestions s JOIN users u ON s.donor_id = u.id WHERE s.id = ?', [suggestionId]);
+        if (!thread) return res.status(404).json({ message: 'Suggestion thread not found.' });
+        
+        const [messages] = await db.query('SELECT sm.*, u.role, u.full_name FROM suggestion_messages sm JOIN users u ON sm.user_id = u.id WHERE sm.suggestion_id = ? ORDER BY sm.created_at ASC', [suggestionId]);
+        
+        res.json({ thread, messages });
+    } catch (error) { res.status(500).json({ message: 'Error fetching suggestion details.' }); }
+});
+
+// ADMIN/DONOR: Post a new message/file to an existing thread
+app.post('/api/suggestions/reply', upload.single('attachment'), async (req, res) => {
+    const { suggestionId, userId, message } = req.body;
+    if (!message && !req.file) {
+        return res.status(400).json({ message: 'A message or a file attachment is required.' });
+    }
+    const fileUrl = req.file ? `/uploads/${req.file.filename}` : null;
+    const fileName = req.file ? req.file.originalname : null;
+    try {
+        await db.query(
+            'INSERT INTO suggestion_messages (suggestion_id, user_id, message_text, file_url, file_name) VALUES (?, ?, ?, ?, ?)',
+            [suggestionId, userId, message, fileUrl, fileName]
+        );
+        res.status(201).json({ message: 'Reply sent successfully.' });
+    } catch (error) { res.status(500).json({ message: 'Error sending reply.' }); }
+});
+
+// ADMIN: Get all suggestion threads for the management dashboard
+app.get('/api/admin/suggestions', async (req, res) => {
+    const { status } = req.query;
+    let query = 'SELECT s.*, u.full_name as donor_name FROM suggestions s JOIN users u ON s.donor_id = u.id ';
+    const params = [];
+    if (status) {
+        query += 'WHERE s.status = ? ';
+        params.push(status);
+    }
+    query += 'ORDER BY s.last_reply_at DESC';
+    try {
+        const [suggestions] = await db.query(query, params);
+        res.json(suggestions);
+    } catch (error) { res.status(500).json({ message: 'Error fetching all suggestions.' }); }
+});
+
+// ADMIN: Change a suggestion's status
+app.put('/api/admin/suggestion/status', async (req, res) => {
+    const { suggestionId, status } = req.body;
+    try {
+        await db.query('UPDATE suggestions SET status = ? WHERE id = ?', [status, suggestionId]);
+        res.status(200).json({ message: 'Status updated.' });
+    } catch (error) { res.status(500).json({ message: 'Error updating status.' }); }
+});
 
 
 // Start the server

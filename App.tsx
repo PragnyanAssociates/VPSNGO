@@ -31,6 +31,9 @@ import AcademicCalendar from './src/components/AcademicCalendar';
 import TimetableScreen from './src/screens/TimetableScreen';
 import AttendanceScreen from './src/screens/AttendanceScreen';
 import PhysicsSyllabus from './src/components/PhysicsSyllabus';
+import TransportScreen from './src/screens/transport/TransportScreen';
+import GalleryScreen from './src/screens/gallery/GalleryScreen';
+import AlbumDetailScreen from './src/screens/gallery/AlbumDetailScreen';
 
 // Admin-Specific Screens
 import AdminNotifications from './src/components/AdminNotifications';
@@ -43,6 +46,7 @@ import TeacherAdminHomeworkScreen from './src/screens/homework/TeacherAdminHomew
 import TeacherAdminExamScreen from './src/screens/exams_Schedule/TeacherAdminExamScreen';
 import TeacherAdminResultsScreen from './src/screens/results/TeacherAdminResultsScreen';
 import AdminSyllabusScreen from './src/screens/syllabus/AdminSyllabusScreen';
+import AdminSuggestionsScreen from './src/screens/suggestions/AdminSuggestionsScreen';
 
 // Teacher-Specific Screens
 import TeacherNotifications from './src/components/TeacherNotifications';
@@ -78,6 +82,7 @@ import StudentPTMScreen from './src/screens/ptm/StudentPTMScreen';
 import StudentExamScreen from './src/screens/exams_Schedule/StudentExamScreen';
 import StudentMaterialsScreen from './src/screens/study-materials/StudentMaterialsScreen';
 import ReportDetailScreen from './src/screens/results/ReportDetailScreen';
+import ChatAIScreen from './src/screens/chatai/ChatAIScreen';
 
 // Donor-Specific Screens
 import DonorNotifications from './src/components/DonorNotifications';
@@ -86,6 +91,7 @@ import DonorReceipts from './src/components/DonorReceipts';
 import DonorPayments from './src/components/DonorPayments';
 import DonorSponsor from './src/components/DonorSponsor';
 import DonorSI from './src/components/DonorSI';
+import DonorSuggestionsScreen from './src/screens/suggestions/DonorSuggestionsScreen';
 
 // Unified Help Desk Screen for authenticated users
 import UserHelpDeskScreen from './src/screens/helpdesk/UserHelpDeskScreen';
@@ -100,11 +106,51 @@ const PublicStack = () => (
     <Stack.Screen name="Login" component={LoginScreen} />
     <Stack.Screen name="DonorRegistration" component={DonorRegistrationScreen} />
     <Stack.Screen name="ForgotPasswordScreen" component={ForgotPasswordScreen} />
-    <Stack.Screen name="AboutUs" component={AboutUs} />
+    
     <Stack.Screen name="Transport" component={TransportFeatureNavigator} />
     <Stack.Screen name="ResetPasswordScreen" component={ResetPasswordScreen} />
   </Stack.Navigator>
 );
+
+// --- THIS IS THE NESTED NAVIGATOR FOR THE GALLERY ---
+// --- THIS IS THE NESTED NAVIGATOR FOR THE GALLERY (WITH STYLING) ---
+const GalleryNavigator = () => (
+    <Stack.Navigator>
+        <Stack.Screen
+            name="GalleryAlbums"
+            component={GalleryScreen}
+            options={{ 
+              title: 'Photo & Video Albums',
+              // --- STYLES ADDED HERE ---
+              headerStyle: {
+                backgroundColor: '#e0f2f7', // Light teal background from your dashboard
+              },
+              headerTintColor: '#008080', // Dark teal color for the title and back button
+              headerTitleStyle: {
+                fontWeight: 'bold', // Make the title bold
+              },
+            }}
+        />
+        <Stack.Screen
+            name="AlbumDetail"
+            component={AlbumDetailScreen}
+            // Add the same styles to the detail screen for consistency
+            options={({ route }: any) => ({ 
+              title: route.params.title,
+              // --- STYLES ADDED HERE ---
+              headerStyle: {
+                backgroundColor: '#e0f2f7',
+              },
+              headerTintColor: '#008080',
+              headerTitleStyle: {
+                fontWeight: 'bold',
+              },
+            })}
+        />
+    </Stack.Navigator>
+);
+
+
 
 // --- STACK 2: Screens available ONLY AFTER a user logs in ---
 const AuthenticatedStack = () => {
@@ -174,7 +220,20 @@ const AuthenticatedStack = () => {
       <Stack.Screen name="TeacherAdminResultsScreen" component={TeacherAdminResultsScreen} />
       <Stack.Screen name="ReportDetailScreen" component={ReportDetailScreen} /> 
       <Stack.Screen name="StudentResultsScreen" component={StudentResultsScreen} />
-      <Stack.Screen name="AdminSyllabusScreen" component={AdminSyllabusScreen} /> 
+      <Stack.Screen name="AdminSyllabusScreen" component={AdminSyllabusScreen} />
+      <Stack.Screen name="TransportScreen" component={TransportScreen} />
+      <Stack.Screen name="AboutUs" component={AboutUs} />
+      <Stack.Screen name="ChatAIScreen" component={ChatAIScreen} />
+      <Stack.Screen name="DonorSuggestionsScreen" component={DonorSuggestionsScreen} />
+      <Stack.Screen name="AdminSuggestionsScreen" component={AdminSuggestionsScreen} />
+      {/* ADD THE GALLERY NAVIGATOR AS A SINGLE SCREEN IN THE MAIN STACK */}
+      <Stack.Screen 
+        name="Gallery" 
+        component={GalleryNavigator} 
+        options={{ headerShown: false }} 
+      />
+      
+        
     </Stack.Navigator>
   );
 };
@@ -244,4 +303,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#f8f8ff'
   }
+
 });

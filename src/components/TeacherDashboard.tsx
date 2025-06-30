@@ -25,6 +25,10 @@ import TeacherAdminExamsScreen from '../screens/exams/TeacherAdminExamsScreen';
 import TeacherAdminMaterialsScreen from '../screens/study-materials/TeacherAdminMaterialsScreen';
 import TeacherAdminResultsScreen from '../screens/results/TeacherAdminResultsScreen';
 import TeacherSyllabusScreen from '../screens/syllabus/TeacherSyllabusScreen';
+import TransportScreen from '../screens/transport/TransportScreen';
+import AboutUs from './AboutUs';
+import ChatAIScreen from '../screens/chatai/ChatAIScreen';
+
 
 
 // --- Type Definitions (No Changes) ---
@@ -44,8 +48,6 @@ const TEXT_COLOR_MEDIUM = '#566573';
 const BORDER_COLOR = '#E0E0E0';
 const WHITE = '#ffffff';
 const DANGER_COLOR = '#E53935';
-const PERIOD_DEFINITIONS = [ { period: 1, start: '09:00', end: '09:45' }, { period: 2, start: '09:45', end: '10:30' }, { period: 3, start: '10:30', end: '10:45', isBreak: true }, { period: 4, start: '10:45', end: '11:30' }, { period: 5, start: '11:30', end: '12:15' }, { period: 6, start: '12:15', end: '13:00', isBreak: true }, { period: 7, start: '13:00', end: '13:45' }, { period: 8, start: '13:45', end: '14:30' },];
-const timeToMinutes = (time: string): number => { if (!time || !time.includes(':')) return 0; const [hours, minutes] = time.split(':').map(Number); return hours * 60 + minutes; };
 
 // --- Main Component ---
 const TeacherDashboard = ({ navigation }) => {
@@ -53,7 +55,6 @@ const TeacherDashboard = ({ navigation }) => {
   const { user, logout } = useAuth();
   const [profile, setProfile] = useState<ProfileData | null>(null);
 
-  // This logic is now correct and fetches the profile based on user ID.
   useEffect(() => {
     const fetchProfile = async () => {
       if (!user?.id) return;
@@ -74,34 +75,60 @@ const TeacherDashboard = ({ navigation }) => {
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState( initialNotificationsData.filter(n => !n.read).length );
   const handleLogout = () => { Alert.alert("Logout", "Are you sure you want to log out?", [ { text: "Cancel", style: "cancel" }, { text: "Logout", onPress: logout, style: "destructive" } ]); };
 
-  // This function is no longer used by the dashboard button, but is kept for potential future use (e.g., a "Go to Current Class" button).
-  const getLiveAttendanceParams = () => { /* ... This function's logic is complex and not needed for the new flow, so it's safely ignored ... */ };
-
+  // --- FIX #1: Change the Gallery item to navigate to the 'Gallery' navigator ---
   const allQuickAccessItems = [
     { id: 'qa2', title: 'Timetable', imageSource: 'https://cdn-icons-png.flaticon.com/128/1254/1254275.png', navigateToTab: 'Timetable' },
     { id: 'qa3', title: 'Attendance', imageSource: 'https://cdn-icons-png.flaticon.com/128/10293/10293877.png', navigateToTab: 'Attendance' },
     { id: 'qa4', title: 'Syllabus', imageSource: 'https://cdn-icons-png.flaticon.com/128/1584/1584937.png', navigateToTab: 'TeacherSyllabusScreen' },
-    { id: 'qa15', title: 'Study materials', imageSource: 'https://cdn-icons-png.flaticon.com/128/3273/3273259.png', navigateToTab: 'TeacherAdminMaterialsScreen' },
-    { id: 'qa5', title: 'Exams', imageSource: 'https://cdn-icons-png.flaticon.com/128/207/207190.png', navigateToTab: 'TeacherAdminExamsScreen' },
-    { id: 'qa14', title: 'Home Work', imageSource: 'https://cdn-icons-png.flaticon.com/128/11647/11647336.png', navigateToTab: 'TeacherAdminHomeworkScreen' },
-    { id: 'qa6', title: 'Reports', imageSource: 'https://cdn-icons-png.flaticon.com/128/9913/9913576.png', navigateToTab: 'TeacherAdminResultsScreen' },
     { id: 'qa7', title: 'Exam Schedule', imageSource: 'https://cdn-icons-png.flaticon.com/128/4029/4029113.png', navigateToTab: 'TeacherAdminExamScreen' },
+    { id: 'qa5', title: 'Exams', imageSource: 'https://cdn-icons-png.flaticon.com/128/207/207190.png', navigateToTab: 'TeacherAdminExamsScreen' },
+    { id: 'qa6', title: 'Reports', imageSource: 'https://cdn-icons-png.flaticon.com/128/9913/9913576.png', navigateToTab: 'TeacherAdminResultsScreen' },
+    { id: 'qa15', title: 'Study materials', imageSource: 'https://cdn-icons-png.flaticon.com/128/3273/3273259.png', navigateToTab: 'TeacherAdminMaterialsScreen' },
+    { id: 'qa14', title: 'Home Work', imageSource: 'https://cdn-icons-png.flaticon.com/128/11647/11647336.png', navigateToTab: 'TeacherAdminHomeworkScreen' }, 
     { id: 'qa8', title: 'Digital Labs', imageSource: 'https://cdn-icons-png.flaticon.com/128/9562/9562280.png', navigateToTab: 'TeacherAdminLabsScreen' },
     { id: 'qa9', title: 'Sports', imageSource: 'https://cdn-icons-png.flaticon.com/128/3429/3429456.png', navigateToTab: 'AdminSportsScreen' },
     { id: 'qa10', title: 'Health Info', imageSource: 'https://cdn-icons-png.flaticon.com/128/3004/3004458.png', navigateToTab: 'TeacherHealthAdminScreen' },
-    { id: 'qa11', title: 'PTM', imageSource: 'https://cdn-icons-png.flaticon.com/128/17588/17588666.png', navigateToTab: 'TeacherAdminPTMScreen' },
     { id: 'qa13', title: 'Events', imageSource: 'https://cdn-icons-png.flaticon.com/128/9592/9592283.png', navigateToTab: 'AdminEventsScreen' },
+    { id: 'qa11', title: 'PTM', imageSource: 'https://cdn-icons-png.flaticon.com/128/17588/17588666.png', navigateToTab: 'TeacherAdminPTMScreen' },
+    { id: 'qa17', title: 'Transport', imageSource: 'https://cdn-icons-png.flaticon.com/128/2945/2945694.png', navigateToTab: 'TransportScreen' },
     { id: 'qa16', title: 'Help Desk', imageSource: 'https://cdn-icons-png.flaticon.com/128/4961/4961736.png', navigateToTab: 'UserHelpDeskScreen' },
-  ];
+    // This now uses real navigation to the 'Gallery' navigator.
+    { id: 'qa18', title: 'Gallery', imageSource: 'https://cdn-icons-png.flaticon.com/128/8418/8418513.png', navigateTo: 'Gallery' },
+    { id: 'qa7', title: 'About Us', imageSource: 'https://cdn-icons-png.flaticon.com/128/3815/3815523.png', navigateToTab: 'AboutUs' },
+    { id: 'qa20', title: 'Chat AI', imageSource: 'https://cdn-icons-png.flaticon.com/128/6028/6028616.png', navigateToTab: 'ChatAI' },
 
+  ];
 
   const renderContent = () => {
     const handleBack = () => setActiveTab('home');
     const ContentScreenHeader = ({ title }) => ( <View style={styles.contentHeader}><TouchableOpacity onPress={handleBack} style={styles.backButtonGlobal}><MaterialIcons name="arrow-back" size={24} color={PRIMARY_COLOR} /></TouchableOpacity><Text style={styles.contentHeaderTitle}>{title}</Text><View style={{ width: 30 }} /></View> );
     switch (activeTab) {
       case 'home':
-        return ( <ScrollView><View style={styles.dashboardGrid}>{allQuickAccessItems.map(item => ( <DashboardSectionCard key={item.id} title={item.title} imageSource={item.imageSource} onPress={() => item.navigateToTab ? setActiveTab(item.navigateToTab) : Alert.alert(item.title, `Coming soon!`)} /> ))}</View></ScrollView> );
+        return ( 
+            <ScrollView>
+                <View style={styles.dashboardGrid}>
+                    {allQuickAccessItems.map(item => ( 
+                        <DashboardSectionCard 
+                            key={item.id} 
+                            title={item.title} 
+                            imageSource={item.imageSource} 
+                            // --- FIX #2: Update the onPress logic to handle 'navigateTo' ---
+                            onPress={() => {
+                                if (item.navigateTo) {
+                                    navigation.navigate(item.navigateTo);
+                                } else if (item.navigateToTab) {
+                                    setActiveTab(item.navigateToTab);
+                                } else {
+                                    Alert.alert(item.title, `Coming soon!`);
+                                }
+                            }} 
+                        /> 
+                    ))}
+                </View>
+            </ScrollView> 
+        );
       
+      // All other cases remain the same
       case 'allNotifications': return ( <><ContentScreenHeader title="Notifications" /><TeacherNotifications onUnreadCountChange={setUnreadNotificationsCount} /></> );
       case 'calendar': return <AcademicCalendar />;
       case 'profile': return <ProfileScreen onBackPress={() => setActiveTab('home')} />;
@@ -116,18 +143,21 @@ const TeacherDashboard = ({ navigation }) => {
       case 'TeacherAdminExamsScreen': return ( <><ContentScreenHeader title="Exams" /><TeacherAdminExamsScreen /></> );
       case 'TeacherAdminMaterialsScreen': return ( <><ContentScreenHeader title="Study Materials" /><TeacherAdminMaterialsScreen /></> );
       case 'TeacherSyllabusScreen': return ( <><ContentScreenHeader title="Syllabus" /><TeacherSyllabusScreen /></> );
+      case 'TransportScreen': return ( <><ContentScreenHeader title="Transport" /><TransportScreen /></> );
       
-      // ✅ CRITICAL FIX: Pass the navigation prop down to any screen that needs to navigate.
+      // --- FIX #3: REMOVE the internal rendering case for GalleryScreen ---
+      // case 'GalleryScreen': return ( <> <ContentScreenHeader title="Gallery" onBack={handleBack} /> <GalleryScreen /> </> );
+      
       case 'TeacherAdminPTMScreen': return ( <><ContentScreenHeader title="Meetings" /><TeacherAdminPTMScreen navigation={navigation} /></> );
       case 'TeacherAdminResultsScreen': return ( <><ContentScreenHeader title="Reports" /><TeacherAdminResultsScreen navigation={navigation} /></> );
-      
       case 'Attendance': return ( <><ContentScreenHeader title="Attendance Report" /><AttendanceScreen /></> );
+      case 'AboutUs': return ( <><ContentScreenHeader title="About Us" onBack={handleBack} /><AboutUs /></> );
+      case 'ChatAI': return ( <><ContentScreenHeader title="AI Assistant" /><ChatAIScreen /></> );
       
       default:
         return ( <><ContentScreenHeader title={capitalize(activeTab)} /><View style={styles.fallbackContent}><Text style={styles.fallbackText}>Content not available yet.</Text></View></> );
     }
   };
-
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -207,7 +237,5 @@ const styles = StyleSheet.create({
     fallbackContent: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20, backgroundColor: TERTIARY_COLOR },
     fallbackText: { fontSize: 16, color: TEXT_COLOR_MEDIUM, textAlign: 'center', marginBottom: 10 },
 });
-
-
 
 export default TeacherDashboard;
