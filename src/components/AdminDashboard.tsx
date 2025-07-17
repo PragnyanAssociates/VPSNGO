@@ -31,6 +31,9 @@ import AboutUs from './AboutUs';
 import GalleryScreen from '../screens/gallery/GalleryScreen';
 import ChatAIScreen from '../screens/chatai/ChatAIScreen';
 import AdminSuggestionsScreen from '../screens/suggestions/AdminSuggestionsScreen';
+import AdminSponsorScreen from '../screens/sponsorship/AdminSponsorScreen';
+import AdminPaymentScreen from '../screens/payments/AdminPaymentScreen';
+import KitchenScreen from '../screens/kitchen/KitchenScreen';
 
 interface ProfileData {
   full_name: string;
@@ -95,6 +98,9 @@ const AdminDashboard = ({ navigation }) => {
     { id: 'qa19', title: 'About Us', imageSource: 'https://cdn-icons-png.flaticon.com/128/3815/3815523.png', navigateToTab: 'AboutUs' },
     { id: 'qa20', title: 'Chat AI', imageSource: 'https://cdn-icons-png.flaticon.com/128/6028/6028616.png', navigateToTab: 'ChatAI' },
     { id: 'qa21', title: 'Sugestions', imageSource: 'https://cdn-icons-png.flaticon.com/128/9722/9722906.png', navigateToTab: 'AdminSuggestionsScreen' },
+    { id: 'qa22', title: 'Sponsorship', imageSource: 'https://cdn-icons-png.flaticon.com/128/18835/18835518.png', navigateToTab: 'AdminSponsorScreen' },
+    { id: 'qa23', title: 'Payments', imageSource: 'https://cdn-icons-png.flaticon.com/128/1198/1198291.png', navigateToTab: 'AdminPaymentScreen' },
+    { id: 'qa23', title: 'Kitchen', imageSource: 'https://cdn-icons-png.flaticon.com/128/1698/1698742.png', navigateToTab: 'KitchenScreen' },
   ];
 
   const handleLogout = () => { Alert.alert("Logout", "Are you sure?", [{ text: "Cancel", style: "cancel" }, { text: "Logout", onPress: logout, style: "destructive" }]); };
@@ -158,6 +164,9 @@ const AdminDashboard = ({ navigation }) => {
       case 'AboutUs': return ( <><ContentScreenHeader title="About Us" onBack={handleBack} /><AboutUs /></> );
       case 'ChatAI': return ( <><ContentScreenHeader title="AI Assistant" onBack={handleBack} /><ChatAIScreen /></> );
       case 'AdminSuggestionsScreen': return ( <><ContentScreenHeader title="Suggestions" onBack={handleBack} /><AdminSuggestionsScreen /></> );
+      case 'AdminSponsorScreen': return ( <><ContentScreenHeader title="Sponsorship" onBack={handleBack} /><AdminSponsorScreen /></> );
+      case 'AdminPaymentScreen': return ( <><ContentScreenHeader title="Payments" onBack={handleBack} /><AdminPaymentScreen /></> );
+      case 'KitchenScreen': return ( <><ContentScreenHeader title="kitchen" onBack={handleBack} /><KitchenScreen /></> );
 
       default: return ( <View style={styles.fallbackContent}><Text style={styles.fallbackText}>Content for '{activeTab}' is not available.</Text><TouchableOpacity onPress={handleBack}><Text style={styles.fallbackLink}>Go to Home</Text></TouchableOpacity></View> );
     }

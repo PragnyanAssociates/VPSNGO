@@ -2029,62 +2029,75 @@ app.get('/api/syllabus/student/subject-details/:syllabusId/:studentId', async (r
 
 
 
-
 // ==========================================================
-// --- TRANSPORT API ROUTES (UPGRADED) ---
+// --- TRANSPORT API ROUTES (FINAL & ROBUST VERSION) ---
 // ==========================================================
+const Openrouteservice = require('openrouteservice-js');
+const { encode } = require('@googlemaps/polyline-codec');
 
-// --- ADMIN ROUTES ---
+const ors = new Openrouteservice.Directions({
+  api_key: process.env.OPENROUTESERVICE_API_KEY,
+});
 
-// CREATE a new route by generating coordinates from stop names
+const geocodeService = new Openrouteservice.Geocode({
+    api_key: process.env.OPENROUTESERVICE_API_KEY,
+});
+
+async function geocodeAddress(addressText) {
+    const response = await geocodeService.geocode({ text: addressText, size: 1 });
+    if (response.features && response.features.length > 0) {
+        return response.features[0].geometry.coordinates; // [longitude, latitude]
+    }
+    throw new Error(`Could not find coordinates for address: "${addressText}"`);
+}
+
+// --- CREATE ROUTE ---
 app.post('/api/transport/routes', async (req, res) => {
-    // ✅ ADDED `state` to the destructured body
     const { route_name, driver_name, driver_phone, conductor_name, conductor_phone, stops, city, state, country, created_by } = req.body;
-
-    if (!process.env.GOOGLE_MAPS_API_KEY) {
-        return res.status(500).json({ message: "Server configuration error: Google Maps API key is missing." });
-    }
-    // ✅ ADDED validation for `state`
-    if (!route_name || !city || !state || !country || !stops || stops.length < 2 || !created_by) {
-        return res.status(400).json({ message: 'All fields including Country, State, City, and at least two boarding points are required.' });
-    }
-
-    // ✅ UPGRADED fullAddress function to be more specific
-    const fullAddress = (point) => `${point}`; // Google Places Autocomplete already provides the full address
-
-    const origin = fullAddress(stops[0].point);
-    const destination = fullAddress(stops[stops.length - 1].point);
-    const waypoints = stops.length > 2 ? stops.slice(1, -1).map(s => fullAddress(s.point)) : [];
+    if (!process.env.OPENROUTESERVICE_API_KEY) return res.status(500).json({ message: "Server configuration error: ORS API key missing." });
+    if (!route_name || !stops || stops.length < 2) return res.status(400).json({ message: 'Route Name and at least two boarding points are required.' });
 
     try {
-        const directionsResponse = await googleMapsClient.directions({
-            params: {
-                origin,
-                destination,
-                waypoints,
-                key: process.env.GOOGLE_MAPS_API_KEY,
-            },
-            timeout: 5000,
+        const stopCoordinates = [];
+        for (const stop of stops) {
+            try {
+                const fullAddress = `${stop.point}, ${city}, ${state}, ${country}`;
+                const coords = await geocodeAddress(fullAddress);
+                stopCoordinates.push(coords);
+            } catch (geocodingError) {
+                return res.status(400).json({ message: `Could not find location for stop: "${stop.point}". Please provide a more specific name.` });
+            }
+        }
+
+        const routeResponse = await ors.calculate({
+            coordinates: stopCoordinates,
+            profile: 'driving-car',
+            format: 'geojson',
         });
 
-        if (directionsResponse.data.status !== 'OK') {
-            throw new Error(`Google Maps Error: ${directionsResponse.data.status}. ${directionsResponse.data.error_message || 'Check your input points.'}`);
+        if (!routeResponse.features || routeResponse.features.length === 0) {
+            throw new Error("OpenRouteService did not return a valid route for the given points.");
         }
-        const routePolyline = directionsResponse.data.routes[0].overview_polyline.points;
+        
+        const routeGeometry = routeResponse.features[0].geometry.coordinates;
+        const pointsToEncode = routeGeometry.map(p => [p[1], p[0]]); 
+        const routePolyline = encode(pointsToEncode, 5);
+
+        if (!routePolyline || routePolyline.length < 5) {
+            throw new Error("Generated polyline is empty or invalid.");
+        }
 
         const connection = await db.getConnection();
         try {
             await connection.beginTransaction();
-            // ✅ ADDED `state` to the INSERT query
             const routeQuery = 'INSERT INTO transport_routes (route_name, driver_name, driver_phone, conductor_name, conductor_phone, city, state, country, route_path_polyline, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
-            const [routeResult] = await connection.query(routeQuery, [route_name, driver_name, driver_phone, conductor_name, conductor_phone, city, state, country, routePolyline, created_by]);
-            const route_id = routeResult.insertId;
+            await connection.query(routeQuery, [route_name, driver_name, driver_phone, conductor_name, conductor_phone, city, state, country, routePolyline, created_by]);
+            const route_id = (await connection.query('SELECT LAST_INSERT_ID() as id'))[0][0].id;
 
-            if (stops.length > 0) {
-                const stopsQuery = 'INSERT INTO transport_stops (route_id, stop_name, stop_order) VALUES ?';
-                const stopValues = stops.map((stop, index) => [route_id, stop.point, index + 1]);
-                await connection.query(stopsQuery, [stopValues]);
-            }
+            const stopsQuery = 'INSERT INTO transport_stops (route_id, stop_name, stop_order) VALUES ?';
+            const stopValues = stops.map((stop, index) => [route_id, stop.point, index + 1]);
+            await connection.query(stopsQuery, [stopValues]);
+            
             await connection.commit();
             res.status(201).json({ message: 'Route created successfully!' });
         } catch (dbError) {
@@ -2094,62 +2107,49 @@ app.post('/api/transport/routes', async (req, res) => {
             connection.release();
         }
     } catch (error) {
-        console.error("\n--- FULL ERROR OBJECT FROM GOOGLE MAPS (CREATE) ---");
-        if (error.response) {
-            console.error("Status:", error.response.status);
-            console.error("Data:", JSON.stringify(error.response.data, null, 2));
-        } else {
-            console.error(error);
-        }
-        console.error("--- END OF FULL ERROR OBJECT ---\n");
-        const errorMessage = error.response?.data?.error_message || error.message || 'Failed to create route.';
-        res.status(500).json({ message: errorMessage });
+        res.status(500).json({ message: error.message || 'Failed to calculate route.' });
     }
 });
 
-// UPDATE a route and its stops
+// --- UPDATE ROUTE ---
 app.put('/api/transport/routes/:routeId', async (req, res) => {
     const { routeId } = req.params;
-    // ✅ ADDED `state`
     const { route_name, driver_name, driver_phone, conductor_name, conductor_phone, stops, city, state, country } = req.body;
-    
-    if (!process.env.GOOGLE_MAPS_API_KEY) {
-        return res.status(500).json({ message: "Server configuration error: Google Maps API key is missing." });
-    }
-    // ✅ ADDED validation for `state`
-    if (!route_name || !city || !state || !country || !stops || !stops.length) {
-        return res.status(400).json({ message: 'All fields including Country, State, and City are required.' });
-    }
-
-    const fullAddress = (point) => `${point}`; // Google Places Autocomplete already provides the full address
-
-    const origin = fullAddress(stops[0].point);
-    const destination = fullAddress(stops[stops.length - 1].point);
-    const waypoints = stops.length > 2 ? stops.slice(1, -1).map(s => fullAddress(s.point)) : [];
-
     try {
-        const directionsResponse = await googleMapsClient.directions({
-            params: { origin, destination, waypoints, key: process.env.GOOGLE_MAPS_API_KEY },
-            timeout: 5000,
-        });
-
-        if (directionsResponse.data.status !== 'OK') {
-            throw new Error(`Google Maps Error: ${directionsResponse.data.status}. ${directionsResponse.data.error_message || 'Check your input points.'}`);
+        const stopCoordinates = [];
+        for (const stop of stops) {
+            try {
+                const fullAddress = `${stop.point}, ${city}, ${state}, ${country}`;
+                const coords = await geocodeAddress(fullAddress);
+                stopCoordinates.push(coords);
+            } catch (geocodingError) {
+                return res.status(400).json({ message: `Could not find location for stop: "${stop.point}".` });
+            }
         }
-        const routePolyline = directionsResponse.data.routes[0].overview_polyline.points;
+        
+        const routeResponse = await ors.calculate({
+            coordinates: stopCoordinates,
+            profile: 'driving-car',
+            format: 'geojson',
+        });
+        
+        if (!routeResponse.features || routeResponse.features.length === 0) {
+            throw new Error("OpenRouteService did not return a valid route.");
+        }
+
+        const routeGeometry = routeResponse.features[0].geometry.coordinates;
+        const pointsToEncode = routeGeometry.map(p => [p[1], p[0]]);
+        const routePolyline = encode(pointsToEncode, 5);
 
         const connection = await db.getConnection();
         try {
             await connection.beginTransaction();
-            // ✅ ADDED `state` to the UPDATE query
             const routeQuery = 'UPDATE transport_routes SET route_name = ?, driver_name = ?, driver_phone = ?, conductor_name = ?, conductor_phone = ?, city = ?, state = ?, country = ?, route_path_polyline = ? WHERE route_id = ?';
             await connection.query(routeQuery, [route_name, driver_name, driver_phone, conductor_name, conductor_phone, city, state, country, routePolyline, routeId]);
             await connection.query('DELETE FROM transport_stops WHERE route_id = ?', [routeId]);
-            if (stops.length > 0) {
-                const stopsQuery = 'INSERT INTO transport_stops (route_id, stop_name, stop_order) VALUES ?';
-                const stopValues = stops.map((stop, index) => [routeId, stop.point, index + 1]);
-                await connection.query(stopsQuery, [stopValues]);
-            }
+            const stopsQuery = 'INSERT INTO transport_stops (route_id, stop_name, stop_order) VALUES ?';
+            const stopValues = stops.map((stop, index) => [routeId, stop.point, index + 1]);
+            await connection.query(stopsQuery, [stopValues]);
             await connection.commit();
             res.status(200).json({ message: 'Route updated successfully!' });
         } catch (dbError) {
@@ -2159,75 +2159,55 @@ app.put('/api/transport/routes/:routeId', async (req, res) => {
             connection.release();
         }
     } catch (error) {
-        console.error("\n--- FULL ERROR OBJECT FROM GOOGLE MAPS (UPDATE) ---");
-        if (error.response) {
-            console.error("Status:", error.response.status);
-            console.error("Data:", JSON.stringify(error.response.data, null, 2));
-        } else {
-            console.error(error);
-        }
-        console.error("--- END OF FULL ERROR OBJECT ---\n");
-        const errorMessage = error.response?.data?.error_message || error.message || 'Failed to update route.';
-        res.status(500).json({ message: errorMessage });
+        res.status(500).json({ message: error.message || 'Failed to update route.' });
     }
 });
 
-// DELETE a route
+// --- GET ROUTE DETAILS ---
+app.get('/api/transport/routes/:routeId', async (req, res) => { 
+    try { 
+        const [routeResult] = await db.query('SELECT * FROM transport_routes WHERE route_id = ?', [req.params.routeId]); 
+        if (!routeResult[0]) { return res.status(404).json({ message: 'Route not found.' }); } 
+        const [stopsResult] = await db.query(
+            'SELECT stop_name as point, stop_order as sno FROM transport_stops WHERE route_id = ? ORDER BY stop_order ASC', 
+            [req.params.routeId]
+        ); 
+        const route = routeResult[0]; 
+        const stops = stopsResult;
+        res.json({ ...route, stops }); 
+    } catch (error) { 
+        res.status(500).json({ message: 'Failed to fetch route details.' }); 
+    }
+});
+
+
+// --- Other routes ---
 app.delete('/api/transport/routes/:routeId', async (req, res) => {
-    try {
-        const [result] = await db.query('DELETE FROM transport_routes WHERE route_id = ?', [req.params.routeId]);
-        if (result.affectedRows === 0) return res.status(404).json({ message: 'Route not found.' });
-        res.status(200).json({ message: 'Route deleted successfully.' });
-    } catch (error) {
-        console.error("Error deleting transport route:", error);
-        res.status(500).json({ message: 'Failed to delete route.' });
-    }
+  try {
+    const [result] = await db.query('DELETE FROM transport_routes WHERE route_id = ?', [req.params.routeId]);
+    if (result.affectedRows === 0) return res.status(404).json({ message: 'Route not found.' });
+    res.status(200).json({ message: 'Route deleted successfully.' });
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to delete route.' });
+  }
 });
-
-// UPDATE a bus's live location
 app.put('/api/transport/routes/:routeId/location', async (req, res) => {
-    const { lat, lng } = req.body;
-    if (!lat || !lng) return res.status(400).json({ message: 'Latitude and Longitude are required.' });
-    try {
-        await db.query('UPDATE transport_routes SET current_lat = ?, current_lng = ?, last_location_update = NOW() WHERE route_id = ?', [lat, lng, req.params.routeId]);
-        res.status(200).json({ message: 'Location updated.' });
-    } catch (error) {
-        console.error("Error updating bus location:", error);
-        res.status(500).json({ message: 'Failed to update location.' });
-    }
+  const { lat, lng } = req.body;
+  if (!lat || !lng) return res.status(400).json({ message: 'Latitude and Longitude are required.' });
+  try {
+    await db.query('UPDATE transport_routes SET current_lat = ?, current_lng = ?, last_location_update = NOW() WHERE route_id = ?', [lat, lng, req.params.routeId]);
+    res.status(200).json({ message: 'Location updated.' });
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to update location.' });
+  }
 });
-
-
-// --- SHARED ROUTES (FOR ADMIN, TEACHER, STUDENT) ---
-
-// READ all routes (basic info for list view)
 app.get('/api/transport/routes', async (req, res) => {
-    try {
-        const [routes] = await db.query('SELECT route_id, route_name FROM transport_routes ORDER BY route_name ASC');
-        res.json(routes);
-    } catch (error) {
-        console.error("Error fetching all routes:", error);
-        res.status(500).json({ message: 'Failed to fetch routes.' });
-    }
-});
-
-// READ full details of a single route
-app.get('/api/transport/routes/:routeId', async (req, res) => {
-    try {
-        const [routeResult, stopsResult] = await Promise.all([
-            db.query('SELECT * FROM transport_routes WHERE route_id = ?', [req.params.routeId]),
-            db.query('SELECT stop_name as point, stop_order as sno FROM transport_stops WHERE route_id = ? ORDER BY stop_order ASC', [req.params.routeId])
-        ]);
-        
-        const [route] = routeResult[0];
-        if (!route) return res.status(404).json({ message: 'Route not found.' });
-        
-        const stops = stopsResult[0];
-        res.json({ ...route, stops });
-    } catch (error) {
-        console.error("Error fetching route details:", error);
-        res.status(500).json({ message: 'Failed to fetch route details.' });
-    }
+  try {
+    const [routes] = await db.query('SELECT route_id, route_name FROM transport_routes ORDER BY route_name ASC');
+    res.json(routes);
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to fetch routes.' });
+  }
 });
 
 
@@ -2532,6 +2512,312 @@ app.put('/api/admin/suggestion/status', async (req, res) => {
         await db.query('UPDATE suggestions SET status = ? WHERE id = ?', [status, suggestionId]);
         res.status(200).json({ message: 'Status updated.' });
     } catch (error) { res.status(500).json({ message: 'Error updating status.' }); }
+});
+
+
+// 📂 File: backend/server.js (DELETE both old blocks and PASTE this one in their place)
+
+// ==========================================================
+// --- SPONSORSHIP & PAYMENTS API ROUTES (CORRECTED & UNIFIED) ---
+// ==========================================================
+
+// 1. SINGLE, UNIFIED MULTER SETUP FOR BOTH MODULES
+const paymentStorage = multer.diskStorage({
+    destination: './public/uploads/', // Ensure you have a /public/uploads directory
+    filename: function(req, file, cb){
+        // Give files a clear prefix based on what they are for
+        let prefix = 'file';
+        if (file.fieldname === 'qrCodeImage') prefix = 'qr';
+        if (file.fieldname === 'screenshot') prefix = 'proof'; // Used by both modules
+        
+        cb(null, `${prefix}-${Date.now()}${path.extname(file.originalname)}`);
+    }
+});
+const paymentUpload = multer({ storage: paymentStorage });
+
+// 2. SINGLE APP.USE() for serving images.
+// Make the '/public' folder and its contents (like '/uploads') accessible via URL.
+app.use('/public', express.static(path.join(__dirname, 'public')));
+
+
+// --- SUB-MODULE: MANUAL PAYMENTS (QR Code & Bank Details) ---
+
+// ADMIN: Get the current QR/Bank details for the management screen
+app.get('/api/admin/payment-details', async (req, res) => {
+    try {
+        const [[details]] = await db.query('SELECT * FROM payment_details WHERE id = 1');
+        res.json(details || {});
+    } catch (error) { res.status(500).json({ message: 'Error fetching payment details.' }); }
+});
+
+// ADMIN: Update QR/Bank details
+app.post('/api/admin/payment-details', paymentUpload.single('qrCodeImage'), async (req, res) => {
+    const { accountHolderName, accountNumber, ifscCode, cifCode } = req.body;
+    let sql = 'UPDATE payment_details SET account_holder_name = ?, account_number = ?, ifsc_code = ?, cif_code = ?';
+    const params = [accountHolderName, accountNumber, ifscCode, cifCode];
+
+    if (req.file) {
+        const qrCodeUrl = `/public/uploads/${req.file.filename}`;
+        sql += ', qr_code_url = ?';
+        params.push(qrCodeUrl);
+    }
+    sql += ' WHERE id = 1';
+
+    try {
+        await db.query(sql, params);
+        res.json({ message: 'Payment details updated successfully!' });
+    } catch (error) { res.status(500).json({ message: 'Error updating details.' }); }
+});
+
+// ADMIN: Get a list of all general payment proofs submitted by donors
+app.get('/api/admin/payment-proofs', async (req, res) => {
+    const query = `
+        SELECT pp.*, u.username as donor_username FROM payment_proofs pp
+        JOIN users u ON pp.donor_id = u.id ORDER BY pp.submission_date DESC`;
+    try {
+        const [proofs] = await db.query(query);
+        res.json(proofs);
+    } catch (error) {
+        console.error("Error fetching admin payment proofs:", error);
+        res.status(500).json({ message: 'Error fetching payment proofs.' });
+    }
+});
+
+// DONOR: Get the QR/Bank details to display on their screen
+app.get('/api/payment-details', async (req, res) => {
+    try {
+        const [[details]] = await db.query('SELECT * FROM payment_details WHERE id = 1');
+        res.json(details || {});
+    } catch (error) { res.status(500).json({ message: 'Error fetching payment details.' }); }
+});
+
+// DONOR: Upload their general payment screenshot as proof (WITH AMOUNT)
+app.post('/api/donor/payment-proof', paymentUpload.single('screenshot'), async (req, res) => {
+    const { donorId, amount } = req.body;
+    if (!req.file || !donorId || !amount) return res.status(400).json({ message: 'Amount, screenshot, and Donor ID are required.' });
+    const screenshotUrl = `/public/uploads/${req.file.filename}`;
+    try {
+        await db.query('INSERT INTO payment_proofs (donor_id, amount, screenshot_url) VALUES (?, ?, ?)', [donorId, amount, screenshotUrl]);
+        res.status(201).json({ message: 'Payment proof uploaded successfully. Thank you!' });
+    } catch (error) { res.status(500).json({ message: 'Error uploading proof.' }); }
+});
+
+// DONOR: Get their personal general payment proof history (WITH AMOUNT)
+app.get('/api/donor/payment-history/:donorId', async (req, res) => {
+    const { donorId } = req.params;
+    if (!donorId) return res.status(400).json({ message: 'Donor ID is required.' });
+    try {
+        const query = `SELECT id, amount, screenshot_url, submission_date FROM payment_proofs WHERE donor_id = ? ORDER BY submission_date DESC`;
+        const [history] = await db.query(query, [donorId]);
+        res.json(history);
+    } catch (error) { res.status(500).json({ message: 'Error fetching payment history.' }); }
+});
+
+
+// --- SUB-MODULE: SPONSORSHIP (Manual Proof-Based Flow) ---
+
+// DONOR: Submit the initial sponsorship application form
+app.post('/api/sponsorship/apply', async (req, res) => {
+    const { donorId, fullName, email, phone, organization, message, wantsUpdates, wantsToVisit } = req.body;
+    try {
+        const [result] = await db.query(
+            'INSERT INTO sponsorship_applications (donor_id, full_name, email, phone, organization, message, wants_updates, wants_to_visit) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [donorId, fullName, email, phone, organization, message, wantsUpdates, wantsToVisit]
+        );
+        res.status(201).json({ message: 'Application received! Please proceed to payment.', applicationId: result.insertId });
+    } catch (error) { 
+        console.error("Sponsorship Apply Error:", error);
+        res.status(500).json({ message: 'Error submitting application.' }); 
+    }
+});
+
+// DONOR: Upload their payment screenshot for a specific sponsorship application
+app.post('/api/sponsorship/upload-proof', paymentUpload.single('screenshot'), async (req, res) => {
+    const { applicationId, donorId, amount } = req.body;
+    if (!req.file || !applicationId || !donorId || !amount) return res.status(400).json({ message: 'Missing required information.' });
+
+    const screenshotUrl = `/public/uploads/${req.file.filename}`;
+    try {
+        await db.query('INSERT INTO sponsorship_payments (application_id, donor_id, amount, screenshot_url) VALUES (?, ?, ?, ?)', [applicationId, donorId, amount, screenshotUrl]);
+        res.status(201).json({ message: 'Sponsorship proof uploaded successfully. Thank you!' });
+    } catch (error) { 
+        console.error("Sponsorship Proof Upload Error:", error);
+        res.status(500).json({ message: 'Error uploading proof.' }); 
+    }
+});
+
+// DONOR: Get their personal sponsorship history (list of applications with payment status)
+app.get('/api/sponsorship/history/:donorId', async (req, res) => {
+    const { donorId } = req.params;
+    const query = `SELECT sa.*, sp.amount, sp.status, sp.screenshot_url FROM sponsorship_applications sa LEFT JOIN sponsorship_payments sp ON sa.id = sp.application_id WHERE sa.donor_id = ? ORDER BY sa.application_date DESC`;
+    try {
+        const [history] = await db.query(query, [donorId]);
+        res.json(history);
+    } catch (error) { 
+        res.status(500).json({ message: 'Error fetching sponsorship history.' }); 
+    }
+});
+
+// ADMIN: Get a list of all sponsorship applications for management
+app.get('/api/admin/sponsorships', async (req, res) => {
+    const query = `SELECT sa.*, u.username as donor_username, sp.amount, sp.status as payment_status FROM sponsorship_applications sa JOIN users u ON sa.donor_id = u.id LEFT JOIN sponsorship_payments sp ON sa.id = sp.application_id ORDER BY sa.application_date DESC`;
+    try {
+        const [applications] = await db.query(query);
+        res.json(applications);
+    } catch (error) { 
+        res.status(500).json({ message: 'Error fetching sponsorships.' }); 
+    }
+});
+
+// ADMIN: Get full details for one sponsorship application, including the payment proof
+app.get('/api/admin/sponsorship/:appId', async (req, res) => {
+    const { appId } = req.params;
+    try {
+        const appQuery = `SELECT sa.*, u.username as donor_username FROM sponsorship_applications sa JOIN users u ON sa.donor_id = u.id WHERE sa.id = ?`;
+        const [[appDetails]] = await db.query(appQuery, [appId]);
+        if (!appDetails) return res.status(404).json({ message: 'Sponsorship application not found.' });
+        
+        const [[paymentDetails]] = await db.query('SELECT * FROM sponsorship_payments WHERE application_id = ?', [appId]);
+        res.json({ appDetails, paymentDetails: paymentDetails || null });
+    } catch (error) { 
+        res.status(500).json({ message: 'Error fetching sponsorship details.' }); 
+    }
+});
+
+// ADMIN: Verify a payment and update its status
+app.put('/api/admin/sponsorship/verify-payment/:paymentId', async (req, res) => {
+    const { paymentId } = req.params;
+    try {
+        const [result] = await db.query("UPDATE sponsorship_payments SET status = 'Verified' WHERE id = ?", [paymentId]);
+        if (result.affectedRows === 0) return res.status(404).json({ message: "Payment record not found." });
+        res.status(200).json({ message: 'Payment verified successfully!' });
+    } catch (error) { 
+        res.status(500).json({ message: 'Failed to verify payment.' }); 
+    }
+});
+
+
+
+// 📂 File: backend/server.js (Add this new block)
+
+// ==========================================================
+// --- KITCHEN INVENTORY API ROUTES ---
+// ==========================================================
+
+// We can reuse the paymentUpload multer instance. If you don't have it, create one.
+// The filename logic can be adapted.
+const kitchenStorage = multer.diskStorage({
+    destination: './public/uploads/',
+    filename: function(req, file, cb){
+        cb(null, `kitchen-item-${Date.now()}${path.extname(file.originalname)}`);
+    }
+});
+const kitchenUpload = multer({ storage: kitchenStorage });
+
+
+// --- Inventory Management Routes ---
+
+// GET all items in the inventory (Remaining Provisions)
+// GET all items in the inventory (Remaining Provisions)
+app.get('/api/kitchen/inventory', async (req, res) => {
+    try {
+        // ✅ ADDED: WHERE clause to only fetch items with quantity > 0
+        const [items] = await db.query('SELECT * FROM kitchen_inventory WHERE quantity_remaining > 0 ORDER BY item_name ASC');
+        res.json(items);
+    } catch (error) {
+        res.status(500).json({ message: 'Error fetching inventory.' });
+    }
+});
+
+// POST a new item to the inventory (from the '+' button)
+app.post('/api/kitchen/inventory', kitchenUpload.single('itemImage'), async (req, res) => {
+    const { itemName, quantity, unit } = req.body;
+    const imageUrl = req.file ? `/public/uploads/${req.file.filename}` : null;
+    try {
+        await db.query(
+            'INSERT INTO kitchen_inventory (item_name, quantity_remaining, unit, image_url) VALUES (?, ?, ?, ?)',
+            [itemName, quantity, unit, imageUrl]
+        );
+        res.status(201).json({ message: 'Item added to inventory successfully.' });
+    } catch (error) {
+        if (error.code === 'ER_DUP_ENTRY') {
+            return res.status(409).json({ message: 'This item already exists in the inventory.' });
+        }
+        res.status(500).json({ message: 'Error adding item.' });
+    }
+});
+
+// PUT (update) an existing inventory item's quantity (restocking)
+app.put('/api/kitchen/inventory/:id', async (req, res) => {
+    const { id } = req.params;
+    const { addQuantity } = req.body; // The amount to add
+    try {
+        await db.query(
+            'UPDATE kitchen_inventory SET quantity_remaining = quantity_remaining + ? WHERE id = ?',
+            [addQuantity, id]
+        );
+        res.status(200).json({ message: 'Inventory updated.' });
+    } catch (error) {
+        res.status(500).json({ message: 'Error updating inventory.' });
+    }
+});
+
+
+// --- Usage Logging Routes ---
+
+// GET today's usage log by default, or for a specific date
+app.get('/api/kitchen/usage', async (req, res) => {
+    // Expects date in 'YYYY-MM-DD' format from query param
+    const usageDate = req.query.date || new Date().toISOString().split('T')[0];
+    
+    const query = `
+        SELECT kul.id, kul.quantity_used, ki.item_name, ki.unit, ki.image_url
+        FROM kitchen_usage_log kul
+        JOIN kitchen_inventory ki ON kul.inventory_id = ki.id
+        WHERE kul.usage_date = ?
+        ORDER BY kul.logged_at DESC
+    `;
+    try {
+        const [usage] = await db.query(query, [usageDate]);
+        res.json(usage);
+    } catch (error) {
+        res.status(500).json({ message: 'Error fetching usage log.' });
+    }
+});
+
+// POST a new usage entry (This is the core dynamic route)
+app.post('/api/kitchen/usage', async (req, res) => {
+    const { inventoryId, quantityUsed, usageDate } = req.body;
+    
+    const connection = await db.getConnection();
+    try {
+        await connection.beginTransaction();
+
+        // 1. Log the usage
+        await connection.query(
+            'INSERT INTO kitchen_usage_log (inventory_id, quantity_used, usage_date) VALUES (?, ?, ?)',
+            [inventoryId, quantityUsed, usageDate]
+        );
+
+        // 2. Atomically decrease the quantity in the main inventory
+        const [updateResult] = await connection.query(
+            'UPDATE kitchen_inventory SET quantity_remaining = quantity_remaining - ? WHERE id = ?',
+            [quantityUsed, inventoryId]
+        );
+
+        if (updateResult.affectedRows === 0) {
+            throw new Error('Inventory item not found.');
+        }
+
+        await connection.commit();
+        res.status(201).json({ message: 'Usage logged successfully.' });
+    } catch (error) {
+        await connection.rollback();
+        console.error("Usage Log Error:", error);
+        res.status(500).json({ message: 'Error logging usage.' });
+    } finally {
+        connection.release();
+    }
 });
 
 

@@ -16,7 +16,7 @@ import LoginScreen from './src/screens/LoginScreen';
 import DonorRegistrationScreen from './src/screens/DonorRegistrationScreen';
 import ForgotPasswordScreen from './src/screens/ForgotPasswordScreen';
 import AboutUs from './src/components/AboutUs';
-import { TransportFeatureNavigator } from './src/components/Transport';
+
 import ResetPasswordScreen from './src/screens/ResetPasswordScreen';
 
 // Authenticated Dashboards
@@ -47,6 +47,8 @@ import TeacherAdminExamScreen from './src/screens/exams_Schedule/TeacherAdminExa
 import TeacherAdminResultsScreen from './src/screens/results/TeacherAdminResultsScreen';
 import AdminSyllabusScreen from './src/screens/syllabus/AdminSyllabusScreen';
 import AdminSuggestionsScreen from './src/screens/suggestions/AdminSuggestionsScreen';
+import AdminPaymentScreen from './src/screens/payments/AdminPaymentScreen';
+import KitchenScreen from './src/screens/kitchen/KitchenScreen';
 
 // Teacher-Specific Screens
 import TeacherNotifications from './src/components/TeacherNotifications';
@@ -89,9 +91,11 @@ import DonorNotifications from './src/components/DonorNotifications';
 import DonorSuggestions from './src/components/DonorSuggestions';
 import DonorReceipts from './src/components/DonorReceipts';
 import DonorPayments from './src/components/DonorPayments';
-import DonorSponsor from './src/components/DonorSponsor';
+
 import DonorSI from './src/components/DonorSI';
 import DonorSuggestionsScreen from './src/screens/suggestions/DonorSuggestionsScreen';
+import DonorSponsorScreen from './src/screens/sponsorship/DonorSponsorScreen';
+import DonorPaymentScreen from './src/screens/payments/DonorPaymentScreen';
 
 // Unified Help Desk Screen for authenticated users
 import UserHelpDeskScreen from './src/screens/helpdesk/UserHelpDeskScreen';
@@ -107,7 +111,7 @@ const PublicStack = () => (
     <Stack.Screen name="DonorRegistration" component={DonorRegistrationScreen} />
     <Stack.Screen name="ForgotPasswordScreen" component={ForgotPasswordScreen} />
     
-    <Stack.Screen name="Transport" component={TransportFeatureNavigator} />
+    {/* <Stack.Screen name="Transport" component={TransportFeatureNavigator} /> */}
     <Stack.Screen name="ResetPasswordScreen" component={ResetPasswordScreen} />
   </Stack.Navigator>
 );
@@ -209,7 +213,7 @@ const AuthenticatedStack = () => {
       <Stack.Screen name="DonorSuggestions" component={DonorSuggestions} />
       <Stack.Screen name="DonorReceipts" component={DonorReceipts} />
       <Stack.Screen name="DonorPayments" component={DonorPayments} />
-      <Stack.Screen name="DonorSponsor" component={DonorSponsor} />
+      
       <Stack.Screen name="DonorSI" component={DonorSI} />
       <Stack.Screen name="TeacherAdminPTMScreen" component={TeacherAdminPTMScreen} />
       <Stack.Screen name="StudentPTMScreen" component={StudentPTMScreen} />
@@ -226,6 +230,11 @@ const AuthenticatedStack = () => {
       <Stack.Screen name="ChatAIScreen" component={ChatAIScreen} />
       <Stack.Screen name="DonorSuggestionsScreen" component={DonorSuggestionsScreen} />
       <Stack.Screen name="AdminSuggestionsScreen" component={AdminSuggestionsScreen} />
+      <Stack.Screen name="DonorSponsorScreen" component={DonorSponsorScreen} />
+      <Stack.Screen name="DonorPaymentScreen" component={DonorPaymentScreen} />
+      <Stack.Screen name="AdminPaymentScreen" component={AdminPaymentScreen} />
+      <Stack.Screen name="KitchenScreen" component={KitchenScreen} />
+
       {/* ADD THE GALLERY NAVIGATOR AS A SINGLE SCREEN IN THE MAIN STACK */}
       <Stack.Screen 
         name="Gallery" 

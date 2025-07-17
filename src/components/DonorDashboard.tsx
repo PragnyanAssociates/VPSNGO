@@ -24,13 +24,15 @@ import ProfileScreen, { ProfileData } from '../screens/ProfileScreen';
 import AcademicCalendar from './AcademicCalendar';
 import DonorNotifications, { initialNotificationsData } from './DonorNotifications';
 import UserHelpDeskScreen from '../screens/helpdesk/UserHelpDeskScreen';
-import DonorSuggestions from './DonorSuggestions';
+// import DonorSuggestions from './DonorSuggestions';
 import DonorReceipts from './DonorReceipts';
-import DonorPayments from './DonorPayments';
-import DonorSponsor from './DonorSponsor';
+// import DonorPayments from './DonorPayments';
+// import DonorSponsor from './DonorSponsor';
 import AboutUs from './AboutUs';
 import ChatAIScreen from '../screens/chatai/ChatAIScreen';
 import DonorSuggestionsScreen from '../screens/suggestions/DonorSuggestionsScreen';
+import DonorSponsorScreen from '../screens/sponsorship/DonorSponsorScreen';
+import DonorPaymentScreen from '../screens/payments/DonorPaymentScreen';
 
 
 // --- Constants & Color Scheme ---
@@ -48,14 +50,13 @@ const WHITE = '#ffffff';
 const DANGER_COLOR = '#dc3545';
 
 const allQuickAccessItems = [
-  { id: 'qa1', title: 'Payments', imageSource: 'https://cdn-icons-png.flaticon.com/128/1198/1198291.png', navigateToTab: 'DonorPayments' },
-  { id: 'qa2', title: 'Receipts', imageSource: 'https://cdn-icons-png.flaticon.com/128/870/870128.png', navigateToTab: 'DonorReceipts' },
+  { id: 'qa1', title: 'Payments', imageSource: 'https://cdn-icons-png.flaticon.com/128/1198/1198291.png', navigateToTab: 'DonorPaymentScreen' },
   { id: 'qa18', title: 'Gallery', imageSource: 'https://cdn-icons-png.flaticon.com/128/8418/8418513.png', navigateTo: 'Gallery' },
   { id: 'qa4', title: 'Suggestions', imageSource: 'https://cdn-icons-png.flaticon.com/128/9722/9722906.png', navigateToTab: 'DonorSuggestionsScreen' },
   { id: 'qa5', title: 'Help Desk', imageSource: 'https://cdn-icons-png.flaticon.com/128/4961/4961736.png', navigateToTab: 'HelpDesk' },
-  { id: 'qa6', title: 'Sponsorship', imageSource: 'https://cdn-icons-png.flaticon.com/128/18835/18835518.png', navigateToTab: 'DonorSponsor' },
+  { id: 'qa6', title: 'Sponsorship', imageSource: 'https://cdn-icons-png.flaticon.com/128/18835/18835518.png', navigateToTab: 'DonorSponsorScreen' },
   { id: 'qa7', title: 'About Us', imageSource: 'https://cdn-icons-png.flaticon.com/128/3815/3815523.png', navigateToTab: 'AboutUs' },
-  { id: 'qa20', title: 'Chat AI', imageSource: 'https://cdn-icons-png.flaticon.com/128/6028/6028616.png', navigateToTab: 'ChatAI' },
+  // { id: 'qa20', title: 'Chat AI', imageSource: 'https://cdn-icons-png.flaticon.com/128/6028/6028616.png', navigateToTab: 'ChatAI' },
 ];
 
 const DonorDashboard = ({ navigation }) => {
@@ -145,16 +146,16 @@ const DonorDashboard = ({ navigation }) => {
         return <><ContentScreenHeader title="Notifications" onBack={handleBack} /><DonorNotifications onUnreadCountChange={setUnreadNotificationsCount} /></>;
       case 'calendar':
         return <><ContentScreenHeader title="Academic Calendar" onBack={handleBack} /><AcademicCalendar /></>;
-      case 'DonorPayments':
-        return <><ContentScreenHeader title="Payments" onBack={handleBack} /><DonorPayments /></>;
+      case 'DonorPaymentScreen':
+        return <><ContentScreenHeader title="Payments" onBack={handleBack} /><DonorPaymentScreen /></>;
       case 'DonorReceipts':
         return <><ContentScreenHeader title="Receipts & Invoices" onBack={handleBack} /><DonorReceipts /></>;
       case 'DonorSuggestionsScreen':
         return <><ContentScreenHeader title="Suggestions" onBack={handleBack} /><DonorSuggestionsScreen /></>;
       case 'HelpDesk':
         return <><ContentScreenHeader title="Help Desk" onBack={handleBack} /><UserHelpDeskScreen /></>;
-      case 'DonorSponsor':
-        return <><ContentScreenHeader title="Sponsorship" onBack={handleBack} /><DonorSponsor /></>;
+      case 'DonorSponsorScreen':
+        return <><ContentScreenHeader title="Sponsorship" onBack={handleBack} /><DonorSponsorScreen /></>;
 
       case 'AboutUs': return ( <><ContentScreenHeader title="About Us" onBack={handleBack} /><AboutUs /></> );
 
