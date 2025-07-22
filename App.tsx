@@ -49,6 +49,7 @@ import AdminSyllabusScreen from './src/screens/syllabus/AdminSyllabusScreen';
 import AdminSuggestionsScreen from './src/screens/suggestions/AdminSuggestionsScreen';
 import AdminPaymentScreen from './src/screens/payments/AdminPaymentScreen';
 import KitchenScreen from './src/screens/kitchen/KitchenScreen';
+import FoodScreen from './src/screens/food/FoodScreen';
 
 // Teacher-Specific Screens
 import TeacherNotifications from './src/components/TeacherNotifications';
@@ -234,6 +235,7 @@ const AuthenticatedStack = () => {
       <Stack.Screen name="DonorPaymentScreen" component={DonorPaymentScreen} />
       <Stack.Screen name="AdminPaymentScreen" component={AdminPaymentScreen} />
       <Stack.Screen name="KitchenScreen" component={KitchenScreen} />
+      <Stack.Screen name="FoodScreen" component={FoodScreen} />
 
       {/* ADD THE GALLERY NAVIGATOR AS A SINGLE SCREEN IN THE MAIN STACK */}
       <Stack.Screen 

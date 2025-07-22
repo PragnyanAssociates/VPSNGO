@@ -1,50 +1,64 @@
-// 📂 File: src/screens/kitchen/KitchenScreen.tsx (COMPLETE AND FINAL WITH UI/UX UPGRADE)
+// 📂 File: src/screens/kitchen/KitchenScreen.tsx (COMPLETE, UNABRIDGED, AND FINAL)
 
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator, Image, SafeAreaView, Modal, TextInput } from 'react-native';
+import {
+    View, Text, StyleSheet, ScrollView, TouchableOpacity,
+    Alert, ActivityIndicator, Image, SafeAreaView, Modal, TextInput
+} from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'react-native-image-picker';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import { API_BASE_URL } from '../../../apiConfig'; // Make sure this path is correct
+import { API_BASE_URL } from '../../../apiConfig'; // Ensure this path is correct
 
-const THEME = { primary: '#007bff', success: '#28a745', light: '#f8f9fa', background: '#FFFFFF', text: '#212529', muted: '#6c757d', border: '#dee2e6', dark: '#343a40' };
+// --- THEME CONSTANTS ---
+const THEME = {
+    primary: '#007bff',
+    success: '#28a745',
+    danger: '#dc3545',
+    light: '#f8f9fa',
+    background: '#FFFFFF',
+    text: '#212529',
+    muted: '#6c757d',
+    border: '#dee2e6',
+    dark: '#343a40'
+};
 
-// --- Main Screen Component (No changes) ---
+// =================================================================================
+// --- MAIN SCREEN COMPONENT ---
+// =================================================================================
 const KitchenScreen = () => {
-    const [inventory, setInventory] = useState([]);
+    const [activeTab, setActiveTab] = useState('Daily');
+    const [provisions, setProvisions] = useState([]);
     const [usage, setUsage] = useState([]);
-    const [loading, setLoading] = useState(true);
     const [selectedDate, setSelectedDate] = useState(new Date());
     const [showDatePicker, setShowDatePicker] = useState(false);
-    
+    const [permanentInventory, setPermanentInventory] = useState([]);
+    const [loading, setLoading] = useState(true);
     const [isModalVisible, setIsModalVisible] = useState(false);
-    const [modalMode, setModalMode] = useState('logUsage');
-    const [selectedItem, setSelectedItem] = useState(null);
+    const [modalInfo, setModalInfo] = useState({ mode: '', item: null });
 
     const fetchData = useCallback(() => {
         setLoading(true);
         const dateString = selectedDate.toISOString().split('T')[0];
-        Promise.all([
-            fetch(`${API_BASE_URL}/api/kitchen/inventory`).then(res => res.json()),
-            fetch(`${API_BASE_URL}/api/kitchen/usage?date=${dateString}`).then(res => res.json())
-        ]).then(([inventoryData, usageData]) => {
-            setInventory(inventoryData || []);
-            setUsage(usageData || []);
-        }).catch(() => Alert.alert("Error", "Could not fetch kitchen data."))
-        .finally(() => setLoading(false));
+        const dailyProvisionsFetch = fetch(`${API_BASE_URL}/api/kitchen/inventory`).then(res => res.json());
+        const dailyUsageFetch = fetch(`${API_BASE_URL}/api/kitchen/usage?date=${dateString}`).then(res => res.json());
+        const permanentInventoryFetch = fetch(`${API_BASE_URL}/api/permanent-inventory`).then(res => res.json());
+
+        Promise.all([dailyProvisionsFetch, dailyUsageFetch, permanentInventoryFetch])
+            .then(([provisionsData, usageData, permanentData]) => {
+                setProvisions(provisionsData || []);
+                setUsage(usageData || []);
+                setPermanentInventory(permanentData || []);
+            })
+            .catch(() => Alert.alert("Error", "Could not fetch kitchen data."))
+            .finally(() => setLoading(false));
     }, [selectedDate]);
 
     useFocusEffect(fetchData);
 
-    const onDateChange = (event, date) => {
-        setShowDatePicker(false);
-        if (date) setSelectedDate(date);
-    };
-
     const openModal = (mode, item = null) => {
-        setModalMode(mode);
-        setSelectedItem(item);
+        setModalInfo({ mode, item });
         setIsModalVisible(true);
     };
 
@@ -53,113 +67,272 @@ const KitchenScreen = () => {
         fetchData();
     };
 
+    const handleDeletePermanentItem = (item) => {
+        Alert.alert( `Delete "${item.item_name}"`, "Are you sure you want to permanently delete this item?",
+            [
+                { text: "Cancel", style: "cancel" },
+                { text: "Delete", style: "destructive", onPress: async () => {
+                    try {
+                        const response = await fetch(`${API_BASE_URL}/api/permanent-inventory/${item.id}`, { method: 'DELETE' });
+                        if (!response.ok) throw new Error('Failed to delete.');
+                        Alert.alert("Success", "Item deleted.");
+                        fetchData();
+                    } catch (error) {
+                        Alert.alert("Error", "Could not delete the item.");
+                    }
+                }}
+            ]
+        );
+    };
+
     return (
         <SafeAreaView style={styles.container}>
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => setShowDatePicker(true)}><MaterialCommunityIcons name="calendar" size={26} color={THEME.primary} /></TouchableOpacity>
+                <TouchableOpacity onPress={() => activeTab === 'Daily' && setShowDatePicker(true)} disabled={activeTab !== 'Daily'}>
+                    <MaterialCommunityIcons name="calendar" size={26} color={activeTab === 'Daily' ? THEME.primary : THEME.border} />
+                </TouchableOpacity>
                 <Text style={styles.headerTitle}>Kitchen</Text>
-                <TouchableOpacity onPress={() => openModal('addInventory')}><MaterialCommunityIcons name="plus" size={28} color={THEME.primary} /></TouchableOpacity>
+                <TouchableOpacity onPress={() => openModal(activeTab === 'Daily' ? 'addProvision' : 'addPermanentItem')}>
+                    <MaterialCommunityIcons name="plus" size={28} color={THEME.primary} />
+                </TouchableOpacity>
             </View>
-            {loading ? <ActivityIndicator size="large" style={{marginTop: 50}}/> :
-            <ScrollView>
-                <Section title="Daily Usage" date={selectedDate.toLocaleDateString()}>
-                    {usage.map(item => <ItemCard key={`usage-${item.id}`} item={item} type="usage" />)}
-                    {usage.length === 0 && <Text style={styles.emptyText}>No items used on this date.</Text>}
-                </Section>
-                <Section title="Remaining Provisions">
-                    {inventory.map(item => <ItemCard key={`inv-${item.id}`} item={item} type="inventory" onLogUsage={() => openModal('logUsage', item)} />)}
-                    {inventory.length === 0 && <Text style={styles.emptyText}>No provisions remaining.</Text>}
-                </Section>
-            </ScrollView>
+
+            <View style={styles.tabContainer}>
+                <TouchableOpacity style={[styles.tab, activeTab === 'Daily' && styles.activeTab]} onPress={() => setActiveTab('Daily')}>
+                    <Text style={[styles.tabText, activeTab === 'Daily' && styles.activeTabText]}>Daily</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.tab, activeTab === 'Inventory' && styles.activeTab]} onPress={() => setActiveTab('Inventory')}>
+                    <Text style={[styles.tabText, activeTab === 'Inventory' && styles.activeTabText]}>Inventory</Text>
+                </TouchableOpacity>
+            </View>
+
+            {loading ? <ActivityIndicator size="large" color={THEME.primary} style={{ marginTop: 50 }} /> :
+                <ScrollView>
+                    {activeTab === 'Daily' ? (
+                        <>
+                            <Section title="Daily Usage" date={selectedDate.toLocaleDateString()}>
+                                {usage.length > 0 ? <DataTable type="usage" data={usage} /> : <Text style={styles.emptyText}>No items used on this date.</Text>}
+                            </Section>
+                            <Section title="Remaining Provisions">
+                                {provisions.length > 0 ? <DataTable type="provisions" data={provisions} onLogUsage={(item) => openModal('logUsage', item)} /> : <Text style={styles.emptyText}>No provisions remaining.</Text>}
+                            </Section>
+                        </>
+                    ) : (
+                        <Section title="Permanent Assets">
+                            {permanentInventory.length > 0 ?
+                                <DataTable type="permanent" data={permanentInventory} onEdit={(item) => openModal('editPermanentItem', item)} onDelete={handleDeletePermanentItem} />
+                                : <Text style={styles.emptyText}>No permanent items found. Tap '+' to add one.</Text>}
+                        </Section>
+                    )}
+                </ScrollView>
             }
-            {isModalVisible && <ActionModal mode={modalMode} item={selectedItem} visible={isModalVisible} onClose={() => setIsModalVisible(false)} onSuccess={handleModalSuccess} />}
-            {showDatePicker && <DateTimePicker value={selectedDate} mode="date" display="default" onChange={onDateChange} />}
+
+            {isModalVisible && <ActionModal info={modalInfo} visible={isModalVisible} onClose={() => setIsModalVisible(false)} onSuccess={handleModalSuccess} />}
+            {showDatePicker && <DateTimePicker value={selectedDate} mode="date" display="default" onChange={(e, date) => { setShowDatePicker(false); if (date) setSelectedDate(date); }} />}
         </SafeAreaView>
     );
 };
 
-// --- Helper Components (No changes) ---
-const Section = ({ title, date, children }) => (
-    <View style={styles.section}><View style={styles.sectionHeader}><Text style={styles.sectionTitle}>{title}</Text>{date && <Text style={styles.sectionDate}>{date}</Text>}</View>{children}</View>
-);
-const ItemCard = ({ item, type, onLogUsage }) => {
-    const imageUrl = item.image_url ? `${API_BASE_URL}${item.image_url}` : null;
-    return (
-        <TouchableOpacity style={styles.itemCard} onPress={onLogUsage} disabled={type !== 'inventory'}>
-            {imageUrl ? <Image source={{ uri: imageUrl }} style={styles.itemImage} /> : <View style={[styles.itemImage, styles.imagePlaceholder]}><MaterialCommunityIcons name="image-off-outline" size={24} color={THEME.muted} /></View>}
-            <View style={styles.itemDetails}><Text style={styles.itemName}>{item.item_name}</Text><Text style={styles.itemQuantity}>{type === 'usage' ? `${item.quantity_used} ${item.unit} used` : `${item.quantity_remaining} ${item.unit} remaining`}</Text></View>
-            {type === 'inventory' && <MaterialCommunityIcons name="plus-circle-outline" size={24} color={THEME.primary} />}
-        </TouchableOpacity>
-    );
-};
 
-// --- Action Modal Component (No logic changes, only styles are affected) ---
-const ActionModal = ({ mode, item, visible, onClose, onSuccess }) => {
-    const [quantity, setQuantity] = useState(1);
+// =================================================================================
+// --- REUSABLE UI COMPONENTS ---
+// =================================================================================
+const DataTable = ({ type, data, onLogUsage, onEdit, onDelete }) => (
+    <View style={styles.table}>
+        <View style={[styles.tableRow, styles.tableHeaderRow]}>
+            <Text style={[styles.tableHeader, { flex: 0.4 }]}>#</Text>
+            <Text style={[styles.tableHeader, { flex: 2 }]}>Item Name</Text>
+            <Text style={[styles.tableHeader, { flex: 1, textAlign: 'center' }]}>{type === 'usage' ? 'Used' : 'Total'}</Text>
+            {type === 'permanent' && <Text style={[styles.tableHeader, { flex: 1.2, textAlign: 'right' }]}>Actions</Text>}
+        </View>
+
+        {data.map((item, index) => (
+            <View key={`${type}-${item.id}`} style={styles.tableRow}>
+                <Text style={[styles.tableCell, { flex: 0.4 }]}>{index + 1}</Text>
+                <TouchableOpacity
+                    style={[styles.tableCell, { flex: 2, flexDirection: 'row', alignItems: 'center' }]}
+                    onPress={() => type === 'provisions' && onLogUsage(item)}
+                    disabled={type !== 'provisions'}
+                >
+                    {item.image_url ?
+                        <Image source={{ uri: `${API_BASE_URL}${item.image_url}` }} style={styles.itemImage} />
+                        : <View style={[styles.itemImage, styles.imagePlaceholder]}><MaterialCommunityIcons name="image-off-outline" size={20} color={THEME.muted} /></View>
+                    }
+                    <Text style={styles.itemName} numberOfLines={1}>{item.item_name}</Text>
+                </TouchableOpacity>
+                <Text style={[styles.tableCell, { flex: 1, textAlign: 'center' }]}>
+                    {type === 'usage' ? `${item.quantity_used} ${item.unit}` :
+                     type === 'provisions' ? `${item.quantity_remaining} ${item.unit}` :
+                     `${item.total_quantity}`}
+                </Text>
+                {type === 'permanent' && (
+                    <View style={[styles.tableCell, { flex: 1.2, flexDirection: 'row', justifyContent: 'flex-end' }]}>
+                        <TouchableOpacity onPress={() => onEdit(item)} style={styles.actionIcon}><MaterialCommunityIcons name="pencil-outline" size={22} color={THEME.primary} /></TouchableOpacity>
+                        <TouchableOpacity onPress={() => onDelete(item)} style={styles.actionIcon}><MaterialCommunityIcons name="trash-can-outline" size={22} color={THEME.danger} /></TouchableOpacity>
+                    </View>
+                )}
+            </View>
+        ))}
+    </View>
+);
+
+const Section = ({ title, date, children }) => (
+    <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>{title}</Text>
+            {date && <Text style={styles.sectionDate}>{date}</Text>}
+        </View>
+        {children}
+    </View>
+);
+
+const ActionModal = ({ info, visible, onClose, onSuccess }) => {
+    const { mode, item } = info;
     const [itemName, setItemName] = useState('');
+    const [quantity, setQuantity] = useState(1);
+    const [notes, setNotes] = useState('');
     const [unit, setUnit] = useState('g');
-    const [loading, setLoading] = useState(false);
     const [image, setImage] = useState(null);
+    const [loading, setLoading] = useState(false);
+
     const UNITS = ['g', 'kg', 'l', 'ml', 'pcs'];
 
     React.useEffect(() => {
-        if (visible && mode === 'addInventory') { setItemName(''); setUnit('g'); setQuantity(1); setImage(null); }
-        else if (visible && mode === 'logUsage') { setQuantity(1); }
-    }, [visible, mode]);
-
-    const handleChooseImage = () => { ImagePicker.launchImageLibrary({ mediaType: 'photo' }, res => { if (res.assets && res.assets[0]) setImage(res.assets[0]); }); };
-    const handleAction = async () => {
-        setLoading(true);
-        let url = ''; let body; let headers = {'Content-Type': 'application/json'};
-        if (mode === 'logUsage') {
-            url = `${API_BASE_URL}/api/kitchen/usage`;
-            body = JSON.stringify({ inventoryId: item.id, quantityUsed: quantity, usageDate: new Date().toISOString().split('T')[0] });
-        } else {
-            if (!itemName.trim() || !unit.trim()) { Alert.alert("Error", "Item Name and Unit are required."); setLoading(false); return; }
-            url = `${API_BASE_URL}/api/kitchen/inventory`;
-            const formData = new FormData();
-            formData.append('itemName', itemName); formData.append('quantity', quantity); formData.append('unit', unit);
-            if (image) formData.append('itemImage', { uri: image.uri, type: image.type, name: image.fileName });
-            body = formData; headers = {'Content-Type': 'multipart/form-data'};
+        if (visible) {
+            setItemName(item?.item_name || '');
+            setUnit(item?.unit || 'g');
+            setNotes(item?.notes || '');
+            setQuantity(item?.total_quantity || item?.quantity_remaining || 1);
+            setImage(null);
+            setLoading(false);
         }
+    }, [visible, mode, item]);
+
+    const handleChooseImage = () => {
+        ImagePicker.launchImageLibrary({ mediaType: 'photo', quality: 0.7 }, res => {
+            if (res.assets && res.assets[0]) setImage(res.assets[0]);
+        });
+    };
+
+    const handleAction = async () => {
+        if (!itemName.trim() && mode !== 'logUsage') {
+            Alert.alert("Validation Error", "Item Name is required.");
+            return;
+        }
+        setLoading(true);
+        let url = '';
+        let body;
+        let method = 'POST';
+        let headers = {};
+
+        const formData = new FormData();
+        formData.append('itemName', itemName);
+
+        if (image) {
+            formData.append('itemImage', { uri: image.uri, type: image.type, name: image.fileName });
+        }
+
+        switch (mode) {
+            case 'addProvision':
+                url = `${API_BASE_URL}/api/kitchen/inventory`;
+                formData.append('quantity', quantity);
+                formData.append('unit', unit);
+                body = formData;
+                headers = { 'Content-Type': 'multipart/form-data' };
+                break;
+            case 'addPermanentItem':
+                url = `${API_BASE_URL}/api/permanent-inventory`;
+                formData.append('totalQuantity', quantity);
+                formData.append('notes', notes);
+                body = formData;
+                headers = { 'Content-Type': 'multipart/form-data' };
+                break;
+            case 'editPermanentItem':
+                 url = `${API_BASE_URL}/api/permanent-inventory/${item.id}`;
+                 method = 'PUT';
+                 formData.append('totalQuantity', quantity);
+                 formData.append('notes', notes);
+                 body = formData;
+                 headers = { 'Content-Type': 'multipart/form-data' };
+                 break;
+            case 'logUsage':
+                url = `${API_BASE_URL}/api/kitchen/usage`;
+                body = JSON.stringify({ inventoryId: item.id, quantityUsed: quantity, usageDate: new Date().toISOString().split('T')[0] });
+                headers = { 'Content-Type': 'application/json' };
+                break;
+            default:
+                setLoading(false);
+                return;
+        }
+
         try {
-            const res = await fetch(url, { method: 'POST', headers, body });
-            const result = await res.json();
-            if (res.ok) onSuccess(); else throw new Error(result.message);
-        } catch (e: any) { Alert.alert("Error", e.message); }
-        finally { setLoading(false); }
+            const res = await fetch(url, { method, headers, body });
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.message || "An unknown server error.");
+            }
+            onSuccess();
+        } catch (e: any) {
+            Alert.alert("Error", e.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const getTitle = () => {
+        switch (mode) {
+            case 'addProvision': return 'Add New Provision';
+            case 'logUsage': return `Log Usage for ${item.item_name}`;
+            case 'addPermanentItem': return 'Add Permanent Item';
+            case 'editPermanentItem': return 'Edit Permanent Item';
+            default: return 'Action';
+        }
+    };
+
+    const getButtonText = () => {
+        switch (mode) {
+            case 'addProvision': return 'Add Provision';
+            case 'logUsage': return 'Log Usage';
+            case 'addPermanentItem': return 'Add Item';
+            case 'editPermanentItem': return 'Save Changes';
+            default: return 'Save';
+        }
     };
 
     return (
-        <Modal visible={visible} transparent={true} animationType="fade" onRequestClose={onClose}>
+        <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
             <View style={styles.modalContainer}>
-                <ScrollView contentContainerStyle={styles.modalScrollContainer}>
+                <ScrollView contentContainerStyle={styles.modalScrollContainer} keyboardShouldPersistTaps="handled">
                     <View style={styles.modalContent}>
-                        <Text style={styles.modalTitle}>{mode === 'logUsage' ? `Log Usage for ${item.item_name}` : 'Add New Item to Inventory'}</Text>
+                        <Text style={styles.modalTitle}>{getTitle()}</Text>
+
+                        {mode === 'addProvision' && ( <>
+                            <TextInput style={styles.input} placeholder="Item Name (e.g., Tomatoes)" value={itemName} onChangeText={setItemName} />
+                            <Text style={styles.inputLabel}>Unit</Text>
+                            <View style={styles.unitSelector}>{UNITS.map(u => (<TouchableOpacity key={u} style={[styles.unitButton, unit === u && styles.unitButtonSelected]} onPress={() => setUnit(u)}><Text style={[styles.unitButtonText, unit === u && styles.unitButtonTextSelected]}>{u}</Text></TouchableOpacity>))}</View>
+                            <TouchableOpacity style={styles.imagePicker} onPress={handleChooseImage}>{image ? <Image source={{uri: image.uri}} style={styles.previewImage} /> : <><MaterialCommunityIcons name="camera-plus-outline" size={32} color={THEME.muted}/><Text style={styles.imagePickerText}>Select Item Image (Optional)</Text></>}</TouchableOpacity>
+                            <Text style={styles.quantityLabel}>Initial Quantity</Text>
+                            <View style={styles.quantityControl}><TouchableOpacity onPress={() => setQuantity(q => Math.max(1, q - 1))} style={styles.quantityButton}><MaterialCommunityIcons name="minus" size={28} color={THEME.primary} /></TouchableOpacity><TextInput style={styles.quantityInput} value={String(quantity)} onChangeText={text => setQuantity(Number(text) || 1)} keyboardType="numeric" /><TouchableOpacity onPress={() => setQuantity(q => q + 1)} style={styles.quantityButton}><MaterialCommunityIcons name="plus" size={28} color={THEME.primary} /></TouchableOpacity></View>
+                        </>)}
+
+                        {(mode === 'addPermanentItem' || mode === 'editPermanentItem') && ( <>
+                            <TextInput style={styles.input} placeholder="Item Name (e.g., Plates)" value={itemName} onChangeText={setItemName} />
+                            <TouchableOpacity style={styles.imagePicker} onPress={handleChooseImage}>
+                                {image ? <Image source={{uri: image.uri}} style={styles.previewImage} /> : 
+                                 item?.image_url ? <Image source={{uri: `${API_BASE_URL}${item.image_url}`}} style={styles.previewImage} /> :
+                                 <><MaterialCommunityIcons name="camera-plus-outline" size={32} color={THEME.muted}/><Text style={styles.imagePickerText}>{mode === 'editPermanentItem' ? 'Change Image (Optional)' : 'Select Image (Optional)'}</Text></>}
+                            </TouchableOpacity>
+                            <Text style={styles.quantityLabel}>Total Quantity</Text>
+                            <View style={styles.quantityControl}><TouchableOpacity onPress={() => setQuantity(q => Math.max(1, q - 1))} style={styles.quantityButton}><MaterialCommunityIcons name="minus" size={28} color={THEME.primary} /></TouchableOpacity><TextInput style={styles.quantityInput} value={String(quantity)} onChangeText={text => setQuantity(Number(text.replace(/[^0-9]/g, '')) || 1)} keyboardType="numeric" /><TouchableOpacity onPress={() => setQuantity(q => q + 1)} style={styles.quantityButton}><MaterialCommunityIcons name="plus" size={28} color={THEME.primary} /></TouchableOpacity></View>
+                            <TextInput style={[styles.input, { height: 80, textAlignVertical: 'top' }]} multiline placeholder="Notes (e.g., 'In top cabinet')" value={notes} onChangeText={setNotes} />
+                        </>)}
                         
-                        {mode === 'addInventory' && (
-                            <>
-                                <TextInput style={styles.input} placeholder="Item Name (e.g., Tomatoes)" value={itemName} onChangeText={setItemName} placeholderTextColor={THEME.muted}/>
-                                <Text style={styles.inputLabel}>Unit</Text>
-                                <View style={styles.unitSelector}>
-                                    {UNITS.map(u => (<TouchableOpacity key={u} style={[styles.unitButton, unit === u && styles.unitButtonSelected]} onPress={() => setUnit(u)}><Text style={[styles.unitButtonText, unit === u && styles.unitButtonTextSelected]}>{u}</Text></TouchableOpacity>))}
-                                </View>
-                                <TouchableOpacity style={styles.imagePicker} onPress={handleChooseImage}>
-                                    {image ? <Image source={{uri: image.uri}} style={styles.previewImage} /> : <><MaterialCommunityIcons name="camera-plus-outline" size={32} color={THEME.muted}/><Text style={styles.imagePickerText}>Select Item Image (Optional)</Text></>}
-                                </TouchableOpacity>
-                            </>
-                        )}
+                        {mode === 'logUsage' && ( <>
+                            <Text style={styles.quantityLabel}>{`Quantity Used (${item.unit})`}</Text>
+                            <View style={styles.quantityControl}><TouchableOpacity onPress={() => setQuantity(q => Math.max(1, q - 1))} style={styles.quantityButton}><MaterialCommunityIcons name="minus" size={28} color={THEME.primary} /></TouchableOpacity><TextInput style={styles.quantityInput} value={String(quantity)} onChangeText={text => setQuantity(Number(text) || 1)} keyboardType="numeric" /><TouchableOpacity onPress={() => setQuantity(q => q + 1)} style={styles.quantityButton}><MaterialCommunityIcons name="plus" size={28} color={THEME.primary} /></TouchableOpacity></View>
+                        </>)}
 
-                        <Text style={styles.quantityLabel}>{mode === 'logUsage' ? `Quantity Used (${item.unit})` : 'Initial Quantity'}</Text>
-                        <View style={styles.quantityControl}>
-                            <TouchableOpacity onPress={() => setQuantity(q => Math.max(0, q - 1))} style={styles.quantityButton}><MaterialCommunityIcons name="minus" size={28} color={THEME.primary} /></TouchableOpacity>
-                            <TextInput style={styles.quantityInput} value={String(quantity)} onChangeText={text => setQuantity(Number(text) || 0)} keyboardType="numeric" />
-                            <TouchableOpacity onPress={() => setQuantity(q => q + 1)} style={styles.quantityButton}><MaterialCommunityIcons name="plus" size={28} color={THEME.primary} /></TouchableOpacity>
-                        </View>
-
-                        <TouchableOpacity style={styles.actionButton} onPress={handleAction} disabled={loading}>
-                            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.actionButtonText}>{mode === 'logUsage' ? 'Log Usage' : 'Add Item'}</Text>}
-                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.actionButton} onPress={handleAction} disabled={loading}>{loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.actionButtonText}>{getButtonText()}</Text>}</TouchableOpacity>
                         <TouchableOpacity onPress={onClose}><Text style={styles.cancelText}>Cancel</Text></TouchableOpacity>
                     </View>
                 </ScrollView>
@@ -168,48 +341,52 @@ const ActionModal = ({ mode, item, visible, onClose, onSuccess }) => {
     );
 };
 
-// --- STYLES (COMPLETELY OVERHAULED FOR BETTER UI/UX) ---
+
+// =================================================================================
+// --- STYLESHEET ---
+// =================================================================================
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: THEME.light },
-    header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 15, backgroundColor: THEME.background, borderBottomWidth: 1, borderBottomColor: THEME.border },
+    container: { flex: 1, backgroundColor: THEME.background },
+    header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 15, borderBottomWidth: 1, borderBottomColor: THEME.border },
     headerTitle: { fontSize: 22, fontWeight: 'bold', color: THEME.dark },
-    section: { paddingHorizontal: 15, paddingTop: 20 },
+    tabContainer: { flexDirection: 'row', backgroundColor: THEME.light, padding: 4, marginHorizontal: 15, marginTop: 15, borderRadius: 12 },
+    tab: { flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: 'center' },
+    activeTab: { backgroundColor: THEME.primary, elevation: 2, shadowColor: '#000', shadowOpacity: 0.1 },
+    tabText: { fontSize: 16, fontWeight: '600', color: THEME.primary },
+    activeTabText: { color: '#FFFFFF' },
+    section: { paddingHorizontal: 15, paddingTop: 20, paddingBottom: 20 },
     sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
     sectionTitle: { fontSize: 20, fontWeight: 'bold', color: THEME.dark },
     sectionDate: { fontSize: 14, color: THEME.muted },
-    itemCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: THEME.background, padding: 12, borderRadius: 12, marginBottom: 10, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 3 },
-    itemImage: { width: 60, height: 60, borderRadius: 8, marginRight: 15, backgroundColor: THEME.light },
-    imagePlaceholder: { justifyContent: 'center', alignItems: 'center' },
-    itemDetails: { flex: 1 },
-    itemName: { fontSize: 17, fontWeight: '600', color: THEME.text },
-    itemQuantity: { fontSize: 14, color: THEME.muted, marginTop: 4 },
-    emptyText: { color: THEME.muted, textAlign: 'center', paddingVertical: 20, fontSize: 16 },
-
-    // --- MODAL STYLES (UPGRADED) ---
+    emptyText: { color: THEME.muted, textAlign: 'center', paddingVertical: 40, fontSize: 16 },
+    table: { backgroundColor: THEME.background, borderRadius: 12, borderWidth: 1, borderColor: THEME.border, overflow: 'hidden' },
+    tableRow: { flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: THEME.border, paddingHorizontal: 10, minHeight: 55 },
+    tableHeaderRow: { backgroundColor: THEME.light, borderBottomWidth: 2, minHeight: 45 },
+    tableCell: { fontSize: 15, color: THEME.text, paddingHorizontal: 4, alignItems: 'center' },
+    tableHeader: { fontWeight: 'bold', color: THEME.dark, fontSize: 16 },
+    itemImage: { width: 40, height: 40, borderRadius: 8, marginRight: 12 },
+    imagePlaceholder: { backgroundColor: THEME.light, justifyContent: 'center', alignItems: 'center', width: 40, height: 40, borderRadius: 8, marginRight: 12 },
+    itemName: { fontWeight: '500', color: THEME.text, flex: 1 },
+    actionIcon: { padding: 6 },
     modalContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.6)' },
     modalScrollContainer: { flexGrow: 1, justifyContent: 'center', width: '100%', paddingVertical: 20 },
-    modalContent: { width: '90%', alignSelf: 'center', backgroundColor: THEME.background, padding: 25, borderRadius: 15, elevation: 10, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 10 },
+    modalContent: { width: '90%', alignSelf: 'center', backgroundColor: THEME.background, padding: 25, borderRadius: 15, elevation: 10 },
     modalTitle: { fontSize: 22, fontWeight: 'bold', textAlign: 'center', marginBottom: 25, color: THEME.dark },
-    
     input: { borderWidth: 1, borderColor: THEME.border, backgroundColor: THEME.light, borderRadius: 10, paddingVertical: 14, paddingHorizontal: 16, marginBottom: 20, fontSize: 16 },
     inputLabel: { fontSize: 16, color: THEME.muted, marginBottom: 10, marginLeft: 4, fontWeight: '500' },
-    
     unitSelector: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 25 },
     unitButton: { flex: 1, paddingVertical: 12, borderWidth: 1.5, borderColor: THEME.border, borderRadius: 10, alignItems: 'center', marginHorizontal: 4 },
     unitButtonSelected: { backgroundColor: THEME.primary, borderColor: THEME.primary },
     unitButtonText: { color: THEME.primary, fontWeight: '600' },
     unitButtonTextSelected: { color: '#fff' },
-    
-    imagePicker: { height: 120, borderWidth: 2, borderColor: THEME.border, borderStyle: 'dashed', borderRadius: 10, justifyContent: 'center', alignItems: 'center', marginBottom: 25, backgroundColor: THEME.light },
+    imagePicker: { height: 120, borderWidth: 2, borderColor: THEME.border, borderStyle: 'dashed', borderRadius: 10, justifyContent: 'center', alignItems: 'center', marginBottom: 25, backgroundColor: THEME.light, overflow: 'hidden' },
     imagePickerText: { marginTop: 8, color: THEME.muted },
     previewImage: { width: '100%', height: '100%', borderRadius: 8 },
-
     quantityLabel: { textAlign: 'center', fontSize: 16, color: THEME.muted, marginBottom: 12, fontWeight: '500' },
-    quantityControl: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginVertical: 10 },
-    quantityButton: { backgroundColor: THEME.light, padding: 12, borderRadius: 10 },
-    quantityInput: { borderWidth: 1, borderColor: THEME.border, borderRadius: 10, width: 100, textAlign: 'center', fontSize: 24, fontWeight: 'bold', marginHorizontal: 15, paddingVertical: 10 },
-    
-    actionButton: { backgroundColor: THEME.primary, padding: 16, borderRadius: 10, alignItems: 'center', marginTop: 30, marginBottom: 12 },
+    quantityControl: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginVertical: 10, marginBottom: 20 },
+    quantityButton: { backgroundColor: THEME.light, padding: 12, borderRadius: 10, borderWidth: 1, borderColor: THEME.border },
+    quantityInput: { borderWidth: 1, borderColor: THEME.border, borderRadius: 10, width: 80, textAlign: 'center', fontSize: 22, fontWeight: 'bold', marginHorizontal: 15, paddingVertical: 10 },
+    actionButton: { backgroundColor: THEME.primary, padding: 16, borderRadius: 10, alignItems: 'center', marginTop: 20, marginBottom: 12 },
     actionButtonText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
     cancelText: { textAlign: 'center', color: THEME.muted, padding: 10, fontSize: 16 },
 });

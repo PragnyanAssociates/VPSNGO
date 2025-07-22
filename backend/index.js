@@ -2030,7 +2030,7 @@ app.get('/api/syllabus/student/subject-details/:syllabusId/:studentId', async (r
 
 
 // ==========================================================
-// --- TRANSPORT API ROUTES (FINAL & ROBUST VERSION) ---
+// --- TRANSPORT API ROUTES (FINAL & CORRECTED) ---
 // ==========================================================
 const Openrouteservice = require('openrouteservice-js');
 const { encode } = require('@googlemaps/polyline-codec');
@@ -2091,8 +2091,8 @@ app.post('/api/transport/routes', async (req, res) => {
         try {
             await connection.beginTransaction();
             const routeQuery = 'INSERT INTO transport_routes (route_name, driver_name, driver_phone, conductor_name, conductor_phone, city, state, country, route_path_polyline, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
-            await connection.query(routeQuery, [route_name, driver_name, driver_phone, conductor_name, conductor_phone, city, state, country, routePolyline, created_by]);
-            const route_id = (await connection.query('SELECT LAST_INSERT_ID() as id'))[0][0].id;
+            const [routeResult] = await connection.query(routeQuery, [route_name, driver_name, driver_phone, conductor_name, conductor_phone, city, state, country, routePolyline, created_by]);
+            const route_id = routeResult.insertId;
 
             const stopsQuery = 'INSERT INTO transport_stops (route_id, stop_name, stop_order) VALUES ?';
             const stopValues = stops.map((stop, index) => [route_id, stop.point, index + 1]);
@@ -2698,14 +2698,11 @@ app.put('/api/admin/sponsorship/verify-payment/:paymentId', async (req, res) => 
 
 
 
-// 📂 File: backend/server.js (Add this new block)
 
 // ==========================================================
 // --- KITCHEN INVENTORY API ROUTES ---
 // ==========================================================
 
-// We can reuse the paymentUpload multer instance. If you don't have it, create one.
-// The filename logic can be adapted.
 const kitchenStorage = multer.diskStorage({
     destination: './public/uploads/',
     filename: function(req, file, cb){
@@ -2718,13 +2715,12 @@ const kitchenUpload = multer({ storage: kitchenStorage });
 // --- Inventory Management Routes ---
 
 // GET all items in the inventory (Remaining Provisions)
-// GET all items in the inventory (Remaining Provisions)
 app.get('/api/kitchen/inventory', async (req, res) => {
     try {
-        // ✅ ADDED: WHERE clause to only fetch items with quantity > 0
         const [items] = await db.query('SELECT * FROM kitchen_inventory WHERE quantity_remaining > 0 ORDER BY item_name ASC');
         res.json(items);
     } catch (error) {
+        console.error("GET Inventory Error:", error);
         res.status(500).json({ message: 'Error fetching inventory.' });
     }
 });
@@ -2743,33 +2739,66 @@ app.post('/api/kitchen/inventory', kitchenUpload.single('itemImage'), async (req
         if (error.code === 'ER_DUP_ENTRY') {
             return res.status(409).json({ message: 'This item already exists in the inventory.' });
         }
+        console.error("POST Inventory Error:", error);
         res.status(500).json({ message: 'Error adding item.' });
     }
 });
 
-// PUT (update) an existing inventory item's quantity (restocking)
-app.put('/api/kitchen/inventory/:id', async (req, res) => {
+// ✏️ NEW: PUT (update) an existing inventory item's details (name, unit)
+app.put('/api/kitchen/inventory/:id', kitchenUpload.single('itemImage'), async (req, res) => {
     const { id } = req.params;
-    const { addQuantity } = req.body; // The amount to add
+    const { itemName, unit } = req.body;
+    const imageUrl = req.file ? `/public/uploads/${req.file.filename}` : null;
+
+    // Build the query dynamically based on whether a new image was uploaded
+    let query = 'UPDATE kitchen_inventory SET item_name = ?, unit = ?';
+    const params = [itemName, unit];
+
+    if (imageUrl) {
+        query += ', image_url = ?';
+        params.push(imageUrl);
+    }
+
+    query += ' WHERE id = ?';
+    params.push(id);
+
     try {
-        await db.query(
-            'UPDATE kitchen_inventory SET quantity_remaining = quantity_remaining + ? WHERE id = ?',
-            [addQuantity, id]
-        );
-        res.status(200).json({ message: 'Inventory updated.' });
+        const [result] = await db.query(query, params);
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: 'Item not found.' });
+        }
+        res.status(200).json({ message: 'Item updated successfully.' });
     } catch (error) {
-        res.status(500).json({ message: 'Error updating inventory.' });
+        if (error.code === 'ER_DUP_ENTRY') {
+            return res.status(409).json({ message: 'Another item with this name already exists.' });
+        }
+        console.error("PUT Inventory Error:", error);
+        res.status(500).json({ message: 'Error updating item.' });
+    }
+});
+
+// 🗑️ NEW: DELETE an inventory item
+app.delete('/api/kitchen/inventory/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        // Your DB schema `ON DELETE CASCADE` will automatically remove related usage logs.
+        const [result] = await db.query('DELETE FROM kitchen_inventory WHERE id = ?', [id]);
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: 'Item not found.' });
+        }
+        res.status(200).json({ message: 'Item deleted successfully.' });
+    } catch (error) {
+        console.error("DELETE Inventory Error:", error);
+        res.status(500).json({ message: 'Error deleting item.' });
     }
 });
 
 
-// --- Usage Logging Routes ---
+// --- Usage Logging Routes (No Changes Here) ---
 
 // GET today's usage log by default, or for a specific date
 app.get('/api/kitchen/usage', async (req, res) => {
-    // Expects date in 'YYYY-MM-DD' format from query param
     const usageDate = req.query.date || new Date().toISOString().split('T')[0];
-    
     const query = `
         SELECT kul.id, kul.quantity_used, ki.item_name, ki.unit, ki.image_url
         FROM kitchen_usage_log kul
@@ -2785,40 +2814,186 @@ app.get('/api/kitchen/usage', async (req, res) => {
     }
 });
 
-// POST a new usage entry (This is the core dynamic route)
+// POST a new usage entry
 app.post('/api/kitchen/usage', async (req, res) => {
     const { inventoryId, quantityUsed, usageDate } = req.body;
-    
     const connection = await db.getConnection();
     try {
         await connection.beginTransaction();
-
-        // 1. Log the usage
         await connection.query(
             'INSERT INTO kitchen_usage_log (inventory_id, quantity_used, usage_date) VALUES (?, ?, ?)',
             [inventoryId, quantityUsed, usageDate]
         );
-
-        // 2. Atomically decrease the quantity in the main inventory
         const [updateResult] = await connection.query(
             'UPDATE kitchen_inventory SET quantity_remaining = quantity_remaining - ? WHERE id = ?',
             [quantityUsed, inventoryId]
         );
-
-        if (updateResult.affectedRows === 0) {
-            throw new Error('Inventory item not found.');
-        }
-
+        if (updateResult.affectedRows === 0) throw new Error('Inventory item not found.');
         await connection.commit();
         res.status(201).json({ message: 'Usage logged successfully.' });
     } catch (error) {
         await connection.rollback();
-        console.error("Usage Log Error:", error);
         res.status(500).json({ message: 'Error logging usage.' });
     } finally {
         connection.release();
     }
 });
+
+// ==========================================================
+// ★★★ PERMANENT ASSET API ROUTES (UPDATED FOR IMAGE UPLOAD) ★★★
+// ==========================================================
+
+// GET all permanent items
+app.get('/api/permanent-inventory', async (req, res) => {
+    // This route does not change
+    try {
+        const [items] = await db.query('SELECT * FROM permanent_inventory ORDER BY item_name ASC');
+        res.json(items);
+    } catch (error) {
+        res.status(500).json({ message: 'Error fetching permanent inventory.' });
+    }
+});
+
+// POST a new permanent item (NOW ACCEPTS AN IMAGE)
+app.post('/api/permanent-inventory', kitchenUpload.single('itemImage'), async (req, res) => {
+    const { itemName, totalQuantity, notes } = req.body;
+    const imageUrl = req.file ? `/public/uploads/${req.file.filename}` : null; // Get image path if uploaded
+    try {
+        await db.query(
+            'INSERT INTO permanent_inventory (item_name, total_quantity, notes, image_url) VALUES (?, ?, ?, ?)',
+            [itemName, totalQuantity, notes, imageUrl]
+        );
+        res.status(201).json({ message: 'Permanent item added successfully.' });
+    } catch (error) {
+        if (error.code === 'ER_DUP_ENTRY') return res.status(409).json({ message: 'This item already exists.' });
+        res.status(500).json({ message: 'Error adding permanent item.' });
+    }
+});
+
+// PUT (update) an existing permanent item (NOW ACCEPTS AN IMAGE)
+app.put('/api/permanent-inventory/:id', kitchenUpload.single('itemImage'), async (req, res) => {
+    const { id } = req.params;
+    const { itemName, totalQuantity, notes } = req.body;
+    
+    try {
+        let query = 'UPDATE permanent_inventory SET item_name = ?, total_quantity = ?, notes = ?';
+        const params = [itemName, totalQuantity, notes];
+
+        // If a new image is being uploaded, add it to the query
+        if (req.file) {
+            query += ', image_url = ?';
+            params.push(`/public/uploads/${req.file.filename}`);
+        }
+
+        query += ' WHERE id = ?';
+        params.push(id);
+        
+        const [result] = await db.query(query, params);
+        if (result.affectedRows === 0) return res.status(404).json({ message: 'Item not found.' });
+        
+        res.status(200).json({ message: 'Item updated successfully.' });
+    } catch (error) {
+        if (error.code === 'ER_DUP_ENTRY') return res.status(409).json({ message: 'Another item with this name already exists.' });
+        res.status(500).json({ message: 'Error updating item.' });
+    }
+});
+
+// DELETE a permanent item (This route does not change)
+app.delete('/api/permanent-inventory/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const [result] = await db.query('DELETE FROM permanent_inventory WHERE id = ?', [id]);
+        if (result.affectedRows === 0) return res.status(404).json({ message: 'Item not found.' });
+        res.status(200).json({ message: 'Item deleted successfully.' });
+    } catch (error) {
+        res.status(500).json({ message: 'Error deleting item.' });
+    }
+});
+
+
+
+// ==========================================================
+// --- FOOD MENU API ROUTES (FINAL & CORRECTED) ---
+// ==========================================================
+
+// GET the full weekly food menu (Accessible to all roles)
+app.get('/api/food-menu', async (req, res) => {
+    try {
+        const query = `
+            SELECT * FROM food_menu 
+            ORDER BY 
+                FIELD(day_of_week, "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"), 
+                FIELD(meal_type, "Tiffin", "Lunch", "Snacks", "Dinner")
+        `;
+        const [menuItems] = await db.query(query);
+
+        const groupedMenu = menuItems.reduce((acc, item) => {
+            const day = item.day_of_week;
+            if (!acc[day]) { acc[day] = []; }
+            acc[day].push(item);
+            return acc;
+        }, {});
+
+        res.json(groupedMenu);
+    } catch (error) {
+        console.error("Error fetching food menu:", error);
+        res.status(500).json({ message: 'Error fetching food menu.' });
+    }
+});
+
+
+// ★★★ ROUTE ORDER CORRECTED ★★★
+// The specific route for '/time' must come BEFORE the general route for '/:id'.
+
+// PUT (update) the TIME for an entire meal column (Admin only)
+app.put('/api/food-menu/time', async (req, res) => {
+    const { meal_type, meal_time, editorId } = req.body;
+
+    if (!editorId) {
+        return res.status(401).json({ message: 'Unauthorized: User authentication is required.' });
+    }
+
+    try {
+        const [[editor]] = await db.query('SELECT role FROM users WHERE id = ?', [editorId]);
+        if (!editor || editor.role !== 'admin') {
+            return res.status(403).json({ message: 'Forbidden: You do not have permission to perform this action.' });
+        }
+        
+        const [result] = await db.query('UPDATE food_menu SET meal_time = ? WHERE meal_type = ?', [meal_time, meal_type]);
+
+        res.status(200).json({ message: `${meal_type} time updated for all days.`, affectedRows: result.affectedRows });
+    } catch (error) {
+        console.error("Error updating meal time:", error);
+        res.status(500).json({ message: 'Error updating meal time.' });
+    }
+});
+
+// PUT (update) a SINGLE food item's text (Admin only)
+app.put('/api/food-menu/:id', async (req, res) => {
+    const { id } = req.params;
+    const { food_item, editorId } = req.body;
+
+    if (!editorId) {
+        return res.status(401).json({ message: 'Unauthorized: User authentication is required.' });
+    }
+
+    try {
+        const [[editor]] = await db.query('SELECT role FROM users WHERE id = ?', [editorId]);
+        if (!editor || editor.role !== 'admin') {
+            return res.status(403).json({ message: 'Forbidden: You do not have permission to perform this action.' });
+        }
+
+        const [result] = await db.query('UPDATE food_menu SET food_item = ? WHERE id = ?', [food_item, id]);
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: 'Menu item not found.' });
+        }
+
+        res.status(200).json({ message: 'Menu item updated successfully.' });
+    } catch (error) {
+        console.error("Error updating food menu item:", error);
+        res.status(500).json({ message: 'Error updating menu item.' });
+    }
+})
 
 
 // Start the server

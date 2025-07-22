@@ -30,6 +30,7 @@ import StudentMaterialsScreen from '../screens/study-materials/StudentMaterialsS
 import StudentSyllabusScreen from '../screens/syllabus/StudentSyllabusScreen';
 import AboutUs from './AboutUs';
 import ChatAIScreen from '../screens/chatai/ChatAIScreen';
+import FoodScreen from '../screens/food/FoodScreen';
 
 // --- TYPE DEFINITION for profile data from API ---
 interface ProfileData {
@@ -100,6 +101,7 @@ const StudentDashboard = ({ navigation }) => {
     { id: 'qa18', title: 'Gallery', imageSource: 'https://cdn-icons-png.flaticon.com/128/8418/8418513.png', navigateTo: 'Gallery' },
     { id: 'qa19', title: 'About Us', imageSource: 'https://cdn-icons-png.flaticon.com/128/3815/3815523.png', navigateToTab: 'AboutUs' },
     { id: 'qa20', title: 'Chat AI', imageSource: 'https://cdn-icons-png.flaticon.com/128/6028/6028616.png', navigateToTab: 'ChatAI' },
+    { id: 'qa25', title: 'Food', imageSource: 'https://cdn-icons-png.flaticon.com/128/2276/2276931.png', navigateToTab: 'FoodScreen' },
   ];
 
   const handleLogout = () => {
@@ -153,6 +155,7 @@ const StudentDashboard = ({ navigation }) => {
       case 'Attendance': return ( <><ContentScreenHeader title="Attendance" /><AttendanceScreen /></> );
       case 'AboutUs': return ( <><ContentScreenHeader title="About Us" /><AboutUs /></> );
       case 'ChatAI': return ( <><ContentScreenHeader title="AI Assistant" /><ChatAIScreen /></> );
+      case 'FoodScreen': return ( <><ContentScreenHeader title="Food" /><FoodScreen /></> );
 
       default: return ( <View style={styles.fallbackContent}><Text style={styles.fallbackText}>Content for '{activeTab}' is not available.</Text><TouchableOpacity onPress={() => setActiveTab('home')}><Text style={styles.fallbackLink}>Go to Home</Text></TouchableOpacity></View> );
     }

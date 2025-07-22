@@ -28,6 +28,7 @@ import TeacherSyllabusScreen from '../screens/syllabus/TeacherSyllabusScreen';
 import TransportScreen from '../screens/transport/TransportScreen';
 import AboutUs from './AboutUs';
 import ChatAIScreen from '../screens/chatai/ChatAIScreen';
+import FoodScreen from '../screens/food/FoodScreen';
 
 
 
@@ -94,8 +95,9 @@ const TeacherDashboard = ({ navigation }) => {
     { id: 'qa16', title: 'Help Desk', imageSource: 'https://cdn-icons-png.flaticon.com/128/4961/4961736.png', navigateToTab: 'UserHelpDeskScreen' },
     // This now uses real navigation to the 'Gallery' navigator.
     { id: 'qa18', title: 'Gallery', imageSource: 'https://cdn-icons-png.flaticon.com/128/8418/8418513.png', navigateTo: 'Gallery' },
-    { id: 'qa7', title: 'About Us', imageSource: 'https://cdn-icons-png.flaticon.com/128/3815/3815523.png', navigateToTab: 'AboutUs' },
+    { id: 'qa21', title: 'About Us', imageSource: 'https://cdn-icons-png.flaticon.com/128/3815/3815523.png', navigateToTab: 'AboutUs' },
     { id: 'qa20', title: 'Chat AI', imageSource: 'https://cdn-icons-png.flaticon.com/128/6028/6028616.png', navigateToTab: 'ChatAI' },
+    { id: 'qa25', title: 'Food', imageSource: 'https://cdn-icons-png.flaticon.com/128/2276/2276931.png', navigateToTab: 'FoodScreen' },
 
   ];
 
@@ -153,6 +155,7 @@ const TeacherDashboard = ({ navigation }) => {
       case 'Attendance': return ( <><ContentScreenHeader title="Attendance Report" /><AttendanceScreen /></> );
       case 'AboutUs': return ( <><ContentScreenHeader title="About Us" onBack={handleBack} /><AboutUs /></> );
       case 'ChatAI': return ( <><ContentScreenHeader title="AI Assistant" /><ChatAIScreen /></> );
+      case 'FoodScreen': return ( <><ContentScreenHeader title="Food" onBack={handleBack} /><FoodScreen /></> );
       
       default:
         return ( <><ContentScreenHeader title={capitalize(activeTab)} /><View style={styles.fallbackContent}><Text style={styles.fallbackText}>Content not available yet.</Text></View></> );
