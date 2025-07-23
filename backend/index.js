@@ -16,6 +16,11 @@ const { Client } = require("@googlemaps/google-maps-services-js");
 const googleMapsClient = new Client({});
 const { OpenAI } = require('openai');
 
+// ★★★ NEW IMPORTS FOR REAL-TIME CHAT ★★★
+const http = require('http');
+const { Server } = require("socket.io");
+// ★★★ END NEW IMPORTS ★★★
+
 // Initialize the OpenAI client with your API key from the .env file
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
@@ -61,6 +66,58 @@ const db = mysql.createPool({
     queueLimit: 0
     
 });
+
+// ==========================================================
+// --- MIDDLEWARE FOR SECURE AUTHENTICATION ---
+// ==========================================================
+// This function verifies the JWT sent from the app to protect routes.
+const verifyToken = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1]; // Expects "Bearer TOKEN"
+
+    if (!token) {
+        return res.status(401).json({ message: 'No token provided, authorization denied.' });
+    }
+
+    jwt.verify(token, process.env.JWT_SECRET || 'YOUR_SUPER_SECRET_KEY', (err, user) => {
+        if (err) {
+            return res.status(403).json({ message: 'Token is not valid.' });
+        }
+        // The decoded token payload (id, role, etc.) is attached to the request object.
+        req.user = user;
+        next();
+    });
+};
+
+// This function checks if the verified user has the 'admin' role.
+const isAdmin = (req, res, next) => {
+    if (req.user && req.user.role === 'admin') {
+        next();
+    } else {
+        res.status(403).json({ message: 'Access denied. Admin role required.' });
+    }
+};
+
+// ==========================================================
+// --- MULTER STORAGE CONFIG FOR THE NEW ADS MODULE ---
+// ==========================================================
+// This keeps ad-related uploads separate from your other multer configs.
+const adsStorage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        // We'll use your existing 'uploads' directory
+        cb(null, 'uploads/');
+    },
+    filename: (req, file, cb) => {
+        // Create a unique filename for ad images and payment proofs
+        let prefix = 'ad-image';
+        if (file.fieldname === 'payment_screenshot') {
+            prefix = 'ad-payment-proof';
+        }
+        cb(null, `${prefix}-${Date.now()}${path.extname(file.originalname)}`);
+    }
+});
+const adsUpload = multer({ storage: adsStorage });
+
 
 // 📂 File: backend/server.js (Replace all user, profile, and password reset routes with this block)
 
@@ -2994,6 +3051,274 @@ app.put('/api/food-menu/:id', async (req, res) => {
         res.status(500).json({ message: 'Error updating menu item.' });
     }
 })
+
+
+
+// ==========================================================
+// --- ADS MODULE API ROUTES (FINAL - UNIFIED & CORRECTED) ---
+// ==========================================================
+
+// This single endpoint handles creating an ad for ALL user roles.
+// It accepts multiple files: the ad image and an optional payment screenshot.
+app.post('/api/ads', verifyToken, adsUpload.fields([
+    { name: 'ad_content_image', maxCount: 1 },
+    { name: 'payment_screenshot', maxCount: 1 }
+]), async (req, res) => {
+    // Get all data from the request
+    const { ad_type, ad_content_text, payment_text } = req.body;
+    const { id: user_id, role } = req.user; // Get user ID and role from the secure token
+
+    // --- Validation ---
+    // The ad image is always required.
+    if (!req.files || !req.files.ad_content_image) {
+        return res.status(400).json({ message: 'Ad image is required.' });
+    }
+    const ad_content_image_url = `/uploads/${req.files.ad_content_image[0].filename}`;
+
+    // For non-admins, the payment screenshot is also required.
+    const isPayingUser = role === 'student' || role === 'teacher' || role === 'donor';
+    if (isPayingUser && (!req.files || !req.files.payment_screenshot)) {
+        return res.status(400).json({ message: 'Payment proof screenshot is required for your role.' });
+    }
+
+    const connection = await db.getConnection();
+    try {
+        await connection.beginTransaction();
+
+        // Step 1: Create the Ad record.
+        // If the user is an admin, the ad is automatically 'approved'. Otherwise, it's 'pending'.
+        const adStatus = (role === 'admin') ? 'approved' : 'pending';
+        const [result] = await connection.query(
+            'INSERT INTO ads (user_id, ad_type, ad_content_image_url, ad_content_text, status) VALUES (?, ?, ?, ?, ?)',
+            [user_id, ad_type, ad_content_image_url, ad_content_text, adStatus]
+        );
+        const adId = result.insertId;
+
+        // Step 2: If the user is a paying user, create the associated payment record.
+        if (isPayingUser) {
+            const payment_screenshot_url = `/uploads/${req.files.payment_screenshot[0].filename}`;
+            await connection.query(
+                'INSERT INTO ad_payments (ad_id, payment_screenshot_url, payment_text) VALUES (?, ?, ?)',
+                [adId, payment_screenshot_url, payment_text || null]
+            );
+        }
+
+        await connection.commit();
+
+        const successMessage = (role === 'admin') 
+            ? 'Ad has been posted successfully!' 
+            : 'Ad and payment proof have been submitted for review!';
+            
+        res.status(201).json({ message: successMessage });
+
+    } catch (error) {
+        await connection.rollback();
+        console.error("Error creating ad:", error);
+        res.status(500).json({ message: 'Server error while creating the ad.' });
+    } finally {
+        connection.release();
+    }
+});
+
+// This route is no longer needed as payment is submitted with the ad.
+// You can safely delete the old app.post('/api/ads/:adId/payment', ...) route if it exists.
+
+
+// PUBLIC: Get approved ads for display (The "Small Key" endpoint)
+app.get('/api/ads/display', async (req, res) => {
+    try {
+        const [ads] = await db.query("SELECT id, ad_type, ad_content_image_url, ad_content_text FROM ads WHERE status = 'approved' ORDER BY RAND()");
+        res.json(ads);
+    } catch (error) {
+        console.error("Error fetching display ads:", error);
+        res.status(500).json({ message: 'Server error fetching ads.' });
+    }
+});
+
+
+// --- ADMIN-ONLY ROUTES ---
+
+// GET /api/admin/ads - Fetches all ads for the admin dashboard.
+app.get('/api/admin/ads', [verifyToken, isAdmin], async (req, res) => {
+    try {
+        const query = `
+             SELECT a.*, u.username as userName, u.full_name, p.payment_screenshot_url, p.payment_text
+             FROM ads a 
+             JOIN users u ON a.user_id = u.id
+             LEFT JOIN ad_payments p ON a.id = p.ad_id
+             ORDER BY a.created_at DESC`;
+        const [ads] = await db.query(query);
+        res.json(ads);
+    } catch (error) {
+        console.error("Error fetching all ads for admin:", error);
+        res.status(500).json({ message: 'Server error fetching ads for admin.' });
+    }
+});
+
+// PUT /api/admin/ads/:adId/status - Allows admin to approve or reject a pending ad.
+app.put('/api/admin/ads/:adId/status', [verifyToken, isAdmin], async (req, res) => {
+    const { adId } = req.params;
+    const { status } = req.body;
+
+    if (!['approved', 'rejected'].includes(status)) {
+        return res.status(400).json({ message: 'Invalid status provided.' });
+    }
+
+    try {
+        const [result] = await db.query("UPDATE ads SET status = ? WHERE id = ?", [status, adId]);
+        if (result.affectedRows === 0) return res.status(404).json({ message: 'Ad not found.' });
+        res.json({ message: `Ad has been successfully ${status}.` });
+    } catch (error) {
+        console.error("Error updating ad status:", error);
+        res.status(500).json({ message: 'Server error updating ad status.' });
+    }
+});
+
+// DELETE /api/admin/ads/:adId - Allows admin to delete any ad.
+app.delete('/api/admin/ads/:adId', [verifyToken, isAdmin], async (req, res) => {
+    const { adId } = req.params;
+    try {
+        // Future improvement: also delete the image files from the /uploads folder.
+        const [result] = await db.query("DELETE FROM ads WHERE id = ?", [adId]);
+        if (result.affectedRows === 0) return res.status(404).json({ message: 'Ad not found.' });
+        res.json({ message: 'Ad successfully deleted.' });
+    } catch (error) {
+        console.error("Error deleting ad:", error);
+        res.status(500).json({ message: 'Server error deleting ad.' });
+    }
+});
+
+
+// ==========================================================
+// --- ADS PAYMENT SETTINGS API ROUTES (No Changes Needed) ---
+// ==========================================================
+
+// PUBLIC: Gets the Admin's payment details to show to users.
+app.get('/api/payment-details', async (req, res) => {
+    try {
+        const [[details]] = await db.query('SELECT * FROM ad_payment_settings WHERE id = 1');
+        res.json(details || {});
+    } catch (error) {
+        console.error("Error fetching payment details:", error);
+        res.status(500).json({ message: 'Error fetching payment details.' });
+    }
+});
+
+// ADMIN-ONLY: Updates the Admin's payment details.
+app.post('/api/admin/payment-details', [verifyToken, isAdmin], paymentUpload.single('qrCodeImage'), async (req, res) => {
+    const { accountHolderName, accountNumber, ifscCode, cifCode } = req.body;
+    let sql = 'UPDATE ad_payment_settings SET account_holder_name = ?, account_number = ?, ifsc_code = ?, cif_code = ?';
+    const params = [accountHolderName, accountNumber, ifscCode, cifCode];
+
+    if (req.file) {
+        const qrCodeUrl = `/public/uploads/${req.file.filename}`;
+        sql += ', qr_code_url = ?';
+        params.push(qrCodeUrl);
+    }
+    sql += ' WHERE id = 1';
+
+    try {
+        await db.query(sql, params);
+        res.status(200).json({ message: 'Payment details updated successfully!' });
+    } catch (error) {
+        console.error("Error updating payment details:", error);
+        res.status(500).json({ message: 'Error updating details.' });
+    }
+});
+
+
+
+// ==========================================================
+// --- GROUP CHAT API & REAL-TIME ROUTES ---
+// ==========================================================
+
+// ★★★ NEW SERVER SETUP FOR SOCKET.IO ★★★
+// We create an HTTP server from the Express app, then attach Socket.IO to it.
+const server = http.createServer(app);
+const io = new Server(server, {
+    cors: {
+        origin: "*", // Allow all origins for simplicity in development
+        methods: ["GET", "POST"]
+    }
+});
+
+// --- 1. API ROUTE TO GET MESSAGE HISTORY ---
+// This fetches the last 100 messages when a user first opens the chat.
+app.get('/api/group-chat/history', async (req, res) => {
+    try {
+        // The JOIN with the users table is crucial. It adds the full_name and role to every message.
+        const query = `
+            SELECT 
+                m.id, 
+                m.message_text, 
+                m.timestamp, 
+                m.user_id,
+                COALESCE(u.full_name, 'Deleted User') as full_name, 
+                u.role
+            FROM group_chat_messages m
+            LEFT JOIN users u ON m.user_id = u.id
+            ORDER BY m.timestamp DESC
+            LIMIT 100; 
+        `;
+        const [messages] = await db.query(query);
+        res.json(messages.reverse());
+    } catch (error) {
+        console.error("Error fetching chat history:", error);
+        res.status(500).json({ message: "Error fetching chat history." });
+    }
+});
+
+// --- 2. REAL-TIME SOCKET.IO LOGIC ---
+// This handles the live "WhatsApp style" communication.
+io.on('connection', (socket) => {
+    console.log(`🔌 A user connected: ${socket.id}`);
+
+    // Automatically add every new user to the one and only group chat room.
+    socket.join('school-group-chat');
+
+    // This block runs when any user (student, teacher, or admin) sends a message.
+    socket.on('sendMessage', async (data) => {
+        const { userId, messageText } = data;
+        
+        if (!userId || !messageText || !messageText.trim()) {
+            return; // Safety check
+        }
+
+        const connection = await db.getConnection();
+        try {
+            // Step A: Save the message to the database so it's stored permanently.
+            const [result] = await connection.query(
+                'INSERT INTO group_chat_messages (user_id, message_text) VALUES (?, ?)',
+                [userId, messageText]
+            );
+            const newMessageId = result.insertId;
+
+            // Step B: Get the full message details, including the sender's Name and Role from the `users` table.
+            const [[broadcastMessage]] = await connection.query(`
+                SELECT 
+                    m.id, m.message_text, m.timestamp, m.user_id,
+                    u.full_name, u.role
+                FROM group_chat_messages m
+                JOIN users u ON m.user_id = u.id
+                WHERE m.id = ?
+            `, [newMessageId]);
+
+            // ★★★ THIS IS THE MOST IMPORTANT STEP ★★★
+            // Step C: Broadcast the complete message (with name and role) to EVERYONE
+            // who is in the 'school-group-chat' room. This is what makes it a group chat.
+            io.to('school-group-chat').emit('newMessage', broadcastMessage);
+
+        } catch (error) {
+            console.error('Error handling message:', error);
+        } finally {
+            connection.release();
+        }
+    });
+
+    socket.on('disconnect', () => {
+        console.log(`🔌 User disconnected: ${socket.id}`);
+    });
+});
 
 
 // Start the server

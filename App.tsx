@@ -9,6 +9,12 @@ import { AuthProvider, useAuth } from './src/context/AuthContext';
 
 // --- Screen Imports (Your full list) ---
 
+// ✅ --- 1. IMPORT THE NEW ADS SCREENS AND THE DISPLAY COMPONENT --- ✅
+import CreateAdScreen from './src/screens/ads/CreateAdScreen';
+import AdminAdDashboardScreen from './src/screens/ads/AdminAdDashboardScreen';
+import AdDisplay from './src/screens/ads/AdDisplay';
+
+
 // Public (Pre-Login) Screens
 import WelcomePage from './src/components/WelcomePage';
 import HomeScreen from './src/screens/HomeScreen';
@@ -34,6 +40,7 @@ import PhysicsSyllabus from './src/components/PhysicsSyllabus';
 import TransportScreen from './src/screens/transport/TransportScreen';
 import GalleryScreen from './src/screens/gallery/GalleryScreen';
 import AlbumDetailScreen from './src/screens/gallery/AlbumDetailScreen';
+import GroupChatScreen from './src/screens/chat/GroupChatScreen';
 
 // Admin-Specific Screens
 import AdminNotifications from './src/components/AdminNotifications';
@@ -236,6 +243,7 @@ const AuthenticatedStack = () => {
       <Stack.Screen name="AdminPaymentScreen" component={AdminPaymentScreen} />
       <Stack.Screen name="KitchenScreen" component={KitchenScreen} />
       <Stack.Screen name="FoodScreen" component={FoodScreen} />
+      <Stack.Screen name="GroupChatScreen" component={GroupChatScreen} />
 
       {/* ADD THE GALLERY NAVIGATOR AS A SINGLE SCREEN IN THE MAIN STACK */}
       <Stack.Screen 
@@ -244,6 +252,28 @@ const AuthenticatedStack = () => {
         options={{ headerShown: false }} 
       />
       
+      <Stack.Screen 
+        name="CreateAdScreen" 
+        component={CreateAdScreen} 
+        options={{ 
+          headerShown: true, 
+          title: 'Create Advertisement',
+          headerStyle: { backgroundColor: '#e0f2f7' },
+          headerTintColor: '#008080',
+          headerTitleStyle: { fontWeight: 'bold' }
+        }} 
+      />
+      <Stack.Screen 
+        name="AdminAdDashboardScreen" 
+        component={AdminAdDashboardScreen} 
+        options={{ 
+          headerShown: true, 
+          title: 'Ads Management',
+          headerStyle: { backgroundColor: '#e0f2f7' },
+          headerTintColor: '#008080',
+          headerTitleStyle: { fontWeight: 'bold' }
+        }} 
+      />
         
     </Stack.Navigator>
   );
@@ -291,11 +321,17 @@ const AppNavigator = () => {
     );
   }
 
-  // ✅ The `linking` object is passed to the NavigationContainer to handle all deep links
+  // ✅ --- 3. WRAP THE NAVIGATOR TO DISPLAY ADS GLOBALLY --- ✅
   return (
-    <NavigationContainer ref={navigationRef} linking={linking} fallback={<ActivityIndicator color="#008080" />}>
-      {user ? <AuthenticatedStack /> : <PublicStack />}
-    </NavigationContainer>
+    <View style={{ flex: 1 }}>
+      <NavigationContainer ref={navigationRef} linking={linking} fallback={<ActivityIndicator color="#008080" />}>
+        {user ? <AuthenticatedStack /> : <PublicStack />}
+      </NavigationContainer>
+      
+      {/* This is the "small key". It will now float on top of all screens. */}
+      {/* We add a check to only show it if a user is logged in. */}
+      {user && <AdDisplay />}
+    </View>
   );
 };
 

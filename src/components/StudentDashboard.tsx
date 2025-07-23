@@ -31,6 +31,7 @@ import StudentSyllabusScreen from '../screens/syllabus/StudentSyllabusScreen';
 import AboutUs from './AboutUs';
 import ChatAIScreen from '../screens/chatai/ChatAIScreen';
 import FoodScreen from '../screens/food/FoodScreen';
+import GroupChatScreen from '../screens/chat/GroupChatScreen';
 
 // --- TYPE DEFINITION for profile data from API ---
 interface ProfileData {
@@ -83,6 +84,7 @@ const StudentDashboard = ({ navigation }) => {
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(initialUnreadCount);
 
   const allQuickAccessItems = [
+    { id: 'qa-ads-create', title: 'Create Ad', imageSource: 'https://cdn-icons-png.flaticon.com/128/4944/4944482.png', navigateTo: 'CreateAdScreen' },
     { id: 'qa2', title: 'Timetable', imageSource: 'https://cdn-icons-png.flaticon.com/128/1254/1254275.png', navigateToTab: 'Timetable' },
     { id: 'qa3', title: 'Attendance', imageSource: 'https://cdn-icons-png.flaticon.com/128/10293/10293877.png', navigateToTab: 'Attendance' },
     { id: 'qa4', title: 'Syllabus', imageSource: 'https://cdn-icons-png.flaticon.com/128/1584/1584937.png', navigateToTab: 'StudentSyllabusScreen' },
@@ -102,6 +104,7 @@ const StudentDashboard = ({ navigation }) => {
     { id: 'qa19', title: 'About Us', imageSource: 'https://cdn-icons-png.flaticon.com/128/3815/3815523.png', navigateToTab: 'AboutUs' },
     { id: 'qa20', title: 'Chat AI', imageSource: 'https://cdn-icons-png.flaticon.com/128/6028/6028616.png', navigateToTab: 'ChatAI' },
     { id: 'qa25', title: 'Food', imageSource: 'https://cdn-icons-png.flaticon.com/128/2276/2276931.png', navigateToTab: 'FoodScreen' },
+    { id: 'qa26', title: 'Group Chat', imageSource: 'https://cdn-icons-png.flaticon.com/128/745/745205.png', navigateToTab: 'GroupChatScreen' },
   ];
 
   const handleLogout = () => {
@@ -156,6 +159,7 @@ const StudentDashboard = ({ navigation }) => {
       case 'AboutUs': return ( <><ContentScreenHeader title="About Us" /><AboutUs /></> );
       case 'ChatAI': return ( <><ContentScreenHeader title="AI Assistant" /><ChatAIScreen /></> );
       case 'FoodScreen': return ( <><ContentScreenHeader title="Food" /><FoodScreen /></> );
+      case 'GroupChatScreen': return ( <><ContentScreenHeader title="Group Chat" /><GroupChatScreen /></> );
 
       default: return ( <View style={styles.fallbackContent}><Text style={styles.fallbackText}>Content for '{activeTab}' is not available.</Text><TouchableOpacity onPress={() => setActiveTab('home')}><Text style={styles.fallbackLink}>Go to Home</Text></TouchableOpacity></View> );
     }
