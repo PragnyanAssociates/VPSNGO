@@ -1,14 +1,16 @@
 // 📂 File: TeacherDashboard.js (CORRECTED & FINAL)
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, SafeAreaView, Dimensions, Image, Platform } from 'react-native';
+import { useIsFocused } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { useAuth } from '../context/AuthContext';
 import { API_BASE_URL } from '../../apiConfig';
 
 // --- Component Imports ---
-import TeacherNotifications, { initialNotificationsData } from './TeacherNotifications';
+import NotificationsScreen from '../screens/NotificationsScreen'; // 👈 IMPORT THE NEW SCREEN
+// import TeacherNotifications, { initialNotificationsData } from './TeacherNotifications';
 import ProfileScreen from '../screens/ProfileScreen';
 import AcademicCalendar from './AcademicCalendar';
 import TimetableScreen from '../screens/TimetableScreen';
@@ -54,27 +56,51 @@ const DANGER_COLOR = '#E53935';
 // --- Main Component ---
 const TeacherDashboard = ({ navigation }) => {
   const [activeTab, setActiveTab] = useState('home');
-  const { user, logout } = useAuth();
+  const { user, token, logout } = useAuth();
   const [profile, setProfile] = useState<ProfileData | null>(null);
+  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
+  const isFocused = useIsFocused(); // ★★★ 2. USE THE HOOK ★★★
 
   useEffect(() => {
     const fetchProfile = async () => {
       if (!user?.id) return;
       try {
         const response = await fetch(`${API_BASE_URL}/api/profiles/${user.id}`);
-        if (response.ok) {
-          setProfile(await response.json());
-        } else { console.error("Dashboard: Failed to fetch profile data, status:", response.status); }
+        if (response.ok) setProfile(await response.json());
       } catch (error) { console.error("Dashboard: Error fetching profile:", error); }
     };
-    if (activeTab === 'home') {
-      fetchProfile();
+    if (isFocused) { // Only fetch when screen is focused
+        fetchProfile();
     }
-  }, [user?.id, activeTab]);
+  }, [user?.id, isFocused]); // Add isFocused to dependency array
 
   const capitalize = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : '');
   const profileImageSource = profile?.profile_image_url ? { uri: `${API_BASE_URL}${profile.profile_image_url}` } : require('../assets/profile.png');
-  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState( initialNotificationsData.filter(n => !n.read).length );
+  
+  const fetchUnreadCount = useCallback(async () => {
+    if (!user || !token) return;
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/notifications`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setUnreadNotificationsCount(data.filter(n => !n.is_read).length);
+      }
+    } catch (error) {
+      console.error("Error fetching initial unread count:", error);
+    }
+  }, [user, token]);
+
+  // ★★★ 3. MODIFY useEffect TO USE isFocused ★★★
+  useEffect(() => {
+    if (isFocused) {
+      console.log("StudentDashboard is focused, fetching notification count...");
+      fetchUnreadCount();
+    }
+  }, [isFocused, fetchUnreadCount]);
+
+  // const [unreadNotificationsCount, setUnreadNotificationsCount] = useState( initialNotificationsData.filter(n => !n.read).length );
   const handleLogout = () => { Alert.alert("Logout", "Are you sure you want to log out?", [ { text: "Cancel", style: "cancel" }, { text: "Logout", onPress: logout, style: "destructive" } ]); };
 
   // --- FIX #1: Change the Gallery item to navigate to the 'Gallery' navigator ---
@@ -132,9 +158,16 @@ const TeacherDashboard = ({ navigation }) => {
                 </View>
             </ScrollView> 
         );
+
       
       // All other cases remain the same
-      case 'allNotifications': return ( <><ContentScreenHeader title="Notifications" /><TeacherNotifications onUnreadCountChange={setUnreadNotificationsCount} /></> );
+      case 'allNotifications':
+        return (
+          <>
+            <ContentScreenHeader title="Notifications" />
+            <NotificationsScreen onUnreadCountChange={setUnreadNotificationsCount} />
+          </>
+        );
       case 'calendar': return <AcademicCalendar />;
       case 'profile': return <ProfileScreen onBackPress={() => setActiveTab('home')} />;
       case 'TeacherHealthAdminScreen': return ( <><ContentScreenHeader title="Health Information" /><TeacherHealthAdminScreen /></> );

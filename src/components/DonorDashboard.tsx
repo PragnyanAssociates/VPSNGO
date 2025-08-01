@@ -1,6 +1,6 @@
-// 📂 File: src/components/DonorDashboard.tsx (FINAL, CORRECTED, AND RESTYLED)
+// 📂 File: src/components/DonorDashboard.tsx (FINAL AND CORRECTED)
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -14,26 +14,29 @@ import {
   Platform,
   ActivityIndicator,
 } from 'react-native';
+import { useIsFocused } from '@react-navigation/native'; // ★ 1. IMPORT useIsFocused
 import FontAwesome from 'react-native-vector-icons/FontAwesome';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { useAuth } from '../context/AuthContext';
 import { API_BASE_URL } from '../../apiConfig';
 
-// Import all screens that will be rendered inside this dashboard
-import ProfileScreen, { ProfileData } from '../screens/ProfileScreen';
+// --- COMPONENT IMPORTS ---
+import ProfileScreen from '../screens/ProfileScreen';
 import AcademicCalendar from './AcademicCalendar';
-import DonorNotifications, { initialNotificationsData } from './DonorNotifications';
+import NotificationsScreen from '../screens/NotificationsScreen'; // ★ 2. USE THE DYNAMIC NOTIFICATION SCREEN
 import UserHelpDeskScreen from '../screens/helpdesk/UserHelpDeskScreen';
-// import DonorSuggestions from './DonorSuggestions';
-import DonorReceipts from './DonorReceipts';
-// import DonorPayments from './DonorPayments';
-// import DonorSponsor from './DonorSponsor';
-import AboutUs from './AboutUs';
-import ChatAIScreen from '../screens/chatai/ChatAIScreen';
 import DonorSuggestionsScreen from '../screens/suggestions/DonorSuggestionsScreen';
 import DonorSponsorScreen from '../screens/sponsorship/DonorSponsorScreen';
 import DonorPaymentScreen from '../screens/payments/DonorPaymentScreen';
+import AboutUs from './AboutUs';
+import ChatAIScreen from '../screens/chatai/ChatAIScreen';
 
+
+interface ProfileData {
+  full_name: string;
+  profile_image_url?: string;
+  role: string;
+}
 
 // --- Constants & Color Scheme ---
 const { width: windowWidth } = Dimensions.get('window');
@@ -62,9 +65,34 @@ const allQuickAccessItems = [
 
 const DonorDashboard = ({ navigation }) => {
   const [activeTab, setActiveTab] = useState('home');
+  const { user, token, logout } = useAuth();
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
-  const { user, logout } = useAuth();
+  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
+  const isFocused = useIsFocused(); // ★ 3. INITIALIZE THE HOOK
+
+  const fetchUnreadCount = useCallback(async () => {
+    if (!user || !token) return;
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/notifications`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setUnreadNotificationsCount(data.filter(n => !n.is_read).length);
+      }
+    } catch (error) {
+      console.error('Error fetching notification count:', error);
+    }
+  }, [user, token]);
+  
+  // ★ 4. USE THE isFocused HOOK TO REFRESH DATA
+  useEffect(() => {
+    if (isFocused) {
+      fetchUnreadCount();
+      // You can also refresh the profile here if needed
+    }
+  }, [isFocused, fetchUnreadCount]);
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -80,11 +108,9 @@ const DonorDashboard = ({ navigation }) => {
           setProfile(data);
         } else {
           setProfile({
-            id: user.id,
-            username: user.username || 'Unknown',
             full_name: user.full_name || 'Donor',
             role: 'donor',
-          });
+          } as ProfileData);
         }
       } catch (e) {
         console.error('Failed to fetch donor profile', e);
@@ -92,12 +118,10 @@ const DonorDashboard = ({ navigation }) => {
         setLoadingProfile(false);
       }
     };
-    fetchProfile();
-  }, [user]);
-
-  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(
-    initialNotificationsData.filter((n) => !n.read).length
-  );
+    if (isFocused) {
+        fetchProfile();
+    }
+  }, [user, isFocused]);
 
   const handleLogout = () => {
     Alert.alert('Logout', 'Are you sure you want to log out?', [
@@ -118,50 +142,49 @@ const DonorDashboard = ({ navigation }) => {
 
     switch (activeTab) {
       case 'home':
-        return ( 
-            <ScrollView contentContainerStyle={styles.contentScrollViewContainer}>
-                <View style={styles.dashboardGrid}>
-                    {allQuickAccessItems.map(item => ( 
-                        <DashboardSectionCard 
-                            key={item.id} 
-                            title={item.title} 
-                            imageSource={item.imageSource} 
-                            onPress={() => {
-                                if (item.navigateTo) {
-                                    navigation.navigate(item.navigateTo);
-                                } else if (item.navigateToTab) {
-                                    setActiveTab(item.navigateToTab);
-                                } else {
-                                    Alert.alert(item.title, `Coming soon!`);
-                                }
-                            }} 
-                        /> 
-                    ))}
-                </View>
-            </ScrollView> 
+        return (
+          <ScrollView contentContainerStyle={styles.contentScrollViewContainer}>
+            <View style={styles.dashboardGrid}>
+              {allQuickAccessItems.map(item => (
+                <DashboardSectionCard
+                  key={item.id}
+                  title={item.title}
+                  imageSource={item.imageSource}
+                  onPress={() => {
+                    if (item.navigateTo) {
+                      navigation.navigate(item.navigateTo);
+                    } else if (item.navigateToTab) {
+                      setActiveTab(item.navigateToTab);
+                    } else {
+                      Alert.alert(item.title, `Coming soon!`);
+                    }
+                  }}
+                />
+              ))}
+            </View>
+          </ScrollView>
         );
-              
+      
+      // ★ 5. CORRECTLY RENDER THE NotificationsScreen COMPONENT
+      case 'allNotifications':
+        return <><ContentScreenHeader title="Notifications" onBack={handleBack} /><NotificationsScreen onUnreadCountChange={setUnreadNotificationsCount} /></>;
+        
       case 'profile':
         return <ProfileScreen onBackPress={handleBack} />;
-      case 'allNotifications':
-        return <><ContentScreenHeader title="Notifications" onBack={handleBack} /><DonorNotifications onUnreadCountChange={setUnreadNotificationsCount} /></>;
       case 'calendar':
         return <><ContentScreenHeader title="Academic Calendar" onBack={handleBack} /><AcademicCalendar /></>;
       case 'DonorPaymentScreen':
         return <><ContentScreenHeader title="Payments" onBack={handleBack} /><DonorPaymentScreen /></>;
-      case 'DonorReceipts':
-        return <><ContentScreenHeader title="Receipts & Invoices" onBack={handleBack} /><DonorReceipts /></>;
       case 'DonorSuggestionsScreen':
         return <><ContentScreenHeader title="Suggestions" onBack={handleBack} /><DonorSuggestionsScreen /></>;
       case 'HelpDesk':
         return <><ContentScreenHeader title="Help Desk" onBack={handleBack} /><UserHelpDeskScreen /></>;
       case 'DonorSponsorScreen':
         return <><ContentScreenHeader title="Sponsorship" onBack={handleBack} /><DonorSponsorScreen /></>;
-
-      case 'AboutUs': return ( <><ContentScreenHeader title="About Us" onBack={handleBack} /><AboutUs /></> );
-
-      case 'ChatAI': return ( <><ContentScreenHeader title="AI Assistant" onBack={handleBack} /><ChatAIScreen /></> );
-      
+      case 'AboutUs':
+        return <><ContentScreenHeader title="About Us" onBack={handleBack} /><AboutUs /></>;
+      case 'ChatAI':
+        return <><ContentScreenHeader title="AI Assistant" onBack={handleBack} /><ChatAIScreen /></>;
       default:
         return <View style={styles.fallbackContent}><Text style={styles.fallbackText}>Coming Soon</Text></View>;
     }
@@ -173,10 +196,8 @@ const DonorDashboard = ({ navigation }) => {
         <View style={styles.topBar}>
           <View style={styles.profileContainer}>
             <Image source={getProfileImageSource()} style={styles.profileImage} />
-            {/* --- THIS IS THE FIX --- */}
-            {/* The style prop was missing from this View, causing the text to have no margin */}
             <View style={styles.profileTextContainer}>
-              <Text style={styles.profileNameText}>{profile?.full_name || user?.full_name || 'Donor'}</Text>
+              <Text style={styles.profileNameText} numberOfLines={1}>{profile?.full_name || user?.full_name || 'Donor'}</Text>
               <Text style={styles.profileRoleText}>Donor</Text>
             </View>
           </View>
@@ -194,7 +215,7 @@ const DonorDashboard = ({ navigation }) => {
         </View>
       )}
 
-      {loadingProfile && activeTab !== 'home' ? (
+      {loadingProfile && activeTab === 'home' ? (
         <View style={styles.centered}><ActivityIndicator size="large" color={PRIMARY_COLOR} /></View>
       ) : (
         <View style={{ flex: 1 }}>{renderContent()}</View>
@@ -232,7 +253,7 @@ const BottomNavItem = ({ icon, label, isActive, onPress }: { icon: string; label
   </TouchableOpacity>
 );
 
-// --- Styles (COMPLETE AND ALIGNED WITH OTHER DASHBOARDS) ---
+// --- Styles ---
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: TERTIARY_COLOR },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
@@ -321,8 +342,6 @@ const styles = StyleSheet.create({
   navTextActive: { color: PRIMARY_COLOR, fontWeight: 'bold' },
   fallbackContent: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20, backgroundColor: TERTIARY_COLOR },
   fallbackText: { fontSize: 16, color: TEXT_COLOR_MEDIUM, textAlign: 'center' },
-  // Re-aliasing 'logoImage' to 'profileImage' to match the other dashboards' naming convention
-  logoImage: { width: 45, height: 45, borderRadius: 22.5, borderWidth: 2, borderColor: PRIMARY_COLOR, backgroundColor: WHITE },
 });
 
 export default DonorDashboard;

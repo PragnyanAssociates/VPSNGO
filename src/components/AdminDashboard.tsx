@@ -1,13 +1,15 @@
-// 📂 File: src/components/AdminDashboard.tsx (CORRECTED LAYOUT)
+// 📂 File: src/components/AdminDashboard.tsx (FINAL AND CORRECTED)
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, SafeAreaView, Dimensions, Image, Platform } from 'react-native';
+import { useIsFocused } from '@react-navigation/native'; // ★ 1. IMPORT useIsFocused
 import Icon from 'react-native-vector-icons/FontAwesome';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { useAuth } from '../context/AuthContext';
 import { API_BASE_URL } from '../../apiConfig';
 
-import AdminNotifications, { initialNotificationsData } from './AdminNotifications';
+// --- COMPONENT IMPORTS ---
+import NotificationsScreen from '../screens/NotificationsScreen'; // ★ 2. USE THE DYNAMIC NOTIFICATION SCREEN
 import AcademicCalendar from './AcademicCalendar';
 import AdminLM from './AdminLM';
 import ProfileScreen from '../screens/ProfileScreen';
@@ -27,7 +29,6 @@ import TeacherAdminResultsScreen from '../screens/results/TeacherAdminResultsScr
 import AdminSyllabusScreen from '../screens/syllabus/AdminSyllabusScreen';
 import TransportScreen from '../screens/transport/TransportScreen';
 import AboutUs from './AboutUs';
-// Import the new Gallery screen
 import GalleryScreen from '../screens/gallery/GalleryScreen';
 import ChatAIScreen from '../screens/chatai/ChatAIScreen';
 import AdminSuggestionsScreen from '../screens/suggestions/AdminSuggestionsScreen';
@@ -53,11 +54,37 @@ const TERTIARY_COLOR = '#f8f8ff';
 const TEXT_COLOR_DARK = '#333';
 const TEXT_COLOR_MEDIUM = '#555';
 const BORDER_COLOR = '#b2ebf2';
+const DANGER_COLOR = '#ef4444'; // Added danger color for consistency
 
 const AdminDashboard = ({ navigation }) => {
   const [activeTab, setActiveTab] = useState('home');
-  const { user, logout } = useAuth();
+  const { user, token, logout } = useAuth();
   const [profile, setProfile] = useState<ProfileData | null>(null);
+  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
+  const isFocused = useIsFocused(); // ★ 3. INITIALIZE THE HOOK
+
+  const fetchUnreadCount = useCallback(async () => {
+    if (!user || !token) return;
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/notifications`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setUnreadNotificationsCount(data.filter(n => !n.is_read).length);
+      }
+    } catch (error) {
+      console.error('Error fetching notification count:', error);
+    }
+  }, [user, token]);
+
+  // ★ 4. USE THE isFocused HOOK TO REFRESH DATA
+  useEffect(() => {
+    if (isFocused) {
+      fetchUnreadCount();
+      // You can also refresh the profile here if needed
+    }
+  }, [isFocused, fetchUnreadCount]);
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -69,15 +96,15 @@ const AdminDashboard = ({ navigation }) => {
         } else { console.error("Failed to fetch profile"); }
       } catch (error) { console.error("Error fetching profile:", error); }
     };
-    fetchProfile();
-  }, [user]);
+    if (isFocused) {
+      fetchProfile();
+    }
+  }, [user, isFocused]);
 
   const profileImageSource = profile?.profile_image_url
     ? { uri: `${API_BASE_URL}${profile.profile_image_url}` }
     : require('../assets/profile.png');
 
-  const initialUnreadCount = initialNotificationsData.filter(n => !n.read).length;
-  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(initialUnreadCount);
 
   const allQuickAccessItems = [
     { id: 'qa-ads-manage', title: 'Ads Management', imageSource: 'https://cdn-icons-png.flaticon.com/128/19006/19006038.png', navigateTo: 'AdminAdDashboardScreen' },
@@ -98,10 +125,10 @@ const AdminDashboard = ({ navigation }) => {
     { id: 'qa10', title: 'PTM', imageSource: 'https://cdn-icons-png.flaticon.com/128/17588/17588666.png', navigateToTab: 'TeacherAdminPTMScreen' },
     { id: 'qa17', title: 'Transport', imageSource: 'https://cdn-icons-png.flaticon.com/128/2945/2945694.png', navigateToTab: 'TransportScreen' },    
     { id: 'qa14', title: 'Help Desk', imageSource: 'https://cdn-icons-png.flaticon.com/128/4961/4961736.png', navigateToTab: 'AdminHelpDeskScreen' },
-    { id: 'qa18', title: 'Gallery', imageSource: 'https://cdn-icons-png.flaticon.com/128/8418/8418513.png', navigateToTab: 'Gallery' },
+    { id: 'qa18', title: 'Gallery', imageSource: 'https://cdn-icons-png.flaticon.com/128/8418/8418513.png', navigateTo: 'Gallery' }, // ★ Corrected to navigateTo
     { id: 'qa19', title: 'About Us', imageSource: 'https://cdn-icons-png.flaticon.com/128/3815/3815523.png', navigateToTab: 'AboutUs' },
     { id: 'qa20', title: 'Chat AI', imageSource: 'https://cdn-icons-png.flaticon.com/128/6028/6028616.png', navigateToTab: 'ChatAI' },
-    { id: 'qa21', title: 'Sugestions', imageSource: 'https://cdn-icons-png.flaticon.com/128/9722/9722906.png', navigateToTab: 'AdminSuggestionsScreen' },
+    { id: 'qa21', title: 'Suggestions', imageSource: 'https://cdn-icons-png.flaticon.com/128/9722/9722906.png', navigateToTab: 'AdminSuggestionsScreen' },
     { id: 'qa22', title: 'Sponsorship', imageSource: 'https://cdn-icons-png.flaticon.com/128/18835/18835518.png', navigateToTab: 'AdminSponsorScreen' },
     { id: 'qa23', title: 'Payments', imageSource: 'https://cdn-icons-png.flaticon.com/128/1198/1198291.png', navigateToTab: 'AdminPaymentScreen' },
     { id: 'qa24', title: 'Kitchen', imageSource: 'https://cdn-icons-png.flaticon.com/128/1698/1698742.png', navigateToTab: 'KitchenScreen' },
@@ -122,7 +149,7 @@ const AdminDashboard = ({ navigation }) => {
     switch (activeTab) {
       case 'home': 
         return ( 
-          <ScrollView style={styles.contentScrollView} contentContainerStyle={styles.contentScrollViewContainer}>
+          <ScrollView contentContainerStyle={styles.contentScrollViewContainer}>
             <View style={styles.dashboardGrid}>
               {allQuickAccessItems.map(item => ( 
                 <DashboardSectionCard 
@@ -144,9 +171,11 @@ const AdminDashboard = ({ navigation }) => {
           </ScrollView> 
         );
       
-      // All other cases remain the same
-      case 'allNotifications': return ( <><ContentScreenHeader title="Notifications" onBack={handleBack} /><AdminNotifications /></> );
-      case 'calendar': return <AcademicCalendar onBackPress={handleBack} />;
+      // ★ 5. CORRECTLY RENDER THE NotificationsScreen COMPONENT
+      case 'allNotifications': 
+        return ( <><ContentScreenHeader title="Notifications" onBack={handleBack} /><NotificationsScreen onUnreadCountChange={setUnreadNotificationsCount} /></> );
+        
+      case 'calendar': return <AcademicCalendar />;
       case 'profile': return <ProfileScreen onBackPress={handleBack} />;
       case 'AdminLM': return ( <><ContentScreenHeader title="Login Management" onBack={handleBack} /><AdminLM /></> );
       case 'Timetable': return ( <><ContentScreenHeader title="Time Table Management" onBack={handleBack} /><TimetableScreen /></> );
@@ -164,15 +193,13 @@ const AdminDashboard = ({ navigation }) => {
       case 'AdminSyllabusScreen': return ( <> <ContentScreenHeader title="Syllabus" onBack={handleBack} /> <AdminSyllabusScreen /> </> );
       case 'TransportScreen': return ( <> <ContentScreenHeader title="Transport" onBack={handleBack} /> <TransportScreen /> </> );
       case 'TeacherAdminResultsScreen': return ( <> <ContentScreenHeader title="Reports" onBack={handleBack} /> <TeacherAdminResultsScreen navigation={navigation} /> </> );
-      
-      // New cases for Gallery and AboutUs
-      case 'Gallery': return ( <><ContentScreenHeader title="Gallery" onBack={handleBack} /><GalleryScreen /></> );
+      case 'Gallery': return ( <><ContentScreenHeader title="Gallery" onBack={handleBack} /><GalleryScreen /></> ); // Corrected Gallery case
       case 'AboutUs': return ( <><ContentScreenHeader title="About Us" onBack={handleBack} /><AboutUs /></> );
       case 'ChatAI': return ( <><ContentScreenHeader title="AI Assistant" onBack={handleBack} /><ChatAIScreen /></> );
       case 'AdminSuggestionsScreen': return ( <><ContentScreenHeader title="Suggestions" onBack={handleBack} /><AdminSuggestionsScreen /></> );
       case 'AdminSponsorScreen': return ( <><ContentScreenHeader title="Sponsorship" onBack={handleBack} /><AdminSponsorScreen /></> );
       case 'AdminPaymentScreen': return ( <><ContentScreenHeader title="Payments" onBack={handleBack} /><AdminPaymentScreen /></> );
-      case 'KitchenScreen': return ( <><ContentScreenHeader title="kitchen" onBack={handleBack} /><KitchenScreen /></> );
+      case 'KitchenScreen': return ( <><ContentScreenHeader title="Kitchen" onBack={handleBack} /><KitchenScreen /></> );
       case 'FoodScreen': return ( <><ContentScreenHeader title="Food" onBack={handleBack} /><FoodScreen /></> );
       case 'GroupChatScreen': return ( <><ContentScreenHeader title="Group Chat" onBack={handleBack} /><GroupChatScreen /></> );
 
@@ -187,55 +214,59 @@ const AdminDashboard = ({ navigation }) => {
           <View style={styles.profileContainer}>
             <Image source={profileImageSource} style={styles.profileImage} />
             <View style={styles.profileTextContainer}>
-              <Text style={styles.profileNameText}>{profile?.full_name || 'Loading...'}</Text>
-              <Text style={styles.profileRoleText}>{profile?.role ? profile.role.charAt(0).toUpperCase() + profile.role.slice(1) : 'Administrator'}</Text>
+              <Text style={styles.profileNameText} numberOfLines={1}>{profile?.full_name || 'Administrator'}</Text>
+              <Text style={styles.profileRoleText}>{profile?.role ? profile.role.charAt(0).toUpperCase() + profile.role.slice(1) : 'Admin'}</Text>
             </View>
           </View>
           <View style={styles.topBarActions}>
-            <TouchableOpacity onPress={handleBellIconClick} style={styles.notificationBellContainer}>
-              <Image source={{ uri: 'https://cdn-icons-png.flaticon.com/512/3602/3602145.png' }} style={styles.notificationBellIcon} />
+            <TouchableOpacity onPress={handleBellIconClick} style={styles.iconButton}>
+              <MaterialIcons name="notifications-none" size={26} color={PRIMARY_COLOR} />
               {unreadNotificationsCount > 0 && ( <View style={styles.notificationCountBubble}><Text style={styles.notificationCountText}>{unreadNotificationsCount}</Text></View> )}
             </TouchableOpacity>
-            <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}><Image source={{ uri: 'https://cdn-icons-png.flaticon.com/512/1828/1828479.png' }} style={styles.logoutIcon} /></TouchableOpacity>
+            <TouchableOpacity onPress={handleLogout} style={styles.iconButton}>
+              <MaterialIcons name="logout" size={26} color={PRIMARY_COLOR} />
+            </TouchableOpacity>
           </View>
         </View>
       )}
       
-      {/* --- FIX IS HERE --- */}
-      {/* This View wrapper ensures the content area is flexible and doesn't push the bottom nav off-screen */}
       <View style={{ flex: 1 }}>
         {renderContent()}
       </View>
       
       <View style={styles.bottomNav}>
-        <TouchableOpacity style={styles.navItem} onPress={() => setActiveTab('home')}><Icon name="home" size={24} color={activeTab === 'home' ? PRIMARY_COLOR : TEXT_COLOR_MEDIUM} /><Text style={[styles.navText, activeTab === 'home' && styles.navTextActive]}>Home</Text></TouchableOpacity>
-        <TouchableOpacity style={styles.navItem} onPress={() => setActiveTab('calendar')}><Icon name="calendar" size={24} color={activeTab === 'calendar' ? PRIMARY_COLOR : TEXT_COLOR_MEDIUM} /><Text style={[styles.navText, activeTab === 'calendar' && styles.navTextActive]}>Calendar</Text></TouchableOpacity>
-        <TouchableOpacity style={styles.navItem} onPress={() => setActiveTab('profile')}><Icon name="user" size={24} color={activeTab === 'profile' ? PRIMARY_COLOR : TEXT_COLOR_MEDIUM} /><Text style={[styles.navText, activeTab === 'profile' && styles.navTextActive]}>Profile</Text></TouchableOpacity>
+        <BottomNavItem icon="home" label="Home" isActive={activeTab === 'home'} onPress={() => setActiveTab('home')} />
+        <BottomNavItem icon="calendar" label="Calendar" isActive={activeTab === 'calendar'} onPress={() => setActiveTab('calendar')} />
+        <BottomNavItem icon="user" label="Profile" isActive={activeTab === 'profile'} onPress={() => setActiveTab('profile')} />
       </View>
     </SafeAreaView>
   );
 };
 
-// Styles remain the same
+// --- Helper Components ---
+const BottomNavItem = ({ icon, label, isActive, onPress }) => (
+    <TouchableOpacity style={styles.navItem} onPress={onPress}>
+        <Icon name={icon} size={24} color={isActive ? PRIMARY_COLOR : TEXT_COLOR_MEDIUM} />
+        <Text style={[styles.navText, isActive && styles.navTextActive]}>{label}</Text>
+    </TouchableOpacity>
+);
+
+// Styles
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: TERTIARY_COLOR, },
   topBar: { backgroundColor: SECONDARY_COLOR, paddingHorizontal: 15, paddingVertical: Platform.OS === 'ios' ? 12 : 15, borderBottomLeftRadius: 20, borderBottomRightRadius: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3, borderBottomWidth: 1, borderBottomColor: BORDER_COLOR, },
-  profileContainer: { flexDirection: 'row', alignItems: 'center', },
+  profileContainer: { flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 10, },
   profileImage: { width: 45, height: 45, borderRadius: 22.5, borderWidth: 2, borderColor: PRIMARY_COLOR, backgroundColor: '#e0e0e0', },
-  profileTextContainer: { marginLeft: 12, },
+  profileTextContainer: { marginLeft: 12, flex: 1, },
   profileNameText: { color: PRIMARY_COLOR, fontSize: 17, fontWeight: 'bold', },
   profileRoleText: { color: TEXT_COLOR_MEDIUM, fontSize: 13, },
   topBarActions: { flexDirection: 'row', alignItems: 'center', },
-  notificationBellContainer: { position: 'relative', padding: 8, marginRight: 5, },
-  notificationBellIcon: { width: 24, height: 24, resizeMode: 'contain', tintColor: PRIMARY_COLOR, },
-  notificationCountBubble: { position: 'absolute', top: 3, right: 3, backgroundColor: '#ef4444', borderRadius: 10, minWidth: 20, height: 20, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 5, },
+  iconButton: { position: 'relative', padding: 8 },
+  notificationCountBubble: { position: 'absolute', top: 3, right: 3, backgroundColor: DANGER_COLOR, borderRadius: 10, minWidth: 20, height: 20, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 5, },
   notificationCountText: { color: 'white', fontSize: 11, fontWeight: 'bold', },
-  logoutButton: { padding: 8, },
-  logoutIcon: { width: 22, height: 22, resizeMode: 'contain', tintColor: PRIMARY_COLOR, },
   contentHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 15, paddingVertical: 12, backgroundColor: SECONDARY_COLOR, borderBottomWidth: 1, borderBottomColor: BORDER_COLOR, },
   backButtonGlobal: { padding: 5, },
   contentHeaderTitle: { fontSize: 18, fontWeight: 'bold', color: PRIMARY_COLOR, textAlign: 'center', flex: 1, },
-  contentScrollView: { flex: 1, },
   contentScrollViewContainer: { paddingHorizontal: CONTENT_HORIZONTAL_PADDING, paddingTop: 15, paddingBottom: BOTTOM_NAV_HEIGHT + 20, },
   dashboardGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', },
   dashboardCard: { width: (windowWidth - (CONTENT_HORIZONTAL_PADDING * 2) - (CARD_GAP * 2)) / 3, borderRadius: 12, paddingVertical: 15, marginBottom: CARD_GAP, alignItems: 'center', justifyContent: 'flex-start', height: 110, backgroundColor: '#fff', shadowColor: "#000", shadowOffset: { width: 0, height: 1, }, shadowOpacity: 0.10, shadowRadius: 1.84, elevation: 2, },

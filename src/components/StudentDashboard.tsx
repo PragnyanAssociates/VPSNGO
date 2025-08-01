@@ -1,7 +1,8 @@
 // 📂 File: src/screens/StudentDashboard.tsx (COMPLETE AND RESTYLED)
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, SafeAreaView, Dimensions, Image, Platform } from 'react-native';
+import { useIsFocused } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 
@@ -10,7 +11,8 @@ import { useAuth } from '../context/AuthContext';
 import { API_BASE_URL } from '../../apiConfig';
 
 // --- COMPONENT IMPORTS ---
-import StudentNotifications, { initialNotificationsData } from './StudentNotifications';
+import NotificationsScreen from '../screens/NotificationsScreen'; // 👈 IMPORT THE NEW SCREEN
+// import StudentNotifications, { initialNotificationsData } from './StudentNotifications';
 import AcademicCalendar from './AcademicCalendar';
 import StudentResultsScreen from '../screens/results/StudentResultsScreen';
 import TransportScreen from '../screens/transport/TransportScreen';
@@ -56,32 +58,55 @@ const DANGER_COLOR = '#E53935';
 
 const StudentDashboard = ({ navigation }) => {
   const [activeTab, setActiveTab] = useState('home');
-  const { user, logout } = useAuth();
+  const { user, token, logout } = useAuth(); // 👈 GET TOKEN
   const [profile, setProfile] = useState<ProfileData | null>(null);
+  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
+  const isFocused = useIsFocused(); // ★★★ 2. USE THE HOOK ★★★
 
-  useEffect(() => {
+   useEffect(() => {
     const fetchProfile = async () => {
       if (!user) return;
       try {
         const response = await fetch(`${API_BASE_URL}/api/profiles/${user.id}`);
-        if (response.ok) {
-          setProfile(await response.json());
-        } else {
-          console.error("Failed to fetch profile");
-        }
-      } catch (error) {
-        console.error("Error fetching profile:", error);
-      }
+        if (response.ok) setProfile(await response.json());
+      } catch (error) { console.error("Error fetching profile:", error); }
     };
-    fetchProfile();
-  }, [user]);
+    if (isFocused) { // Only fetch profile when screen is focused
+        fetchProfile();
+    }
+  }, [user, isFocused]); // Add isFocused to dependency array
 
   const profileImageSource = profile?.profile_image_url
     ? { uri: `${API_BASE_URL}${profile.profile_image_url}` }
     : require('../assets/profile.png');
 
-  const initialUnreadCount = initialNotificationsData.filter(n => !n.read).length;
-  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(initialUnreadCount);
+  const fetchUnreadCount = useCallback(async () => {
+    if (!user || !token) return;
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/notifications`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setUnreadNotificationsCount(data.filter(n => !n.is_read).length);
+      }
+    } catch (error) {
+      console.error("Error fetching initial unread count:", error);
+    }
+  }, [user, token]);
+
+  // ★★★ 3. MODIFY useEffect TO USE isFocused ★★★
+  // This hook now ensures that the notification count is refreshed
+  // every single time the dashboard comes into view.
+  useEffect(() => {
+    if (isFocused) {
+      console.log("StudentDashboard is focused, fetching notification count...");
+      fetchUnreadCount();
+    }
+  }, [isFocused, fetchUnreadCount]); 
+
+  // const initialUnreadCount = initialNotificationsData.filter(n => !n.read).length;
+  // const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(initialUnreadCount);
 
   const allQuickAccessItems = [
     { id: 'qa-ads-create', title: 'Create Ad', imageSource: 'https://cdn-icons-png.flaticon.com/128/4944/4944482.png', navigateTo: 'CreateAdScreen' },
@@ -138,7 +163,13 @@ const StudentDashboard = ({ navigation }) => {
                 </View>
             </ScrollView> 
         );
-      case 'allNotifications': return ( <> <ContentScreenHeader title="Notifications" /> <StudentNotifications onUnreadCountChange={setUnreadNotificationsCount} /> </> );
+      case 'allNotifications':
+        return (
+          <>
+            <ContentScreenHeader title="Notifications" />
+            <NotificationsScreen onUnreadCountChange={setUnreadNotificationsCount} />
+          </>
+        );
       case 'calendar': return <AcademicCalendar />;
       case 'profile': return <ProfileScreen onBackPress={() => setActiveTab('home')} />;
       case 'StudentHealthScreen': return ( <><ContentScreenHeader title="Health Information" /><StudentHealthScreen /></> );
@@ -198,6 +229,14 @@ const StudentDashboard = ({ navigation }) => {
     </SafeAreaView>
   );
 };
+
+// --- Helper Components ---
+const BottomNavItem = ({ icon, label, isActive, onPress }) => (
+    <TouchableOpacity style={styles.navItem} onPress={onPress}>
+        <Icon name={icon} size={24} color={isActive ? PRIMARY_COLOR : TEXT_COLOR_MEDIUM} />
+        <Text style={[styles.navText, isActive && styles.navTextActive]}>{label}</Text>
+    </TouchableOpacity>
+);
 
 // --- STYLES (COMPLETE AND MATCHING TEACHER DASHBOARD) ---
 const styles = StyleSheet.create({

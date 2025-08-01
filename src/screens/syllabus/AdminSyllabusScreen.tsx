@@ -20,7 +20,6 @@ const AdminSyllabusScreen = () => {
     if (view === 'createOrEdit') {
         return <CreateOrEditSyllabus initialSyllabus={selectedSyllabus} onFinish={() => navigateTo('history')} />;
     }
-    // This view is now fully implemented
     if (view === 'progressDetail') {
         return <AdminProgressView syllabus={selectedSyllabus} onBack={() => navigateTo('history')} />;
     }
@@ -79,9 +78,11 @@ const SyllabusHistoryList = ({ onEdit, onCreate, onViewProgress }) => {
     );
 };
 
-// Component for the "Create Syllabus" form
+// Component for the "Create or Edit Syllabus" form
 const CreateOrEditSyllabus = ({ initialSyllabus, onFinish }) => {
     const isEditMode = !!initialSyllabus;
+    const { user } = useAuth();
+
     const [selectedClass, setSelectedClass] = useState(isEditMode ? initialSyllabus.class_group : '');
     const [selectedSubject, setSelectedSubject] = useState(isEditMode ? initialSyllabus.subject_name : '');
     const [selectedTeacherId, setSelectedTeacherId] = useState(isEditMode ? initialSyllabus.creator_id : '');
@@ -95,23 +96,41 @@ const CreateOrEditSyllabus = ({ initialSyllabus, onFinish }) => {
     const [isTeachersLoading, setIsTeachersLoading] = useState(false);
 
     useEffect(() => {
-        const fetchClasses = async () => {
+        const bootstrapForm = async () => {
+            setIsLoading(true);
             try {
+                // Fetch all available classes for the dropdown
                 const classRes = await fetch(`${API_BASE_URL}/api/student-classes`);
                 if (classRes.ok) setAllClasses(await classRes.json());
-            } catch (e) { console.error("Error fetching class data:", e); } 
+
+                // If in edit mode, populate the form with existing data
+                if (isEditMode) {
+                    await handleClassChange(initialSyllabus.class_group, true);
+                    await handleSubjectChange(initialSyllabus.subject_name, initialSyllabus.class_group, true);
+                    
+                    const syllabusDetailsRes = await fetch(`${API_BASE_URL}/api/syllabus/teacher/${initialSyllabus.class_group}/${initialSyllabus.subject_name}`);
+                    if (syllabusDetailsRes.ok) {
+                        const syllabusData = await syllabusDetailsRes.json();
+                        const formattedLessons = syllabusData.lessons.map(l => ({ lessonName: l.lesson_name, dueDate: l.due_date.split('T')[0] }));
+                        setLessons(formattedLessons.length > 0 ? formattedLessons : [{ lessonName: '', dueDate: '' }]);
+                    }
+                }
+            } catch (e) { console.error("Error bootstrapping form:", e); Alert.alert("Error", "Could not load initial form data."); } 
             finally { setIsLoading(false); }
         };
-        fetchClasses();
-    }, []);
+        bootstrapForm();
+    }, []); // Run only once on mount
 
-    const handleClassChange = async (classGroup) => {
+    const handleClassChange = async (classGroup, isInitialLoad = false) => {
+        if (!isInitialLoad) {
+            setSelectedSubject('');
+            setAvailableSubjects([]);
+            setSelectedTeacherId('');
+            setAvailableTeachers([]);
+        }
         setSelectedClass(classGroup);
-        setAvailableSubjects([]);
-        setSelectedSubject('');
-        setAvailableTeachers([]);
-        setSelectedTeacherId('');
         if (!classGroup) return;
+
         setIsSubjectsLoading(true);
         try {
             const subjectRes = await fetch(`${API_BASE_URL}/api/subjects-for-class/${classGroup}`);
@@ -120,18 +139,21 @@ const CreateOrEditSyllabus = ({ initialSyllabus, onFinish }) => {
         finally { setIsSubjectsLoading(false); }
     };
 
-    const handleSubjectChange = async (subjectName) => {
+    const handleSubjectChange = async (subjectName, classGroup = selectedClass, isInitialLoad = false) => {
+        if (!isInitialLoad) {
+            setSelectedTeacherId('');
+            setAvailableTeachers([]);
+        }
         setSelectedSubject(subjectName);
-        setAvailableTeachers([]);
-        setSelectedTeacherId('');
-        if (!subjectName || !selectedClass) return;
+        if (!subjectName || !classGroup) return;
+        
         setIsTeachersLoading(true);
         try {
-            const teacherRes = await fetch(`${API_BASE_URL}/api/syllabus/teachers/${selectedClass}/${subjectName}`);
+            const teacherRes = await fetch(`${API_BASE_URL}/api/syllabus/teachers/${classGroup}/${subjectName}`);
             if (teacherRes.ok) {
                 const teachers = await teacherRes.json();
                 setAvailableTeachers(teachers);
-                if (teachers.length === 1) setSelectedTeacherId(teachers[0].id);
+                if (teachers.length === 1 && !isEditMode) setSelectedTeacherId(teachers[0].id);
             }
         } catch (error) { console.error("Error fetching teachers:", error); } 
         finally { setIsTeachersLoading(false); }
@@ -146,44 +168,105 @@ const CreateOrEditSyllabus = ({ initialSyllabus, onFinish }) => {
         if (lessons.some(l => l.lessonName && !l.dueDate)) return Alert.alert("Missing Date", "All lessons must have a due date.");
         const validLessons = lessons.filter(l => l.lessonName.trim() && l.dueDate.trim());
         if (validLessons.length === 0) return Alert.alert("No Lessons", "Please add at least one lesson.");
+        
         setIsSaving(true);
+        
         try {
-            const response = await fetch(`${API_BASE_URL}/api/syllabus/create`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    class_group: selectedClass, subject_name: selectedSubject, lessons: validLessons, creator_id: selectedTeacherId 
-                })
-            });
-            if (!response.ok) throw new Error((await response.json()).message || "Failed to save syllabus.");
-            Alert.alert("Success", "Syllabus saved successfully!");
+            let response;
+            if (isEditMode) {
+                const url = `${API_BASE_URL}/api/syllabus/${initialSyllabus.id}`;
+                response = await fetch(url, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        lessons: validLessons,
+                        creator_id: selectedTeacherId,
+                    }),
+                });
+            } else {
+                const url = `${API_BASE_URL}/api/syllabus/create`;
+                response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        class_group: selectedClass,
+                        subject_name: selectedSubject,
+                        lessons: validLessons,
+                        creator_id: selectedTeacherId,
+                    }),
+                });
+            }
+
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.message || "Failed to save syllabus.");
+            
+            Alert.alert("Success", result.message);
             onFinish();
-        } catch (error) { Alert.alert("Error", error.message); }
-        finally { setIsSaving(false); }
+
+        } catch (error) {
+            Alert.alert("Error", error.message);
+        } finally {
+            setIsSaving(false);
+        }
     };
     
     if (isLoading) return <View style={styles.centered}><ActivityIndicator size="large" color="#3f51b5" /></View>;
 
     return (
         <ScrollView style={styles.containerDark}>
-            <TouchableOpacity onPress={onFinish} style={styles.backButton}><MaterialIcons name="arrow-back" size={24} color="#333" /><Text style={styles.backButtonText}>Back to List</Text></TouchableOpacity>
-            <Text style={styles.formHeaderTitle}>Create New Syllabus</Text>
+            <TouchableOpacity onPress={onFinish} style={styles.backButton}>
+                <MaterialIcons name="arrow-back" size={24} color="#333" />
+                <Text style={styles.backButtonText}>Back to List</Text>
+            </TouchableOpacity>
+            <Text style={styles.formHeaderTitle}>{isEditMode ? 'Edit Syllabus' : 'Create New Syllabus'}</Text>
+            
             <View style={styles.formSection}>
                 <Text style={styles.label}>1. Select Class</Text>
-                <View style={styles.pickerContainer}><Picker selectedValue={selectedClass} onValueChange={handleClassChange} enabled={!isEditMode}><Picker.Item label="Select Class..." value="" />{allClasses.map((c, i) => <Picker.Item key={i} label={c} value={c} />)}</Picker></View>
+                <View style={styles.pickerContainer}>
+                    <Picker selectedValue={selectedClass} onValueChange={handleClassChange} enabled={!isEditMode}>
+                        <Picker.Item label="Select Class..." value="" />
+                        {allClasses.map((c, i) => <Picker.Item key={i} label={c} value={c} />)}
+                    </Picker>
+                </View>
+
                 <Text style={styles.label}>2. Select Subject</Text>
-                <View style={styles.pickerContainer}><Picker selectedValue={selectedSubject} onValueChange={handleSubjectChange} enabled={!isEditMode && !!selectedClass && !isSubjectsLoading}><Picker.Item label={isSubjectsLoading ? "Loading..." : "Select Subject..."} value="" />{availableSubjects.map((s, i) => <Picker.Item key={i} label={s} value={s} />)}</Picker></View>
+                <View style={styles.pickerContainer}>
+                    <Picker selectedValue={selectedSubject} onValueChange={handleSubjectChange} enabled={!isEditMode && !!selectedClass && !isSubjectsLoading}>
+                        <Picker.Item label={isSubjectsLoading ? "Loading..." : "Select Subject..."} value="" />
+                        {availableSubjects.map((s, i) => <Picker.Item key={i} label={s} value={s} />)}
+                    </Picker>
+                </View>
                 {isSubjectsLoading && <ActivityIndicator style={{marginBottom: 15}}/>}
+
                 <Text style={styles.label}>3. Select Teacher</Text>
-                <View style={styles.pickerContainer}><Picker selectedValue={selectedTeacherId} onValueChange={(val) => setSelectedTeacherId(val)} enabled={!isEditMode && !!selectedSubject && !isTeachersLoading}><Picker.Item label={isTeachersLoading ? "Loading..." : "Select Teacher..."} value="" />{availableTeachers.map((t) => <Picker.Item key={t.id} label={t.full_name} value={t.id} />)}</Picker></View>
+                <View style={styles.pickerContainer}>
+                    <Picker selectedValue={selectedTeacherId} onValueChange={(val) => setSelectedTeacherId(val)} enabled={!!selectedSubject && !isTeachersLoading}>
+                        <Picker.Item label={isTeachersLoading ? "Loading..." : "Select Teacher..."} value="" />
+                        {availableTeachers.map((t) => <Picker.Item key={t.id} label={t.full_name} value={t.id.toString()} />)}
+                    </Picker>
+                </View>
                 {isTeachersLoading && <ActivityIndicator style={{marginBottom: 15}}/>}
             </View>
+
             <View style={styles.formSection}>
-                <Text style={styles.headerTitleSecondary}>4. Add Lessons</Text>
-                {lessons.map((lesson, index) => (<View key={index} style={styles.lessonInputGroup}><View style={styles.lessonInputHeader}><Text style={styles.label}>Lesson {index + 1}</Text>{lessons.length > 1 && <TouchableOpacity onPress={() => removeLessonField(index)}><MaterialIcons name="delete-outline" size={22} color="#c62828" /></TouchableOpacity>}</View><TextInput style={styles.input} placeholder="Lesson Name" value={lesson.lessonName} onChangeText={(text) => handleLessonChange(index, 'lessonName', text)} /><TextInput style={styles.input} placeholder="Due Date (YYYY-MM-DD)" value={lesson.dueDate} onChangeText={(text) => handleLessonChange(index, 'dueDate', text)} keyboardType="numeric" /></View>))}
-                <TouchableOpacity style={styles.addLessonBtn} onPress={addLessonField}><Text style={styles.addLessonBtnText}>+ Add Another Lesson</Text></TouchableOpacity>
+                <Text style={styles.headerTitleSecondary}>4. Add/Edit Lessons</Text>
+                {lessons.map((lesson, index) => (
+                    <View key={index} style={styles.lessonInputGroup}>
+                        <View style={styles.lessonInputHeader}>
+                            <Text style={styles.label}>Lesson {index + 1}</Text>
+                            {lessons.length > 1 && <TouchableOpacity onPress={() => removeLessonField(index)}><MaterialIcons name="delete-outline" size={22} color="#c62828" /></TouchableOpacity>}
+                        </View>
+                        <TextInput style={styles.input} placeholder="Lesson Name" value={lesson.lessonName} onChangeText={(text) => handleLessonChange(index, 'lessonName', text)} />
+                        <TextInput style={styles.input} placeholder="Due Date (YYYY-MM-DD)" value={lesson.dueDate} onChangeText={(text) => handleLessonChange(index, 'dueDate', text)} keyboardType="numeric" />
+                    </View>
+                ))}
+                <TouchableOpacity style={styles.addLessonBtn} onPress={addLessonField}>
+                    <Text style={styles.addLessonBtnText}>+ Add Another Lesson</Text>
+                </TouchableOpacity>
             </View>
-            <TouchableOpacity style={styles.saveButton} onPress={handleSaveSyllabus} disabled={isSaving}>{isSaving ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Save Syllabus</Text>}</TouchableOpacity>
+            <TouchableOpacity style={styles.saveButton} onPress={handleSaveSyllabus} disabled={isSaving}>
+                {isSaving ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>{isEditMode ? 'Update Syllabus' : 'Save Syllabus'}</Text>}
+            </TouchableOpacity>
         </ScrollView>
     );
 };

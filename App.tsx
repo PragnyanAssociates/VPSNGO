@@ -24,6 +24,7 @@ import ForgotPasswordScreen from './src/screens/ForgotPasswordScreen';
 import AboutUs from './src/components/AboutUs';
 
 import ResetPasswordScreen from './src/screens/ResetPasswordScreen';
+import NotificationsScreen from './src/screens/NotificationsScreen';
 
 // Authenticated Dashboards
 import AdminDashboard from './src/components/AdminDashboard';
@@ -43,7 +44,7 @@ import AlbumDetailScreen from './src/screens/gallery/AlbumDetailScreen';
 import GroupChatScreen from './src/screens/chat/GroupChatScreen';
 
 // Admin-Specific Screens
-import AdminNotifications from './src/components/AdminNotifications';
+// import AdminNotifications from './src/components/AdminNotifications';
 import AdminLM from './src/components/AdminLM';
 import AdminForgotPasswordScreen from './src/components/AdminForgotPasswordScreen';
 import AdminHelpDeskScreen from './src/screens/helpdesk/AdminHelpDeskScreen';
@@ -59,7 +60,7 @@ import KitchenScreen from './src/screens/kitchen/KitchenScreen';
 import FoodScreen from './src/screens/food/FoodScreen';
 
 // Teacher-Specific Screens
-import TeacherNotifications from './src/components/TeacherNotifications';
+// import TeacherNotifications from './src/components/TeacherNotifications';
 import TeacherTB from './src/components/TeacherTB';
 import TeacherPTM from './src/components/TeacherPTM';
 import TeacherHomework from './src/components/TeacherHomework';
@@ -72,7 +73,7 @@ import TeacherAdminMaterialsScreen from './src/screens/study-materials/TeacherAd
 import TeacherSyllabusScreen from './src/screens/syllabus/TeacherSyllabusScreen';
 
 // Student-Specific Screens
-import StudentNotifications from './src/components/StudentNotifications';
+// import StudentNotifications from './src/components/StudentNotifications';
 import StudentHealthScreen from './src/screens/health/StudentHealthScreen';
 import StudentHelpdesk from './src/components/StudentHelpdesk';
 import StudentPTM from './src/components/StudentPTM';
@@ -95,7 +96,7 @@ import ReportDetailScreen from './src/screens/results/ReportDetailScreen';
 import ChatAIScreen from './src/screens/chatai/ChatAIScreen';
 
 // Donor-Specific Screens
-import DonorNotifications from './src/components/DonorNotifications';
+// import DonorNotifications from './src/components/DonorNotifications';
 import DonorSuggestions from './src/components/DonorSuggestions';
 import DonorReceipts from './src/components/DonorReceipts';
 import DonorPayments from './src/components/DonorPayments';
@@ -189,12 +190,12 @@ const AuthenticatedStack = () => {
       <Stack.Screen name="Attendance" component={AttendanceScreen} />
       <Stack.Screen name="PhysicsSyllabus" component={PhysicsSyllabus} />
       <Stack.Screen name="UserHelpDesk" component={UserHelpDeskScreen} />
-      <Stack.Screen name="AdminNotifications" component={AdminNotifications} />
+      {/* <Stack.Screen name="AdminNotifications" component={AdminNotifications} /> */}
       <Stack.Screen name="AdminLM" component={AdminLM} />
       <Stack.Screen name="AdminForgotPasswordScreen" component={AdminForgotPasswordScreen} />
       <Stack.Screen name="AdminHelpDeskScreen" component={AdminHelpDeskScreen} />
       <Stack.Screen name="AdminEventsScreen" component={AdminEventsScreen} />
-      <Stack.Screen name="TeacherNotifications" component={TeacherNotifications} />
+      <Stack.Screen name="NotificationsScreen" component={NotificationsScreen} />
       <Stack.Screen name="TeacherTB" component={TeacherTB} />
       <Stack.Screen name="TeacherPTM" component={TeacherPTM} />
       <Stack.Screen name="TeacherHomework" component={TeacherHomework} />
@@ -202,7 +203,7 @@ const AuthenticatedStack = () => {
       <Stack.Screen name="TeacherAttendance" component={TeacherAttendance} />
       <Stack.Screen name="TeacherHealthAdminScreen" component={TeacherHealthAdminScreen} />
       <Stack.Screen name="TeacherResults" component={TeacherResults} />
-      <Stack.Screen name="StudentNotifications" component={StudentNotifications} />
+      {/* <Stack.Screen name="StudentNotifications" component={StudentNotifications} /> */}
       <Stack.Screen name="StudentHealthScreen" component={StudentHealthScreen} />
       <Stack.Screen name="StudentHelpdesk" component={StudentHelpdesk} />
       <Stack.Screen name="StudentSportsScreen" component={StudentSportsScreen} />
@@ -217,7 +218,7 @@ const AuthenticatedStack = () => {
       <Stack.Screen name="StudentTB" component={StudentTB} />
       <Stack.Screen name="StudentSyllabusScreen" component={StudentSyllabusScreen} />
       <Stack.Screen name="StudentExamsScreen" component={StudentExamsScreen} />
-      <Stack.Screen name="DonorNotifications" component={DonorNotifications} />
+      {/* <Stack.Screen name="DonorNotifications" component={DonorNotifications} /> */}
       <Stack.Screen name="DonorSuggestions" component={DonorSuggestions} />
       <Stack.Screen name="DonorReceipts" component={DonorReceipts} />
       <Stack.Screen name="DonorPayments" component={DonorPayments} />

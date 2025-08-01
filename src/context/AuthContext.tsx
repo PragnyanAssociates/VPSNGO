@@ -1,9 +1,9 @@
-// 📂 File: src/context/AuthContext.tsx (FINAL WITH NOTIFICATION COUNT)
+// 📂 File: src/context/AuthContext.tsx (REPLACE ENTIRE FILE)
 
 import React, { createContext, useState, useContext, useEffect, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { API_BASE_URL } from '../../apiConfig';
 
+// Interfaces remain the same
 interface User {
   id: string;
   username: string;
@@ -11,15 +11,16 @@ interface User {
   role: 'admin' | 'teacher' | 'student' | 'donor';
 }
 
-interface AuthState { user: User | null; }
+interface AuthState {
+  user: User | null;
+  token: string | null; // ★ 1. ADD TOKEN TO THE STATE
+}
 
 interface AuthContextType {
   authState: AuthState;
   login: (user: User, token: string) => Promise<void>; 
   logout: () => Promise<void>;
   isLoading: boolean;
-  unreadCount: number;
-  setUnreadCount: React.Dispatch<React.SetStateAction<number>>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -27,62 +28,65 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 interface AuthProviderProps { children: ReactNode; }
 
 export const AuthProvider = ({ children }: AuthProviderProps) => {
-  const [authState, setAuthState] = useState<AuthState>({ user: null });
+  // ★ 2. INITIAL STATE NOW INCLUDES THE TOKEN
+  const [authState, setAuthState] = useState<AuthState>({ user: null, token: null });
   const [isLoading, setIsLoading] = useState(true);
-  const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
-    const loadUser = async () => {
+    const loadSession = async () => {
       try {
         const userString = await AsyncStorage.getItem('userSession');
-        if (userString) {
+        const tokenString = await AsyncStorage.getItem('userToken'); // Also load the token
+
+        if (userString && tokenString) {
           const user = JSON.parse(userString);
-          setAuthState({ user });
-          // Fetch initial count after user is loaded
-          const response = await fetch(`${API_BASE_URL}/api/notifications/unread-count/${user.id}`);
-          const data = await response.json();
-          if (data && typeof data.count === 'number') setUnreadCount(data.count);
+          // Set both user and token in the state from storage
+          setAuthState({ user, token: tokenString });
         }
-      } catch (e) { console.error("AuthContext: Failed to load session", e); } 
-      finally { setIsLoading(false); }
+      } catch (e) { 
+        console.error("AuthContext: Failed to load session", e);
+        // Clear storage if loading fails to prevent a broken state
+        await AsyncStorage.multiRemove(['userSession', 'userToken']);
+      } 
+      finally { 
+        setIsLoading(false); 
+      }
     };
-    loadUser();
+    loadSession();
   }, []);
   
   const login = async (user: User, token: string) => {
     try {
-      setAuthState({ user });
+      // ★ 3. SET BOTH USER AND TOKEN ON LOGIN
+      setAuthState({ user, token }); 
       await AsyncStorage.setItem('userSession', JSON.stringify(user));
       await AsyncStorage.setItem('userToken', token);
-      // Fetch initial count on login
-      const response = await fetch(`${API_BASE_URL}/api/notifications/unread-count/${user.id}`);
-      const data = await response.json();
-      if (data && typeof data.count === 'number') setUnreadCount(data.count);
     } catch (e) { console.error("AuthContext: Failed to save session", e); }
   };
 
   const logout = async () => {
     try {
-      setAuthState({ user: null });
-      setUnreadCount(0);
+      // ★ 4. CLEAR BOTH USER AND TOKEN ON LOGOUT
+      setAuthState({ user: null, token: null });
       await AsyncStorage.multiRemove(['userSession', 'userToken']);
     } catch (e) { console.error("AuthContext: Failed to clear session", e); }
   };
 
-  const value = { authState, login, logout, isLoading, unreadCount, setUnreadCount };
+  // The context now only provides the core auth data and functions.
+  const value = { authState, login, logout, isLoading };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
+// ★ 5. UPDATE the custom hook to EXPORT THE TOKEN
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (context === undefined) throw new Error('useAuth must be used within an AuthProvider');
   return {
     user: context.authState.user,
+    token: context.authState.token, // This is the crucial addition
     login: context.login,
     logout: context.logout,
     isLoading: context.isLoading,
-    unreadCount: context.unreadCount,
-    setUnreadCount: context.setUnreadCount,
   };
 };

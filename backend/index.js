@@ -67,8 +67,10 @@ const db = mysql.createPool({
     
 });
 
+
 // ==========================================================
 // --- MIDDLEWARE FOR SECURE AUTHENTICATION ---
+// ★★★ THIS BLOCK MUST COME FIRST ★★★
 // ==========================================================
 // This function verifies the JWT sent from the app to protect routes.
 const verifyToken = (req, res, next) => {
@@ -97,6 +99,38 @@ const isAdmin = (req, res, next) => {
         res.status(403).json({ message: 'Access denied. Admin role required.' });
     }
 };
+
+
+// ==========================================================
+// --- NOTIFICATION HELPER FUNCTIONS ---
+// (This is also a good place for your helper functions)
+// ==========================================================
+const createNotification = async (dbOrConnection, recipientId, senderName, title, message, link = null) => {
+    try {
+        const query = 'INSERT INTO notifications (recipient_id, sender_name, title, message, link) VALUES (?, ?, ?, ?, ?)';
+        // Use the passed-in connection or the main db pool
+        await dbOrConnection.query(query, [recipientId, senderName, title, message, link]);
+        console.log(`>>> Notification created for user ID: ${recipientId}`); // Debug log
+    } catch (error) {
+        console.error(`[NOTIFICATION ERROR] Failed to create notification for user ${recipientId}:`, error);
+        throw error; // Re-throw the error to cause a transaction rollback
+    }
+};
+
+const createBulkNotifications = async (dbOrConnection, recipientIds, senderName, title, message, link = null) => {
+    if (!recipientIds || recipientIds.length === 0) return;
+    try {
+        const query = 'INSERT INTO notifications (recipient_id, sender_name, title, message, link) VALUES ?';
+        const values = recipientIds.map(id => [id, senderName, title, message, link]);
+        // Use the passed-in connection or the main db pool
+        await dbOrConnection.query(query, [values]);
+        console.log(`>>> Bulk notifications created for ${recipientIds.length} users.`); // Debug log
+    } catch (error) {
+        console.error('[NOTIFICATION ERROR] Failed to create bulk notifications:', error);
+        throw error; // Re-throw the error to cause a transaction rollback
+    }
+};
+
 
 // ==========================================================
 // --- MULTER STORAGE CONFIG FOR THE NEW ADS MODULE ---
@@ -138,10 +172,25 @@ app.post('/api/login', async (req, res) => {
             catch (e) { user.subjects_taught = []; }
         }
         const { password: _, ...userData } = user;
-        const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, process.env.JWT_SECRET || 'YOUR_SUPER_SECRET_KEY', { expiresIn: '24h' });
+        // ★★★ THIS IS THE FIX ★★★
+        // We are adding 'full_name: user.full_name' to the object that gets signed into the token.
+        const tokenPayload = {
+            id: user.id,
+            username: user.username,
+            role: user.role,
+            full_name: user.full_name // Include the full name in the token
+        };
+
+        // 2. Sign THE CORRECT PAYLOAD OBJECT to create the token.
+        const token = jwt.sign(tokenPayload, process.env.JWT_SECRET || 'YOUR_SUPER_SECRET_KEY', { expiresIn: '24h' });
+        
         res.status(200).json({ message: 'Login successful!', user: userData, token: token });
-    } catch (error) { res.status(500).json({ message: 'Error: Database connection failed.' }); }
+    } catch (error) { 
+        console.error("Login Error:", error);
+        res.status(500).json({ message: 'Error: Database connection failed.' }); 
+    }
 });
+
 
 app.get('/api/users', async (req, res) => {
     try {
@@ -268,8 +317,122 @@ app.post('/api/reset-password', async (req, res) => {
 
 // --- CALENDAR API ROUTES ---
 app.get('/api/calendar', async (req, res) => { try { const [rows] = await db.query('SELECT *, DATE_FORMAT(event_date, "%Y-%m-%d") AS event_date FROM calendar_events ORDER BY event_date ASC, time ASC'); const groupedEvents = rows.reduce((acc, event) => { const dateKey = event.event_date; if (!acc[dateKey]) { acc[dateKey] = []; } acc[dateKey].push(event); return acc; }, {}); res.status(200).json(groupedEvents); } catch (error) { console.error(error); res.status(500).json({ message: 'Error: Could not get calendar events.' }); }});
-app.post('/api/calendar', async (req, res) => { const { event_date, name, type, time, description } = req.body; try { await db.query('INSERT INTO calendar_events (event_date, name, type, time, description) VALUES (?, ?, ?, ?, ?)', [event_date, name, type, time, description]); res.status(201).json({ message: 'Event created successfully!' }); } catch (error) { console.error(error); res.status(500).json({ message: 'Error: Could not create event.' }); }});
-app.put('/api/calendar/:id', async (req, res) => { const { id } = req.params; const { event_date, name, type, time, description } = req.body; try { const [result] = await db.query('UPDATE calendar_events SET event_date = ?, name = ?, type = ?, time = ?, description = ? WHERE id = ?', [event_date, name, type, time, description, id]); if (result.affectedRows === 0) { return res.status(404).json({ message: 'Event not found.' }); } res.status(200).json({ message: 'Event updated successfully!' }); } catch (error) { console.error(error); res.status(500).json({ message: 'Error: Could not update event.' }); }});
+// 📂 File: server.js (REPLACE THIS ROUTE)
+
+app.post('/api/calendar', async (req, res) => {
+    // 1. ADD adminId to the request body. The frontend must send this.
+    const { event_date, name, type, time, description, adminId } = req.body; 
+    
+    if (!adminId) {
+        return res.status(400).json({ message: "Admin ID is required to create a calendar event." });
+    }
+
+    const connection = await db.getConnection();
+    try {
+        await connection.beginTransaction();
+
+        // 2. Insert the new event
+        await connection.query('INSERT INTO calendar_events (event_date, name, type, time, description) VALUES (?, ?, ?, ?, ?)', [event_date, name, type, time, description]);
+
+        // ★★★★★ START: NEW NOTIFICATION LOGIC ★★★★★
+        
+        // 3. Find all users except the creating admin
+        const [usersToNotify] = await connection.query("SELECT id FROM users WHERE id != ?", [adminId]);
+        
+        if (usersToNotify.length > 0) {
+            // 4. Get the admin's name for the notification
+            const [[admin]] = await connection.query("SELECT full_name FROM users WHERE id = ?", [adminId]);
+            const senderName = admin.full_name || "School Administration";
+
+            // 5. Prepare and send notifications
+            const recipientIds = usersToNotify.map(u => u.id);
+            const notificationTitle = `New Calendar Event: ${type}`;
+            const eventDate = new Date(event_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+            const notificationMessage = `A new event, "${name}", has been added to the calendar for ${eventDate}.`;
+
+            await createBulkNotifications(
+                connection,
+                recipientIds,
+                senderName,
+                notificationTitle,
+                notificationMessage,
+                '/calendar' // A generic link to the calendar screen
+            );
+        }
+
+        // ★★★★★ END: NEW NOTIFICATION LOGIC ★★★★★
+        
+        await connection.commit();
+        res.status(201).json({ message: 'Event created and users notified successfully!' });
+
+    } catch (error) {
+        await connection.rollback();
+        console.error("Error creating calendar event:", error);
+        res.status(500).json({ message: 'Error: Could not create event.' });
+    } finally {
+        connection.release();
+    }
+});
+// 📂 File: server.js (REPLACE THIS ROUTE)
+
+app.put('/api/calendar/:id', async (req, res) => {
+    const { id } = req.params;
+    // 1. ADD adminId to the request body. The frontend must send this.
+    const { event_date, name, type, time, description, adminId } = req.body;
+
+    if (!adminId) {
+        return res.status(400).json({ message: "Admin ID is required to update a calendar event." });
+    }
+
+    const connection = await db.getConnection();
+    try {
+        await connection.beginTransaction();
+
+        // 2. Update the event
+        const [result] = await connection.query('UPDATE calendar_events SET event_date = ?, name = ?, type = ?, time = ?, description = ? WHERE id = ?', [event_date, name, type, time, description, id]);
+        if (result.affectedRows === 0) {
+            await connection.rollback();
+            return res.status(404).json({ message: 'Event not found.' });
+        }
+
+        // ★★★★★ START: NEW NOTIFICATION LOGIC ★★★★★
+
+        // 3. Find all users except the editing admin
+        const [usersToNotify] = await connection.query("SELECT id FROM users WHERE id != ?", [adminId]);
+        
+        if (usersToNotify.length > 0) {
+            // 4. Get the admin's name
+            const [[admin]] = await connection.query("SELECT full_name FROM users WHERE id = ?", [adminId]);
+            const senderName = admin.full_name || "School Administration";
+
+            // 5. Prepare and send notifications
+            const recipientIds = usersToNotify.map(u => u.id);
+            const notificationTitle = `Calendar Event Updated`;
+            const notificationMessage = `The event "${name}" has been updated. Please check the calendar for the latest details.`;
+
+            await createBulkNotifications(
+                connection,
+                recipientIds,
+                senderName,
+                notificationTitle,
+                notificationMessage,
+                '/calendar'
+            );
+        }
+
+        // ★★★★★ END: NEW NOTIFICATION LOGIC ★★★★★
+
+        await connection.commit();
+        res.status(200).json({ message: 'Event updated and users notified successfully!' });
+
+    } catch (error) {
+        await connection.rollback();
+        console.error("Error updating calendar event:", error);
+        res.status(500).json({ message: 'Error: Could not update event.' });
+    } finally {
+        connection.release();
+    }
+});
 app.delete('/api/calendar/:id', async (req, res) => { const { id } = req.params; try { const [result] = await db.query('DELETE FROM calendar_events WHERE id = ?', [id]); if (result.affectedRows === 0) { return res.status(404).json({ message: 'Event not found.' }); } res.status(200).json({ message: 'Event deleted successfully.' }); } catch (error) { console.error(error); res.status(500).json({ message: 'Error: Could not delete event.' }); }});
 
 // --- PROFILE API ROUTES ---
@@ -280,7 +443,38 @@ app.put('/api/profiles/:userId', upload.single('profileImage'), async (req, res)
 app.get('/api/teachers', async (req, res) => { try { const [teachers] = await db.query("SELECT id, full_name, subjects_taught FROM users WHERE role = 'teacher'"); res.status(200).json(teachers); } catch (error) { console.error("GET /api/teachers Error:", error); res.status(500).json({ message: 'Could not fetch teachers.' }); }});
 app.get('/api/timetable/:class_group', async (req, res) => { try { const { class_group } = req.params; if (!class_group) { return res.status(400).json({ message: 'Class group is required.' }); } const query = `SELECT t.*, u.full_name as teacher_name FROM timetables t LEFT JOIN users u ON t.teacher_id = u.id WHERE t.class_group = ?`; const [slots] = await db.query(query, [class_group]); res.status(200).json(slots); } catch (error) { console.error("GET /api/timetable/:class_group Error:", error); res.status(500).json({ message: 'Could not fetch timetable.' }); }});
 app.get('/api/timetable/teacher/:teacherId', async (req, res) => { try { const { teacherId } = req.params; if (!teacherId || isNaN(parseInt(teacherId))) { return res.status(400).json({ message: 'A valid Teacher ID is required.' }); } const query = `SELECT t.class_group, t.day_of_week, t.period_number, t.subject_name, t.teacher_id, u.full_name as teacher_name FROM timetables t JOIN users u ON t.teacher_id = u.id WHERE t.teacher_id = ? ORDER BY day_of_week, period_number`; const [slots] = await db.query(query, [teacherId]); res.status(200).json(slots); } catch (error) { console.error("GET /api/timetable/teacher/:teacherId Error:", error); res.status(500).json({ message: 'Could not fetch teacher timetable.' }); }});
-app.post('/api/timetable', async (req, res) => { const { class_group, day_of_week, period_number, subject_name, teacher_id } = req.body; const connection = await db.getConnection(); try { await connection.beginTransaction(); await connection.execute('DELETE FROM timetables WHERE class_group = ? AND day_of_week = ? AND period_number = ?', [class_group, day_of_week, period_number] ); if (teacher_id && subject_name) { await connection.execute( 'INSERT INTO timetables (class_group, day_of_week, period_number, subject_name, teacher_id) VALUES (?, ?, ?, ?, ?)', [class_group, day_of_week, period_number, subject_name, teacher_id] ); } await connection.commit(); res.status(201).json({ message: 'Timetable updated successfully!' }); } catch (error) { await connection.rollback(); console.error("POST /api/timetable Error:", error); res.status(500).json({ message: error.message || 'Error updating timetable.' }); } finally { connection.release(); }});
+app.post('/api/timetable', async (req, res) => { const { class_group, day_of_week, period_number, subject_name, teacher_id } = req.body; const connection = await db.getConnection(); try { await connection.beginTransaction(); await connection.execute('DELETE FROM timetables WHERE class_group = ? AND day_of_week = ? AND period_number = ?', [class_group, day_of_week, period_number] ); if (teacher_id && subject_name) { await connection.execute( 'INSERT INTO timetables (class_group, day_of_week, period_number, subject_name, teacher_id) VALUES (?, ?, ?, ?, ?)', [class_group, day_of_week, period_number, subject_name, teacher_id] ); } 
+// ★★★★★ START: NEW NOTIFICATION LOGIC ★★★★★
+
+        // Only send notifications if a new class was actually assigned (not just cleared)
+        if (teacher_id && subject_name) {
+            
+            // 1. Find all students in the affected class group
+            const [students] = await connection.query("SELECT id FROM users WHERE role = 'student' AND class_group = ?", [class_group]);
+
+            // 2. Prepare the list of all recipients (the teacher + all students)
+            const studentIds = students.map(s => s.id);
+            const allRecipientIds = [teacher_id, ...studentIds]; 
+
+            // 3. Construct an informative notification message
+            const notificationTitle = `Timetable Updated for ${class_group}`;
+            const notificationMessage = `Your schedule has been updated. You now have ${subject_name} on ${day_of_week} during Period ${period_number}.`;
+            const senderName = "School Administration"; // Generic sender for admin actions
+
+            // 4. Send the notifications to everyone in the list
+            if (allRecipientIds.length > 0) {
+                await createBulkNotifications(
+                    connection, // Use the transaction connection
+                    allRecipientIds,
+                    senderName,
+                    notificationTitle,
+                    notificationMessage,
+                    '/timetable' // Generic link to the timetable screen
+                );
+            }
+        }
+        // ★★★★★ END: NEW NOTIFICATION LOGIC ★★★★★
+    await connection.commit(); res.status(201).json({ message: 'Timetable updated successfully!' }); } catch (error) { await connection.rollback(); console.error("POST /api/timetable Error:", error); res.status(500).json({ message: error.message || 'Error updating timetable.' }); } finally { connection.release(); }});
 
 // ==========================================================
 // --- ATTENDANCE API ROUTES ---
@@ -407,26 +601,59 @@ app.get('/api/health/record/:userId', async (req, res) => {
     }
 });
 
+// 📂 File: server.js (REPLACE THIS ROUTE)
+
 // Endpoint for Teachers/Admins to create or update a health record
 app.post('/api/health/record/:userId', async (req, res) => {
     const studentUserId = req.params.userId;
-    // We get the editor's ID from the request body, as there is no token.
     const { editorId, blood_group, height_cm, weight_kg, last_checkup_date, allergies, medical_conditions, medications } = req.body;
     
-    const query = `
-        INSERT INTO health_records (user_id, blood_group, height_cm, weight_kg, last_checkup_date, allergies, medical_conditions, medications, last_updated_by)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON DUPLICATE KEY UPDATE
-        blood_group = VALUES(blood_group), height_cm = VALUES(height_cm), weight_kg = VALUES(weight_kg), last_checkup_date = VALUES(last_checkup_date),
-        allergies = VALUES(allergies), medical_conditions = VALUES(medical_conditions), medications = VALUES(medications), last_updated_by = VALUES(last_updated_by);
-    `;
-    const values = [studentUserId, blood_group, height_cm, weight_kg, last_checkup_date || null, allergies, medical_conditions, medications, editorId];
+    const connection = await db.getConnection();
     try {
-        await db.query(query, values);
-        res.status(200).json({ message: "Health record saved successfully." });
+        await connection.beginTransaction();
+
+        // Step 1: Insert or update the health record
+        const query = `
+            INSERT INTO health_records (user_id, blood_group, height_cm, weight_kg, last_checkup_date, allergies, medical_conditions, medications, last_updated_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+            blood_group = VALUES(blood_group), height_cm = VALUES(height_cm), weight_kg = VALUES(weight_kg), last_checkup_date = VALUES(last_checkup_date),
+            allergies = VALUES(allergies), medical_conditions = VALUES(medical_conditions), medications = VALUES(medications), last_updated_by = VALUES(last_updated_by);
+        `;
+        const values = [studentUserId, blood_group, height_cm, weight_kg, last_checkup_date || null, allergies, medical_conditions, medications, editorId];
+        await connection.query(query, values);
+
+        // ★★★★★ START: NEW NOTIFICATION LOGIC ★★★★★
+        
+        // 1. Get the name of the teacher/admin who made the change
+        const [[editor]] = await connection.query("SELECT full_name FROM users WHERE id = ?", [editorId]);
+        const senderName = editor.full_name || "School Health Department";
+
+        // 2. Prepare the notification details
+        const notificationTitle = "Health Record Updated";
+        const notificationMessage = `Your health information has been updated. Please review the details in the Health Info section.`;
+        
+        // 3. Send a single notification to the affected student
+        await createNotification(
+            connection,
+            studentUserId,
+            senderName,
+            notificationTitle,
+            notificationMessage,
+            '/health-info' // A generic link to the health info screen
+        );
+
+        // ★★★★★ END: NEW NOTIFICATION LOGIC ★★★★★
+        
+        await connection.commit();
+        res.status(200).json({ message: "Health record saved and student notified successfully." });
+
     } catch (error) {
+        await connection.rollback();
         console.error("POST /api/health/record/:userId Error:", error);
         res.status(500).json({ message: "Failed to save health record." });
+    } finally {
+        connection.release();
     }
 });
 
@@ -461,28 +688,119 @@ app.get('/api/sports/available/:userId', async (req, res) => {
     } catch (error) { res.status(500).json({ message: 'Error fetching available activities.' }); }
 });
 
+// 📂 File: server.js (REPLACE THIS ROUTE)
+
 // STUDENT: Apply for an activity.
 app.post('/api/sports/apply', async (req, res) => {
     const { userId, activityId } = req.body;
+    const connection = await db.getConnection();
     try {
-        await db.query('INSERT INTO activity_registrations (student_id, activity_id) VALUES (?, ?)', [userId, activityId]);
+        await connection.beginTransaction();
+
+        // Step 1: Create the registration record
+        await connection.query('INSERT INTO activity_registrations (student_id, activity_id) VALUES (?, ?)', [userId, activityId]);
+        
+        // ★★★★★ START: NEW NOTIFICATION LOGIC ★★★★★
+        
+        // 1. Find all admins
+        const [admins] = await connection.query("SELECT id FROM users WHERE role = 'admin'");
+        let recipientIds = admins.map(a => a.id);
+
+        // 2. Find the student and activity details for the message
+        const [[student]] = await connection.query("SELECT full_name, class_group FROM users WHERE id = ?", [userId]);
+        const [[activity]] = await connection.query("SELECT name, coach_name FROM sports_activities WHERE id = ?", [activityId]);
+
+        // 3. If there's a specific coach, find their ID and add them to the recipients
+        if (activity.coach_name) {
+            const [[coach]] = await connection.query("SELECT id FROM users WHERE full_name = ? AND role = 'teacher'", [activity.coach_name]);
+            if (coach) {
+                recipientIds.push(coach.id);
+            }
+        }
+        
+        // 4. Prepare and send notifications
+        const uniqueRecipientIds = [...new Set(recipientIds)]; // Ensure no duplicate notifications
+        if (uniqueRecipientIds.length > 0) {
+            const notificationTitle = `New Sports Application`;
+            const notificationMessage = `${student.full_name} (${student.class_group}) has applied for ${activity.name}.`;
+            
+            await createBulkNotifications(
+                connection,
+                uniqueRecipientIds,
+                student.full_name,
+                notificationTitle,
+                notificationMessage,
+                '/admin/sports' // A generic link for admins/teachers
+            );
+        }
+
+        // ★★★★★ END: NEW NOTIFICATION LOGIC ★★★★★
+        
+        await connection.commit();
         res.status(201).json({ message: 'Successfully applied!' });
+
     } catch (error) {
+        await connection.rollback();
         if (error.code === 'ER_DUP_ENTRY') {
             return res.status(409).json({ message: 'You have already applied for this activity.' });
         }
+        console.error("Error applying for sport:", error);
         res.status(500).json({ message: 'Error applying for activity.' });
+    } finally {
+        connection.release();
     }
 });
+
+// 📂 File: server.js (REPLACE THIS ROUTE)
 
 // ADMIN/TEACHER: Create a new sport/activity.
 app.post('/api/sports', async (req, res) => {
     const { name, team_name, coach_name, schedule_details, description, created_by } = req.body;
-    const query = 'INSERT INTO sports_activities (name, team_name, coach_name, schedule_details, description, created_by) VALUES (?, ?, ?, ?, ?, ?)';
+    const connection = await db.getConnection();
     try {
-        await db.query(query, [name, team_name, coach_name, schedule_details, description, created_by]);
-        res.status(201).json({ message: 'Activity created successfully!' });
-    } catch (error) { res.status(500).json({ message: 'Error creating activity.' }); }
+        await connection.beginTransaction();
+
+        // Step 1: Create the sports activity
+        const query = 'INSERT INTO sports_activities (name, team_name, coach_name, schedule_details, description, created_by) VALUES (?, ?, ?, ?, ?, ?)';
+        await connection.query(query, [name, team_name, coach_name, schedule_details, description, created_by]);
+
+        // ★★★★★ START: NEW NOTIFICATION LOGIC ★★★★★
+        
+        // 1. Find all students
+        const [students] = await connection.query("SELECT id FROM users WHERE role = 'student'");
+        
+        if (students.length > 0) {
+            // 2. Get the creator's name
+            const [[creator]] = await connection.query("SELECT full_name FROM users WHERE id = ?", [created_by]);
+            const senderName = creator.full_name || "Sports Department";
+
+            // 3. Prepare and send notifications
+            const studentIds = students.map(s => s.id);
+            const notificationTitle = `New Sport Available: ${name}`;
+            const notificationMessage = `Registrations are now open for ${name}. Visit the sports section to apply!`;
+
+            await createBulkNotifications(
+                connection,
+                studentIds,
+                senderName,
+                notificationTitle,
+                notificationMessage,
+                '/sports' // Generic link to the sports screen
+            );
+        }
+
+        // ★★★★★ END: NEW NOTIFICATION LOGIC ★★★★★
+
+        await connection.commit();
+        res.status(201).json({ message: 'Activity created and students notified successfully!' });
+
+    } catch (error) {
+        await connection.rollback();
+        console.error("Error creating sport activity:", error);
+        res.status(500).json({ message: 'Error creating activity.' });
+    } finally {
+        connection.release();
+    }
 });
 
 // ADMIN/TEACHER: Get all activities for management view.
@@ -513,13 +831,61 @@ app.get('/api/sports/applications/:activityId', async (req, res) => {
     } catch (error) { res.status(500).json({ message: 'Error fetching applications.' }); }
 });
 
+// 📂 File: server.js (REPLACE THIS ROUTE)
+
 // ADMIN/TEACHER: Update an application's status (Approve/Reject).
 app.put('/api/sports/application/status', async (req, res) => {
-    const { registrationId, status } = req.body;
+    const { registrationId, status, adminId } = req.body; // Assuming adminId is sent from the frontend
+    
+    const connection = await db.getConnection();
     try {
-        await db.query('UPDATE activity_registrations SET status = ? WHERE id = ?', [status, registrationId]);
+        await connection.beginTransaction();
+
+        // Step 1: Update the application status
+        await connection.query('UPDATE activity_registrations SET status = ? WHERE id = ?', [status, registrationId]);
+        
+        // ★★★★★ START: NEW NOTIFICATION LOGIC ★★★★★
+
+        // 1. Get details about the application for the message
+        const [[registration]] = await connection.query(`
+            SELECT ar.student_id, sa.name AS activity_name
+            FROM activity_registrations ar
+            JOIN sports_activities sa ON ar.activity_id = sa.id
+            WHERE ar.id = ?
+        `, [registrationId]);
+
+        if (registration) {
+            // 2. Get the admin's name
+            const [[admin]] = await connection.query("SELECT full_name FROM users WHERE id = ?", [adminId]);
+            const senderName = admin.full_name || "Sports Department";
+
+            // 3. Prepare notification details
+            const notificationTitle = `Application ${status}`;
+            const notificationMessage = `Your application for ${registration.activity_name} has been ${status}.`;
+
+            // 4. Send a single notification to the student
+            await createNotification(
+                connection,
+                registration.student_id,
+                senderName,
+                notificationTitle,
+                notificationMessage,
+                '/my-registrations' // A hypothetical link to their sports page
+            );
+        }
+
+        // ★★★★★ END: NEW NOTIFICATION LOGIC ★★★★★
+
+        await connection.commit();
         res.status(200).json({ message: `Application status updated to ${status}` });
-    } catch (error) { res.status(500).json({ message: 'Error updating status.' }); }
+
+    } catch (error) {
+        await connection.rollback();
+        console.error("Error updating application status:", error);
+        res.status(500).json({ message: 'Error updating status.' });
+    } finally {
+        connection.release();
+    }
 });
 
 // ADMIN/TEACHER: Update a student's achievements for a registration.
@@ -558,28 +924,111 @@ app.get('/api/events/all-for-student/:userId', async (req, res) => {
     } catch (error) { console.error(error); res.status(500).json({ message: 'Error fetching events.' }); }
 });
 
+// 📂 File: server.js (REPLACE THIS ROUTE)
+
 // STUDENT: RSVP for an event.
 app.post('/api/events/rsvp', async (req, res) => {
     const { eventId, userId } = req.body;
+    const connection = await db.getConnection();
     try {
-        await db.query('INSERT INTO event_rsvps (event_id, student_id) VALUES (?, ?)', [eventId, userId]);
+        await connection.beginTransaction();
+
+        // Step 1: Insert the RSVP
+        await connection.query('INSERT INTO event_rsvps (event_id, student_id) VALUES (?, ?)', [eventId, userId]);
+        
+        // ★★★★★ START: NEW NOTIFICATION LOGIC ★★★★★
+
+        // 1. Find all admins
+        const [admins] = await connection.query("SELECT id FROM users WHERE role = 'admin'");
+        
+        if (admins.length > 0) {
+            // 2. Get details for the notification message
+            const [[student]] = await connection.query("SELECT full_name, class_group FROM users WHERE id = ?", [userId]);
+            const [[event]] = await connection.query("SELECT title FROM events WHERE id = ?", [eventId]);
+
+            // 3. Prepare and send notifications
+            const adminIds = admins.map(a => a.id);
+            const notificationTitle = "New Event RSVP";
+            const notificationMessage = `${student.full_name} (${student.class_group}) has RSVP'd for the "${event.title}" event.`;
+            
+            await createBulkNotifications(
+                connection,
+                adminIds,
+                student.full_name,
+                notificationTitle,
+                notificationMessage,
+                '/admin/events' // A link for admins to see the event list
+            );
+        }
+
+        // ★★★★★ END: NEW NOTIFICATION LOGIC ★★★★★
+        
+        await connection.commit();
         res.status(201).json({ message: 'RSVP successful! Awaiting approval.' });
+
     } catch (error) {
+        await connection.rollback();
         if (error.code === 'ER_DUP_ENTRY') {
             return res.status(409).json({ message: 'You have already RSVP\'d for this event.' });
         }
+        console.error("Error processing RSVP:", error);
         res.status(500).json({ message: 'Error processing RSVP.' });
+    } finally {
+        connection.release();
     }
 });
+
+// 📂 File: server.js (REPLACE THIS ROUTE)
 
 // ADMIN/TEACHER: Create a new event.
 app.post('/api/events', async (req, res) => {
     const { title, category, event_datetime, location, description, rsvp_required, created_by } = req.body;
-    const query = 'INSERT INTO events (title, category, event_datetime, location, description, rsvp_required, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)';
+    const connection = await db.getConnection();
     try {
-        await db.query(query, [title, category, event_datetime, location, description, rsvp_required, created_by]);
-        res.status(201).json({ message: 'Event created successfully!' });
-    } catch (error) { console.error(error); res.status(500).json({ message: 'Error creating event.' }); }
+        await connection.beginTransaction();
+
+        // Step 1: Create the event
+        const query = 'INSERT INTO events (title, category, event_datetime, location, description, rsvp_required, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)';
+        await connection.query(query, [title, category, event_datetime, location, description, rsvp_required, created_by]);
+
+        // ★★★★★ START: NEW NOTIFICATION LOGIC ★★★★★
+        
+        // 1. Find all students and teachers (excluding the creator)
+        const [usersToNotify] = await connection.query("SELECT id FROM users WHERE role IN ('student', 'teacher') AND id != ?", [created_by]);
+        
+        if (usersToNotify.length > 0) {
+            // 2. Get the creator's name
+            const [[creator]] = await connection.query("SELECT full_name FROM users WHERE id = ?", [created_by]);
+            const senderName = creator.full_name || "School Administration";
+
+            // 3. Prepare and send notifications
+            const recipientIds = usersToNotify.map(u => u.id);
+            const notificationTitle = `New Event: ${title}`;
+            const eventDate = new Date(event_datetime).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+            const notificationMessage = `Join us for the "${title}" event on ${eventDate}. Check the events section for details.`;
+
+            await createBulkNotifications(
+                connection,
+                recipientIds,
+                senderName,
+                notificationTitle,
+                notificationMessage,
+                '/events' // Generic link to the events screen
+            );
+        }
+
+        // ★★★★★ END: NEW NOTIFICATION LOGIC ★★★★★
+
+        await connection.commit();
+        res.status(201).json({ message: 'Event created and users notified successfully!' });
+
+    } catch (error) {
+        await connection.rollback();
+        console.error("Error creating event:", error);
+        res.status(500).json({ message: 'Error creating event.' });
+    } finally {
+        connection.release();
+    }
 });
 
 // ADMIN/TEACHER: Get all events for the management view.
@@ -610,13 +1059,60 @@ app.get('/api/events/rsvps/:eventId', async (req, res) => {
     } catch (error) { console.error(error); res.status(500).json({ message: 'Error fetching RSVPs.' }); }
 });
 
+// 📂 File: server.js (REPLACE THIS ROUTE)
+
 // ADMIN/TEACHER: Update an RSVP status (Approve/Reject).
 app.put('/api/events/rsvp/status', async (req, res) => {
-    const { rsvpId, status } = req.body;
+    const { rsvpId, status, adminId } = req.body; // Expect adminId from the frontend
+    const connection = await db.getConnection();
     try {
-        await db.query('UPDATE event_rsvps SET status = ? WHERE id = ?', [status, rsvpId]);
+        await connection.beginTransaction();
+
+        // Step 1: Update the RSVP status
+        await connection.query('UPDATE event_rsvps SET status = ? WHERE id = ?', [status, rsvpId]);
+        
+        // ★★★★★ START: NEW NOTIFICATION LOGIC ★★★★★
+
+        // 1. Get details about the RSVP for the message
+        const [[rsvpDetails]] = await connection.query(`
+            SELECT r.student_id, e.title AS event_title
+            FROM event_rsvps r
+            JOIN events e ON r.event_id = e.id
+            WHERE r.id = ?
+        `, [rsvpId]);
+
+        if (rsvpDetails) {
+            // 2. Get the admin's name
+            const [[admin]] = await connection.query("SELECT full_name FROM users WHERE id = ?", [adminId]);
+            const senderName = admin.full_name || "School Administration";
+
+            // 3. Prepare notification details
+            const notificationTitle = `RSVP ${status}`;
+            const notificationMessage = `Your RSVP for the event "${rsvpDetails.event_title}" has been ${status}.`;
+
+            // 4. Send a single notification to the student
+            await createNotification(
+                connection,
+                rsvpDetails.student_id,
+                senderName,
+                notificationTitle,
+                notificationMessage,
+                '/events' // Link to the student's event screen
+            );
+        }
+
+        // ★★★★★ END: NEW NOTIFICATION LOGIC ★★★★★
+        
+        await connection.commit();
         res.status(200).json({ message: `RSVP status updated.` });
-    } catch (error) { console.error(error); res.status(500).json({ message: 'Error updating RSVP status.' }); }
+
+    } catch (error) {
+        await connection.rollback();
+        console.error("Error updating RSVP status:", error);
+        res.status(500).json({ message: 'Error updating RSVP status.' });
+    } finally {
+        connection.release();
+    }
 });
 
 // STUDENT: Get full details for a SINGLE event, including their specific RSVP.
@@ -664,13 +1160,54 @@ app.get('/api/helpdesk/faqs', async (req, res) => {
     } catch (error) { res.status(500).json({ message: 'Error fetching FAQs.' }); }
 });
 
+// 📂 File: server.js (REPLACE THIS ROUTE)
+
 // STUDENT/TEACHER: Submit a new ticket
 app.post('/api/helpdesk/submit', async (req, res) => {
     const { userId, subject, description } = req.body;
+    const connection = await db.getConnection();
     try {
-        await db.query('INSERT INTO helpdesk_tickets (user_id, subject, description) VALUES (?, ?, ?)', [userId, subject, description]);
+        await connection.beginTransaction();
+
+        // Step 1: Insert the ticket
+        await connection.query('INSERT INTO helpdesk_tickets (user_id, subject, description) VALUES (?, ?, ?)', [userId, subject, description]);
+        
+        // ★★★★★ START: NEW NOTIFICATION LOGIC ★★★★★
+
+        // 1. Find all admins
+        const [admins] = await connection.query("SELECT id FROM users WHERE role = 'admin'");
+        
+        if (admins.length > 0) {
+            // 2. Get the submitter's details for the message
+            const [[submitter]] = await connection.query("SELECT full_name, role FROM users WHERE id = ?", [userId]);
+
+            // 3. Prepare and send notifications
+            const adminIds = admins.map(a => a.id);
+            const notificationTitle = `New Help Desk Ticket`;
+            const notificationMessage = `${submitter.full_name} (${submitter.role}) has submitted a new ticket: "${subject}"`;
+            
+            await createBulkNotifications(
+                connection,
+                adminIds,
+                submitter.full_name,
+                notificationTitle,
+                notificationMessage,
+                '/admin/helpdesk' // A link for admins to view the ticket list
+            );
+        }
+
+        // ★★★★★ END: NEW NOTIFICATION LOGIC ★★★★★
+        
+        await connection.commit();
         res.status(201).json({ message: 'Query submitted successfully! We will get back to you soon.' });
-    } catch (error) { res.status(500).json({ message: 'Error submitting query.' }); }
+
+    } catch (error) {
+        await connection.rollback();
+        console.error("Error submitting help desk ticket:", error);
+        res.status(500).json({ message: 'Error submitting query.' });
+    } finally {
+        connection.release();
+    }
 });
 
 // STUDENT/TEACHER: Get history of their own tickets
@@ -720,7 +1257,7 @@ app.get('/api/helpdesk/ticket/:ticketId', async (req, res) => {
 // 📂 File: backend/server.js (Replace this route)
 
 // ANY USER: Post a reply to a ticket
-// 📂 File: backend/server.js (Replace the existing route with this)
+// 📂 File: server.js (REPLACE THIS ROUTE)
 
 // ANY USER: Post a reply to a ticket
 app.post('/api/helpdesk/reply', async (req, res) => {
@@ -729,21 +1266,42 @@ app.post('/api/helpdesk/reply', async (req, res) => {
     try {
         await connection.beginTransaction();
 
-        // Step 1: Insert the new reply into the conversation history.
-        await connection.query(
-            'INSERT INTO ticket_replies (ticket_id, user_id, reply_text) VALUES (?, ?, ?)',
-            [ticketId, userId, replyText]
-        );
+        // Step 1: Insert the reply and update the timestamp (no changes here)
+        await connection.query('INSERT INTO ticket_replies (ticket_id, user_id, reply_text) VALUES (?, ?, ?)', [ticketId, userId, replyText]);
+        await connection.query('UPDATE helpdesk_tickets SET last_updated_at = CURRENT_TIMESTAMP WHERE id = ?', [ticketId]);
+
+        // ★★★★★ START: NEW NOTIFICATION LOGIC ★★★★★
         
-        // Step 2: Update the parent ticket's timestamp. This bumps the ticket to the top of lists sorted by recent activity.
-        // It does NOT change the status.
-        await connection.query(
-            'UPDATE helpdesk_tickets SET last_updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-            [ticketId]
-        );
+        // 1. Get info about the replier and the ticket's original creator
+        const [[replier]] = await connection.query("SELECT full_name, role FROM users WHERE id = ?", [userId]);
+        const [[ticket]] = await connection.query("SELECT user_id, subject FROM helpdesk_tickets WHERE id = ?", [ticketId]);
+
+        // 2. CASE A: An admin replied. Notify the original ticket creator.
+        if (replier.role === 'admin') {
+            const originalCreatorId = ticket.user_id;
+            // Ensure admin doesn't get notified for their own reply
+            if (originalCreatorId !== userId) { 
+                const notificationTitle = `Reply on Ticket: "${ticket.subject}"`;
+                const notificationMessage = `${replier.full_name} has replied to your help desk ticket.`;
+                await createNotification(connection, originalCreatorId, replier.full_name, notificationTitle, notificationMessage, `/helpdesk/ticket/${ticketId}`);
+            }
+        } 
+        // 3. CASE B: A student or teacher replied. Notify all admins.
+        else {
+            const [admins] = await connection.query("SELECT id FROM users WHERE role = 'admin'");
+            if (admins.length > 0) {
+                const adminIds = admins.map(a => a.id);
+                const notificationTitle = `Reply on Ticket: "${ticket.subject}"`;
+                const notificationMessage = `${replier.full_name} has replied to a help desk ticket.`;
+                await createBulkNotifications(connection, adminIds, replier.full_name, notificationTitle, notificationMessage, `/admin/helpdesk/ticket/${ticketId}`);
+            }
+        }
+        
+        // ★★★★★ END: NEW NOTIFICATION LOGIC ★★★★★
 
         await connection.commit();
         res.status(201).json({ message: 'Reply posted successfully.' });
+
     } catch (error) {
         await connection.rollback();
         console.error("Reply Error:", error);
@@ -753,20 +1311,48 @@ app.post('/api/helpdesk/reply', async (req, res) => {
     }
 });
 
+// 📂 File: server.js (REPLACE THIS ROUTE)
+
 // ADMIN: Change a ticket's status
 app.put('/api/helpdesk/ticket/status', async (req, res) => {
     const { ticketId, status, adminId, adminName } = req.body;
     const connection = await db.getConnection();
     try {
         await connection.beginTransaction();
+
+        // Step 1: Update status and add auto-reply (no changes here)
         await connection.query('UPDATE helpdesk_tickets SET status = ? WHERE id = ?', [status, ticketId]);
-        // Add an automatic reply to the log when status changes
         const autoReply = `Admin ${adminName} has updated the status to: ${status}.`;
         await connection.query('INSERT INTO ticket_replies (ticket_id, user_id, reply_text) VALUES (?, ?, ?)', [ticketId, adminId, autoReply]);
+
+        // ★★★★★ START: NEW NOTIFICATION LOGIC ★★★★★
+
+        // 1. Get the ticket details to find the original creator
+        const [[ticket]] = await connection.query("SELECT user_id, subject FROM helpdesk_tickets WHERE id = ?", [ticketId]);
+
+        if (ticket) {
+            // 2. Prepare notification details
+            const notificationTitle = `Ticket Status Updated: "${ticket.subject}"`;
+            const notificationMessage = `The status of your ticket has been updated to "${status}" by ${adminName}.`;
+            
+            // 3. Send a notification to the original creator
+            await createNotification(
+                connection,
+                ticket.user_id,
+                adminName,
+                notificationTitle,
+                notificationMessage,
+                `/helpdesk/ticket/${ticketId}`
+            );
+        }
+
+        // ★★★★★ END: NEW NOTIFICATION LOGIC ★★★★★
+
         await connection.commit();
         res.status(200).json({ message: 'Status updated.' });
     } catch (error) {
         await connection.rollback();
+        console.error("Error updating ticket status:", error);
         res.status(500).json({ message: 'Error updating status.' });
     } finally {
         connection.release();
@@ -778,19 +1364,60 @@ app.put('/api/helpdesk/ticket/status', async (req, res) => {
 // --- DONOR HELP DESK API ROUTES (NEW - PUBLIC & ADMIN) ---
 // ==========================================================
 
+// 📂 File: server.js (REPLACE THIS ROUTE)
+
 // PUBLIC: A donor submits a new query
 app.post('/api/donor/submit-query', async (req, res) => {
     const { donor_name, donor_email, subject, description } = req.body;
+    const connection = await db.getConnection();
     try {
-        const [result] = await db.query(
+        await connection.beginTransaction();
+
+        // Step 1: Insert the donor's query
+        const [result] = await connection.query(
             'INSERT INTO donor_queries (donor_name, donor_email, subject, description) VALUES (?, ?, ?, ?)',
             [donor_name, donor_email, subject, description]
         );
+        const newQueryId = result.insertId;
+
+        // ★★★★★ START: NEW NOTIFICATION LOGIC ★★★★★
+
+        // 1. Find all admins to notify them of the new query
+        const [admins] = await connection.query("SELECT id FROM users WHERE role = 'admin'");
+        
+        if (admins.length > 0) {
+            // 2. Prepare notification details
+            const adminIds = admins.map(a => a.id);
+            const notificationTitle = `New Donor Query`;
+            const notificationMessage = `A new query has been submitted by ${donor_name} regarding "${subject}".`;
+            const senderName = donor_name; // The donor is the sender
+
+            // 3. Send notifications to all admins
+            await createBulkNotifications(
+                connection,
+                adminIds,
+                senderName,
+                notificationTitle,
+                notificationMessage,
+                `/admin/donor-queries/${newQueryId}` // A hypothetical link to view the specific query
+            );
+        }
+
+        // ★★★★★ END: NEW NOTIFICATION LOGIC ★★★★★
+
+        await connection.commit();
         res.status(201).json({ 
             message: 'Query submitted! Please save your Ticket ID to check the status later.',
-            ticketId: result.insertId // Send the new ID back to the donor
+            ticketId: newQueryId
         });
-    } catch (error) { res.status(500).json({ message: 'Error submitting query.' }); }
+
+    } catch (error) {
+        await connection.rollback();
+        console.error("Error submitting donor query:", error);
+        res.status(500).json({ message: 'Error submitting query.' });
+    } finally {
+        connection.release();
+    }
 });
 
 // PUBLIC: A donor checks the status and history of their query using a Ticket ID
@@ -877,27 +1504,70 @@ app.get('/api/ptm/teachers', async (req, res) => {
     }
 });
 
+// 📂 File: server.js (REPLACE THIS ROUTE)
+
 // POST a new meeting (with meeting_link)
 app.post('/api/ptm', async (req, res) => {
-    // ✅ ADDED meeting_link
-    const { meeting_datetime, teacher_id, subject_focus, notes, meeting_link } = req.body;
+    const { meeting_datetime, teacher_id, subject_focus, notes, meeting_link, created_by } = req.body; // Assuming created_by (adminId) is sent
     
     if (!meeting_datetime || !teacher_id || !subject_focus) {
         return res.status(400).json({ message: 'Meeting Date, Teacher, and Subject are required.' });
     }
 
+    const connection = await db.getConnection();
     try {
-        const [[teacher]] = await db.query('SELECT full_name FROM users WHERE id = ?', [teacher_id]);
+        await connection.beginTransaction();
+
+        // Step 1: Get teacher's name and create the PTM record
+        const [[teacher]] = await connection.query('SELECT full_name FROM users WHERE id = ?', [teacher_id]);
         if (!teacher) {
+            await connection.rollback();
             return res.status(404).json({ message: 'Selected teacher not found.' });
         }
-        // ✅ ADDED meeting_link to query
+        
         const query = `INSERT INTO ptm_meetings (meeting_datetime, teacher_id, teacher_name, subject_focus, notes, meeting_link) VALUES (?, ?, ?, ?, ?, ?)`;
-        await db.query(query, [meeting_datetime, teacher_id, teacher.full_name, subject_focus, notes || null, meeting_link || null]);
-        res.status(201).json({ message: 'Meeting scheduled successfully!' });
+        await connection.query(query, [meeting_datetime, teacher_id, teacher.full_name, subject_focus, notes || null, meeting_link || null]);
+
+        // ★★★★★ START: NEW NOTIFICATION LOGIC ★★★★★
+        
+        // 1. Find all students
+        const [students] = await connection.query("SELECT id FROM users WHERE role = 'student'");
+        
+        // 2. Combine the specific teacher and all students into one recipient list
+        const studentIds = students.map(s => s.id);
+        const allRecipientIds = [...new Set([teacher_id, ...studentIds])]; // Use Set to avoid notifying teacher twice if they are also in student list somehow
+
+        if (allRecipientIds.length > 0) {
+            // 3. Get the admin's name who scheduled the meeting
+            const [[admin]] = await connection.query("SELECT full_name FROM users WHERE id = ?", [created_by]);
+            const senderName = admin.full_name || "School Administration";
+
+            // 4. Prepare and send notifications
+            const notificationTitle = "New Parent-Teacher Meeting";
+            const eventDate = new Date(meeting_datetime).toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+            const notificationMessage = `A PTM regarding "${subject_focus}" with ${teacher.full_name} has been scheduled for ${eventDate}.`;
+
+            await createBulkNotifications(
+                connection,
+                allRecipientIds,
+                senderName,
+                notificationTitle,
+                notificationMessage,
+                '/ptm' // A generic link to the PTM screen
+            );
+        }
+
+        // ★★★★★ END: NEW NOTIFICATION LOGIC ★★★★★
+        
+        await connection.commit();
+        res.status(201).json({ message: 'Meeting scheduled and users notified successfully!' });
+
     } catch (error) {
+        await connection.rollback();
         console.error("POST /api/ptm Error:", error);
         res.status(500).json({ message: 'An error occurred while scheduling the meeting.' });
+    } finally {
+        connection.release();
     }
 });
 
@@ -960,56 +1630,97 @@ app.get('/api/labs', async (req, res) => {
     }
 });
 
+// 📂 File: server.js (REPLACE THIS ROUTE)
+
 // POST a new digital lab (Admin/Teacher only)
-// 'upload.single('coverImage')' handles the file upload.
 app.post('/api/labs', upload.fields([{ name: 'coverImage', maxCount: 1 }, { name: 'labFile', maxCount: 1 }]), async (req, res) => {
     const { title, subject, lab_type, description, access_url, created_by } = req.body;
 
-    // The req.files object will contain the uploaded files
     const coverImageFile = req.files['coverImage'] ? req.files['coverImage'][0] : null;
     const labFile = req.files['labFile'] ? req.files['labFile'][0] : null;
 
     const cover_image_url = coverImageFile ? `/uploads/${coverImageFile.filename}` : null;
     const file_path = labFile ? `/uploads/${labFile.filename}` : null;
     
-    // A lab must have either an external URL or an uploaded file
     if (!access_url && !file_path) {
         return res.status(400).json({ message: 'You must provide either an Access URL or upload a Lab File.' });
     }
 
+    const connection = await db.getConnection();
     try {
+        await connection.beginTransaction();
+
+        // Step 1: Insert the new digital lab
         const query = `
             INSERT INTO digital_labs (title, subject, lab_type, description, access_url, file_path, cover_image_url, created_by) 
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `;
-        // Note: access_url can be null if a file is uploaded, and vice-versa
-        await db.query(query, [title, subject, lab_type, description, access_url || null, file_path, cover_image_url, created_by || null]);
-        res.status(201).json({ message: 'Digital lab created successfully!' });
+        await connection.query(query, [title, subject, lab_type, description, access_url || null, file_path, cover_image_url, created_by || null]);
+        
+        // ★★★★★ START: NEW NOTIFICATION LOGIC FOR CREATION ★★★★★
+        
+        // 1. Find all students and teachers (excluding the creator)
+        const [usersToNotify] = await connection.query("SELECT id FROM users WHERE role IN ('student', 'teacher') AND id != ?", [created_by]);
+        
+        if (usersToNotify.length > 0) {
+            // 2. Get the creator's name
+            const [[creator]] = await connection.query("SELECT full_name FROM users WHERE id = ?", [created_by]);
+            const senderName = creator.full_name || "School Administration";
+            
+            // 3. Prepare notification details
+            const recipientIds = usersToNotify.map(u => u.id);
+            const notificationTitle = `New Digital Lab: ${subject}`;
+            const notificationMessage = `A new lab titled "${title}" has been added.`;
+
+            // 4. Send notifications
+            await createBulkNotifications(
+                connection,
+                recipientIds,
+                senderName,
+                notificationTitle,
+                notificationMessage,
+                '/labs' // Generic link to the labs screen
+            );
+        }
+        
+        // ★★★★★ END: NEW NOTIFICATION LOGIC FOR CREATION ★★★★★
+        
+        await connection.commit();
+        res.status(201).json({ message: 'Digital lab created and users notified successfully!' });
+
     } catch (error) {
+        await connection.rollback();
         console.error("POST /api/labs Error:", error);
         res.status(500).json({ message: 'Error creating digital lab.' });
+    } finally {
+        connection.release();
     }
 });
 
 // ... inside the DIGITAL LABS API ROUTES section ...
 
-// PUT (update) an existing lab (Admin/Teacher only)
-// This handles updating text fields and optionally a new cover image.
-// PUT (update) an existing lab (Corrected to handle optional file uploads)
+
+// 📂 File: server.js (REPLACE THIS ROUTE)
+
+// UPDATE an existing lab (Admin/Teacher only)
 app.put('/api/labs/:id', upload.fields([{ name: 'coverImage', maxCount: 1 }, { name: 'labFile', maxCount: 1 }]), async (req, res) => {
     const { id } = req.params;
-    const { title, subject, lab_type, description, access_url } = req.body;
+    const { title, subject, lab_type, description, access_url, created_by } = req.body; // Ensure created_by (editor's ID) is sent
     
+    const connection = await db.getConnection();
     try {
-        const [existingLab] = await db.query('SELECT cover_image_url, file_path FROM digital_labs WHERE id = ?', [id]);
+        await connection.beginTransaction();
+
+        // Step 1: Update the lab details (no change here)
+        const [existingLab] = await connection.query('SELECT cover_image_url, file_path FROM digital_labs WHERE id = ?', [id]);
         if (existingLab.length === 0) {
+            await connection.rollback();
             return res.status(404).json({ message: 'Lab not found.' });
         }
 
         const coverImageFile = req.files['coverImage'] ? req.files['coverImage'][0] : null;
         const labFile = req.files['labFile'] ? req.files['labFile'][0] : null;
 
-        // Use new file if uploaded, otherwise keep the existing path
         let cover_image_url = coverImageFile ? `/uploads/${coverImageFile.filename}` : existingLab[0].cover_image_url;
         let file_path = labFile ? `/uploads/${labFile.filename}` : existingLab[0].file_path;
 
@@ -1018,11 +1729,45 @@ app.put('/api/labs/:id', upload.fields([{ name: 'coverImage', maxCount: 1 }, { n
             title = ?, subject = ?, lab_type = ?, description = ?, access_url = ?, file_path = ?, cover_image_url = ?
             WHERE id = ?
         `;
-        await db.query(query, [title, subject, lab_type, description, access_url || null, file_path, cover_image_url, id]);
-        res.status(200).json({ message: 'Digital lab updated successfully!' });
+        await connection.query(query, [title, subject, lab_type, description, access_url || null, file_path, cover_image_url, id]);
+
+        // ★★★★★ START: NEW NOTIFICATION LOGIC FOR UPDATE ★★★★★
+
+        // 1. Find all students and teachers (excluding the editor)
+        const [usersToNotify] = await connection.query("SELECT id FROM users WHERE role IN ('student', 'teacher') AND id != ?", [created_by]);
+
+        if (usersToNotify.length > 0) {
+            // 2. Get the editor's name
+            const [[editor]] = await connection.query("SELECT full_name FROM users WHERE id = ?", [created_by]);
+            const senderName = editor.full_name || "School Administration";
+            
+            // 3. Prepare notification details
+            const recipientIds = usersToNotify.map(u => u.id);
+            const notificationTitle = `Digital Lab Updated: ${subject}`;
+            const notificationMessage = `The lab "${title}" has been updated. Please check for new content.`;
+
+            // 4. Send notifications
+            await createBulkNotifications(
+                connection,
+                recipientIds,
+                senderName,
+                notificationTitle,
+                notificationMessage,
+                '/labs'
+            );
+        }
+
+        // ★★★★★ END: NEW NOTIFICATION LOGIC FOR UPDATE ★★★★★
+
+        await connection.commit();
+        res.status(200).json({ message: 'Digital lab updated and users notified successfully!' });
+
     } catch (error) {
+        await connection.rollback();
         console.error("PUT /api/labs/:id Error:", error);
         res.status(500).json({ message: 'Error updating digital lab.' });
+    } finally {
+        connection.release();
     }
 });
 
@@ -1099,19 +1844,58 @@ app.get('/api/homework/teacher/:teacherId', async (req, res) => {
     }
 });
 
+// 📂 File: server.js (MODIFY this route)
+
 // Create a new homework assignment
 app.post('/api/homework', upload.single('attachment'), async (req, res) => {
     const { title, description, class_group, subject, due_date, teacher_id } = req.body;
+    console.log('[HOMEWORK CREATE] Received request:', { title, class_group, subject, teacher_id }); // DEBUG LOG
+
     const attachment_path = req.file ? `/uploads/${req.file.filename}` : null;
+    const connection = await db.getConnection();
+    
     try {
+        await connection.beginTransaction();
+
+        // Step 1: Insert the homework
         const query = `INSERT INTO homework_assignments (title, description, class_group, subject, due_date, teacher_id, attachment_path) VALUES (?, ?, ?, ?, ?, ?, ?)`;
-        await db.query(query, [title, description, class_group, subject, due_date, teacher_id, attachment_path]);
+        const [assignmentResult] = await connection.query(query, [title, description, class_group, subject, due_date, teacher_id, attachment_path]);
+        const newAssignmentId = assignmentResult.insertId;
+        console.log(`[HOMEWORK CREATE] Homework created with ID: ${newAssignmentId}`);
+
+        // Step 2: Find the teacher and students for the notification
+        const [[teacher]] = await connection.query('SELECT full_name FROM users WHERE id = ?', [teacher_id]);
+        const [students] = await connection.query('SELECT id FROM users WHERE role = "student" AND class_group = ?', [class_group]);
+        
+        console.log(`[HOMEWORK CREATE] Found ${students.length} students in class group "${class_group}".`); // DEBUG LOG
+
+        if (students.length > 0) {
+            const studentIds = students.map(s => s.id);
+            console.log(`[HOMEWORK CREATE] Sending notifications to student IDs:`, studentIds);
+
+            // ★★★ Step 3: CREATE NOTIFICATIONS within the transaction ★★★
+            await createBulkNotifications(
+                connection, // Pass the transaction connection
+                studentIds,
+                teacher.full_name,
+                `New Homework: ${subject}`,
+                title,
+                `/homework/${newAssignmentId}`
+            );
+        }
+        
+        await connection.commit();
         res.status(201).json({ message: 'Homework created successfully.' });
+
     } catch (error) { 
-        console.error('Error creating homework:', error);
+        await connection.rollback();
+        console.error('[HOMEWORK CREATE ERROR] Transaction rolled back:', error);
         res.status(500).json({ message: 'Error creating homework.' }); 
+    } finally {
+        connection.release();
     }
 });
+
 
 // Update an existing homework assignment (Note: uses POST for multipart/form-data compatibility)
 app.post('/api/homework/:assignmentId', upload.single('attachment'), async (req, res) => {
@@ -1214,7 +1998,7 @@ app.get('/api/homework/student/:studentId/:classGroup', async (req, res) => {
 
 // ✅ --- NEW ROUTE ADDED TO FIX THE SUBMISSION ERROR --- ✅
 // Student submits a homework file
-// The frontend sends the file under the field name 'submission'
+
 app.post('/api/homework/submit/:assignmentId', upload.single('submission'), async (req, res) => {
     const { assignmentId } = req.params;
     const { student_id } = req.body;
@@ -1224,27 +2008,50 @@ app.post('/api/homework/submit/:assignmentId', upload.single('submission'), asyn
     }
     
     const submission_path = `/uploads/${req.file.filename}`;
+    const connection = await db.getConnection();
     
     try {
-        // First, check if a submission already exists to prevent duplicates
-        const [existing] = await db.query(
-            'SELECT id FROM homework_submissions WHERE assignment_id = ? AND student_id = ?',
-            [assignmentId, student_id]
-        );
-
+        await connection.beginTransaction();
+        
+        const [existing] = await connection.query( 'SELECT id FROM homework_submissions WHERE assignment_id = ? AND student_id = ?', [assignmentId, student_id]);
         if (existing.length > 0) {
+            await connection.rollback(); // No changes needed, but good practice
             return res.status(409).json({ message: 'You have already submitted this homework.' });
         }
 
-        const query = `
-            INSERT INTO homework_submissions (assignment_id, student_id, submission_path, status) 
-            VALUES (?, ?, ?, 'Submitted')
-        `;
-        await db.query(query, [assignmentId, student_id, submission_path]);
+        // Step 1: Insert the submission
+        const query = `INSERT INTO homework_submissions (assignment_id, student_id, submission_path, status) VALUES (?, ?, ?, 'Submitted')`;
+        await connection.query(query, [assignmentId, student_id, submission_path]);
+        
+        // Step 2: Find assignment and student details
+        const [[assignment]] = await connection.query('SELECT teacher_id, title FROM homework_assignments WHERE id = ?', [assignmentId]);
+        const [[student]] = await connection.query('SELECT full_name, class_group FROM users WHERE id = ?', [student_id]);
+
+        if (assignment && student) {
+            // ★ 2. CONSTRUCT THE NEW MESSAGE ★
+            // Create the new, more descriptive message string.
+            const notificationMessage = `${student.full_name} (${student.class_group}) has submitted their homework.`;
+
+             // Step 3: Create the notification with the new message
+             await createNotification(
+                connection,
+                assignment.teacher_id,
+                student.full_name,
+                `Submission for: ${assignment.title}`,
+                notificationMessage, // Use the new message here
+                `/submissions/${assignmentId}`
+            );
+        }
+        
+        await connection.commit();
         res.status(201).json({ message: 'Homework submitted successfully.' });
+
     } catch (error) {
-        console.error('Error submitting homework:', error);
+        await connection.rollback();
+        console.error('[HOMEWORK SUBMIT ERROR] Transaction rolled back:', error);
         res.status(500).json({ message: 'Database error during homework submission.' });
+    } finally {
+        connection.release();
     }
 });
 
@@ -1294,35 +2101,123 @@ app.post('/api/exam-schedules', async (req, res) => {
     if (!class_group || !title || !schedule_data || !created_by_id) {
         return res.status(400).json({ message: "Missing required fields." });
     }
+
+    const connection = await db.getConnection();
     try {
+        await connection.beginTransaction();
+
+        // Step 1: Create the exam schedule record
         const query = `
             INSERT INTO exam_schedules (class_group, title, subtitle, schedule_data, created_by_id)
             VALUES (?, ?, ?, ?, ?)
         `;
-        // Ensure schedule_data is stored as a JSON string
-        await db.query(query, [class_group, title, subtitle, JSON.stringify(schedule_data), created_by_id]);
-        res.status(201).json({ message: "Exam schedule created successfully." });
+        await connection.query(query, [class_group, title, subtitle, JSON.stringify(schedule_data), created_by_id]);
+        
+        // ★★★★★ START: NEW NOTIFICATION LOGIC FOR CREATION ★★★★★
+
+        // 1. Find all students in the affected class group
+        const [students] = await connection.query("SELECT id FROM users WHERE role = 'student' AND class_group = ?", [class_group]);
+        const studentIds = students.map(s => s.id);
+
+        // 2. Find all unique teachers assigned to that class in the main timetable
+        const [teachers] = await connection.query("SELECT DISTINCT teacher_id FROM timetables WHERE class_group = ?", [class_group]);
+        const teacherIds = teachers.map(t => t.teacher_id);
+        
+        // 3. Combine lists, ensuring no duplicates
+        const allRecipientIds = [...new Set([...studentIds, ...teacherIds])];
+
+        // 4. Prepare notification details
+        const [[admin]] = await connection.query("SELECT full_name FROM users WHERE id = ?", [created_by_id]);
+        const senderName = admin.full_name || "School Administration";
+        const notificationTitle = `New Exam Schedule Published`;
+        const notificationMessage = `The schedule for "${title}" (${class_group}) has been published. Please check the details.`;
+
+        // 5. Send notifications
+        if (allRecipientIds.length > 0) {
+            await createBulkNotifications(
+                connection,
+                allRecipientIds,
+                senderName,
+                notificationTitle,
+                notificationMessage,
+                '/exam-schedule' // A generic link to the exam schedule screen
+            );
+        }
+
+        // ★★★★★ END: NEW NOTIFICATION LOGIC FOR CREATION ★★★★★
+
+        await connection.commit();
+        res.status(201).json({ message: "Exam schedule created and users notified successfully." });
+
     } catch (error) {
+        await connection.rollback();
         console.error("Error creating exam schedule:", error);
         res.status(500).json({ message: "Failed to create exam schedule." });
+    } finally {
+        connection.release();
     }
 });
 
 // Update an existing exam schedule
 app.put('/api/exam-schedules/:id', async (req, res) => {
     const { id } = req.params;
-    const { class_group, title, subtitle, schedule_data } = req.body;
+    const { class_group, title, subtitle, schedule_data, created_by_id } = req.body; // Assuming created_by_id is passed on update as well for sender info
+
+    const connection = await db.getConnection();
     try {
+        await connection.beginTransaction();
+
+        // Step 1: Update the schedule record
         const query = `
             UPDATE exam_schedules 
             SET class_group = ?, title = ?, subtitle = ?, schedule_data = ?
             WHERE id = ?
         `;
-        await db.query(query, [class_group, title, subtitle, JSON.stringify(schedule_data), id]);
-        res.status(200).json({ message: "Exam schedule updated successfully." });
+        await connection.query(query, [class_group, title, subtitle, JSON.stringify(schedule_data), id]);
+
+        // ★★★★★ START: NEW NOTIFICATION LOGIC FOR UPDATE ★★★★★
+
+        // 1. Find all students in the affected class group
+        const [students] = await connection.query("SELECT id FROM users WHERE role = 'student' AND class_group = ?", [class_group]);
+        const studentIds = students.map(s => s.id);
+
+        // 2. Find all unique teachers assigned to that class in the main timetable
+        const [teachers] = await connection.query("SELECT DISTINCT teacher_id FROM timetables WHERE class_group = ?", [class_group]);
+        const teacherIds = teachers.map(t => t.teacher_id);
+        
+        // 3. Combine lists, ensuring no duplicates
+        const allRecipientIds = [...new Set([...studentIds, ...teacherIds])];
+
+        // 4. Prepare notification details. We need the admin's name who made the change.
+        // For this to work, ensure the `user.id` of the admin is passed from the form as `created_by_id`.
+        const [[admin]] = await connection.query("SELECT full_name FROM users WHERE id = ?", [created_by_id]);
+        const senderName = admin.full_name || "School Administration";
+        const notificationTitle = `Exam Schedule Updated`;
+        const notificationMessage = `The schedule for "${title}" (${class_group}) has been modified. Please review the updated details.`;
+
+        // 5. Send notifications
+        if (allRecipientIds.length > 0) {
+            await createBulkNotifications(
+                connection,
+                allRecipientIds,
+                senderName,
+                notificationTitle,
+                notificationMessage,
+                '/exam-schedule'
+            );
+        }
+
+        // ★★★★★ END: NEW NOTIFICATION LOGIC FOR UPDATE ★★★★★
+
+        await connection.commit();
+        res.status(200).json({ message: "Exam schedule updated and users notified successfully." });
+
     } catch (error) {
+        await connection.rollback();
         console.error("Error updating exam schedule:", error);
         res.status(500).json({ message: "Failed to update exam schedule." });
+    } finally {
+        connection.release();
     }
 });
 
@@ -1370,6 +2265,8 @@ app.get('/api/exam-schedules/class/:classGroup', async (req, res) => {
 
 // --- TEACHER / ADMIN ROUTES ---
 
+// 📂 File: server.js (REPLACE THIS ROUTE)
+
 // CREATE a new exam
 app.post('/api/exams', async (req, res) => {
     const { title, description, class_group, time_limit_mins, questions, teacher_id } = req.body;
@@ -1377,20 +2274,53 @@ app.post('/api/exams', async (req, res) => {
     if (!title || !class_group || !questions || !Array.isArray(questions) || questions.length === 0) {
         return res.status(400).json({ message: "Title, class group, and at least one question are required." });
     }
+    
     const connection = await db.getConnection();
     try {
         await connection.beginTransaction();
+
+        // Step 1: Create the exam and its questions (no change here)
         const total_marks = questions.reduce((sum, q) => sum + (parseInt(q.marks, 10) || 0), 0);
-        await connection.query('INSERT INTO exams (title, description, class_group, time_limit_mins, created_by, total_marks, status) VALUES (?, ?, ?, ?, ?, ?, ?)', [title, description, class_group, time_limit_mins, teacher_id, total_marks, 'published']);
-        const [lastIdResult] = await connection.query('SELECT LAST_INSERT_ID() as exam_id');
-        const exam_id = lastIdResult[0].exam_id;
+        const [examResult] = await connection.query('INSERT INTO exams (title, description, class_group, time_limit_mins, created_by, total_marks, status) VALUES (?, ?, ?, ?, ?, ?, ?)', [title, description, class_group, time_limit_mins, teacher_id, total_marks, 'published']);
+        const exam_id = examResult.insertId;
+
         if (questions.length > 0) {
             const questionQuery = 'INSERT INTO exam_questions (exam_id, question_text, question_type, options, correct_answer, marks) VALUES ?';
             const questionValues = questions.map(q => [exam_id, q.question_text, q.question_type, q.question_type === 'multiple_choice' ? JSON.stringify(q.options) : null, q.correct_answer, q.marks]);
             await connection.query(questionQuery, [questionValues]);
         }
+
+        // ★★★★★ START: NEW NOTIFICATION LOGIC ★★★★★
+        
+        // 1. Find all students in the affected class group
+        const [students] = await connection.query("SELECT id FROM users WHERE role = 'student' AND class_group = ?", [class_group]);
+        
+        if (students.length > 0) {
+            // 2. Get the creator's name for the notification
+            const [[teacher]] = await connection.query("SELECT full_name FROM users WHERE id = ?", [teacher_id]);
+            const senderName = teacher.full_name || "School Administration";
+            
+            // 3. Prepare notification details
+            const studentIds = students.map(s => s.id);
+            const notificationTitle = `New Exam Published: ${title}`;
+            const notificationMessage = `An exam for your class (${class_group}) has been published. Please check the details.`;
+
+            // 4. Send notifications to all students in the class
+            await createBulkNotifications(
+                connection,
+                studentIds,
+                senderName,
+                notificationTitle,
+                notificationMessage,
+                '/exams' // Generic link to the exams screen
+            );
+        }
+
+        // ★★★★★ END: NEW NOTIFICATION LOGIC ★★★★★
+
         await connection.commit();
-        res.status(201).json({ message: 'Exam created successfully!', exam_id });
+        res.status(201).json({ message: 'Exam created successfully and students notified!', exam_id });
+
     } catch (error) {
         await connection.rollback();
         console.error("Error in POST /api/exams:", error);
@@ -1427,23 +2357,59 @@ app.get('/api/exams/:examId', async (req, res) => {
     }
 });
 
+// 📂 File: server.js (REPLACE THIS ROUTE)
+
 // UPDATE an existing exam
 app.put('/api/exams/:examId', async (req, res) => {
     const { examId } = req.params;
-    const { title, description, class_group, time_limit_mins, questions } = req.body;
+    const { title, description, class_group, time_limit_mins, questions, teacher_id } = req.body; // Assuming teacher_id is passed for sender info
+    
     const connection = await db.getConnection();
     try {
         await connection.beginTransaction();
+
+        // Step 1: Update exam and questions (no change here)
         const total_marks = questions.reduce((sum, q) => sum + (parseInt(q.marks, 10) || 0), 0);
         await connection.query('UPDATE exams SET title = ?, description = ?, class_group = ?, time_limit_mins = ?, total_marks = ? WHERE exam_id = ?', [title, description, class_group, time_limit_mins, total_marks, examId]);
+        
         await connection.query('DELETE FROM exam_questions WHERE exam_id = ?', [examId]);
         if (questions.length > 0) {
             const questionQuery = 'INSERT INTO exam_questions (exam_id, question_text, question_type, options, correct_answer, marks) VALUES ?';
             const questionValues = questions.map(q => [examId, q.question_text, q.question_type, q.question_type === 'multiple_choice' ? JSON.stringify(q.options) : null, q.correct_answer, q.marks]);
             await connection.query(questionQuery, [questionValues]);
         }
+
+        // ★★★★★ START: NEW NOTIFICATION LOGIC FOR UPDATE ★★★★★
+
+        // 1. Find all students in the affected class group
+        const [students] = await connection.query("SELECT id FROM users WHERE role = 'student' AND class_group = ?", [class_group]);
+        
+        if (students.length > 0) {
+            // 2. Get the creator/editor's name for the notification
+            const [[teacher]] = await connection.query("SELECT full_name FROM users WHERE id = ?", [teacher_id]);
+            const senderName = teacher.full_name || "School Administration";
+
+            // 3. Prepare notification details
+            const studentIds = students.map(s => s.id);
+            const notificationTitle = `Exam Updated: ${title}`;
+            const notificationMessage = `Details for the exam "${title}" have been updated. Please review the changes.`;
+
+            // 4. Send notifications to all students in the class
+            await createBulkNotifications(
+                connection,
+                studentIds,
+                senderName,
+                notificationTitle,
+                notificationMessage,
+                '/exams'
+            );
+        }
+        
+        // ★★★★★ END: NEW NOTIFICATION LOGIC FOR UPDATE ★★★★★
+
         await connection.commit();
-        res.status(200).json({ message: 'Exam updated successfully!' });
+        res.status(200).json({ message: 'Exam updated successfully and students notified!' });
+
     } catch (error) {
         await connection.rollback();
         console.error("Error in PUT /api/exams/:examId:", error);
@@ -1635,6 +2601,8 @@ app.get('/api/attempts/:attemptId/result', async (req, res) => {
 
 // --- TEACHER / ADMIN ROUTES ---
 
+// 📂 File: server.js (REPLACE THIS ROUTE)
+
 // CREATE: Upload a new study material
 app.post('/api/study-materials', upload.single('materialFile'), async (req, res) => {
     const { title, description, class_group, subject, material_type, external_link, uploaded_by } = req.body;
@@ -1643,18 +2611,55 @@ app.post('/api/study-materials', upload.single('materialFile'), async (req, res)
     if (!title || !class_group || !material_type || !uploaded_by) {
         return res.status(400).json({ message: "Title, class group, type, and uploader ID are required." });
     }
-    // A material must have either a file or an external link
     if (!file_path && !external_link) {
         return res.status(400).json({ message: "You must provide either a file or an external link." });
     }
 
+    const connection = await db.getConnection();
     try {
+        await connection.beginTransaction();
+
+        // Step 1: Insert the study material
         const query = `INSERT INTO study_materials (title, description, class_group, subject, material_type, file_path, external_link, uploaded_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
-        await db.query(query, [title, description, class_group, subject, material_type, file_path, external_link || null, uploaded_by]);
-        res.status(201).json({ message: 'Study material uploaded successfully.' });
+        await connection.query(query, [title, description, class_group, subject, material_type, file_path, external_link || null, uploaded_by]);
+
+        // ★★★★★ START: NEW NOTIFICATION LOGIC FOR CREATION ★★★★★
+        
+        // 1. Find all students in the affected class group
+        const [students] = await connection.query("SELECT id FROM users WHERE role = 'student' AND class_group = ?", [class_group]);
+        
+        if (students.length > 0) {
+            // 2. Get the uploader's name for the notification
+            const [[uploader]] = await connection.query("SELECT full_name FROM users WHERE id = ?", [uploaded_by]);
+            const senderName = uploader.full_name || "School Administration";
+            
+            // 3. Prepare notification details
+            const studentIds = students.map(s => s.id);
+            const notificationTitle = `New Study Material: ${subject || 'General'}`;
+            const notificationMessage = `"${title}" has been added for your class.`;
+
+            // 4. Send notifications
+            await createBulkNotifications(
+                connection,
+                studentIds,
+                senderName,
+                notificationTitle,
+                notificationMessage,
+                '/study-materials' // Generic link to the study materials screen
+            );
+        }
+
+        // ★★★★★ END: NEW NOTIFICATION LOGIC FOR CREATION ★★★★★
+
+        await connection.commit();
+        res.status(201).json({ message: 'Study material uploaded and students notified.' });
+
     } catch (error) {
+        await connection.rollback();
         console.error("Error creating study material:", error);
         res.status(500).json({ message: 'Failed to upload study material.' });
+    } finally {
+        connection.release();
     }
 });
 
@@ -1671,29 +2676,67 @@ app.get('/api/study-materials/teacher/:teacherId', async (req, res) => {
     }
 });
 
+// 📂 File: server.js (REPLACE THIS ROUTE)
+
 // UPDATE: Edit an existing study material
 app.put('/api/study-materials/:materialId', upload.single('materialFile'), async (req, res) => {
     const { materialId } = req.params;
-    const { title, description, class_group, subject, material_type, external_link, existing_file_path } = req.body;
+    const { title, description, class_group, subject, material_type, external_link, existing_file_path, uploaded_by } = req.body; // Assuming uploaded_by is sent
     
+    const connection = await db.getConnection();
     try {
+        await connection.beginTransaction();
+
+        // Step 1: Update the study material (logic to handle file path is the same)
         let file_path = existing_file_path || null;
         if (req.file) {
             file_path = `/uploads/${req.file.filename}`;
-            // Optional: Delete the old file if a new one is uploaded
             if (existing_file_path) {
-                fs.unlink(path.join(__dirname, existing_file_path), (err) => {
-                    if (err) console.error("Error deleting old material file:", err);
+                fs.unlink(path.join(__dirname, existing_file_path.replace(/\\/g, "/")), (err) => {
+                    if (err) console.error("Could not delete old material file on update:", err);
                 });
             }
         }
-
         const query = `UPDATE study_materials SET title = ?, description = ?, class_group = ?, subject = ?, material_type = ?, file_path = ?, external_link = ? WHERE material_id = ?`;
-        await db.query(query, [title, description, class_group, subject, material_type, file_path, external_link || null, materialId]);
-        res.status(200).json({ message: 'Study material updated successfully.' });
+        await connection.query(query, [title, description, class_group, subject, material_type, file_path, external_link || null, materialId]);
+
+        // ★★★★★ START: NEW NOTIFICATION LOGIC FOR UPDATE ★★★★★
+        
+        // 1. Find all students in the affected class group
+        const [students] = await connection.query("SELECT id FROM users WHERE role = 'student' AND class_group = ?", [class_group]);
+        
+        if (students.length > 0) {
+            // 2. Get the uploader's/editor's name for the notification
+            const [[uploader]] = await connection.query("SELECT full_name FROM users WHERE id = ?", [uploaded_by]);
+            const senderName = uploader.full_name || "School Administration";
+            
+            // 3. Prepare notification details
+            const studentIds = students.map(s => s.id);
+            const notificationTitle = `Study Material Updated: ${subject || 'General'}`;
+            const notificationMessage = `The material "${title}" has been updated. Please check for new content.`;
+
+            // 4. Send notifications
+            await createBulkNotifications(
+                connection,
+                studentIds,
+                senderName,
+                notificationTitle,
+                notificationMessage,
+                '/study-materials'
+            );
+        }
+        
+        // ★★★★★ END: NEW NOTIFICATION LOGIC FOR UPDATE ★★★★★
+
+        await connection.commit();
+        res.status(200).json({ message: 'Study material updated and students notified successfully.' });
+
     } catch (error) {
+        await connection.rollback();
         console.error("Error updating study material:", error);
         res.status(500).json({ message: 'Failed to update study material.' });
+    } finally {
+        connection.release();
     }
 });
 
@@ -1765,6 +2808,8 @@ app.get('/api/reports/class/:classGroup/students', async (req, res) => {
     }
 });
 
+// 📂 File: server.js (REPLACE THIS ROUTE)
+
 // CREATE a new progress report
 app.post('/api/reports', async (req, res) => {
     const { reportDetails, subjectsData, uploaded_by } = req.body;
@@ -1776,10 +2821,13 @@ app.post('/api/reports', async (req, res) => {
     const connection = await db.getConnection();
     try {
         await connection.beginTransaction();
+
+        // Step 1: Create the report and subject entries (no change here)
         const reportQuery = `INSERT INTO progress_reports (student_id, class_group, report_title, issue_date, overall_grade, teacher_comments, sgpa, cgpa, total_backlog, result_status, uploaded_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
         const reportValues = [student_id, class_group, report_title, issue_date, overall_grade, teacher_comments, sgpa || null, cgpa || null, total_backlog || 0, result_status, uploaded_by];
         const [reportResult] = await connection.query(reportQuery, reportValues);
         const report_id = reportResult.insertId;
+
         if (subjectsData && subjectsData.length > 0) {
             const subjectsQuery = `INSERT INTO report_subjects (report_id, subject_code, subject_name, credit, grade, grade_point, credit_point) VALUES ?`;
             const subjectValues = subjectsData.map(s => [ report_id, s.subject_code || null, s.subject_name, s.credit === '' ? null : s.credit, s.grade || null, s.grade_point === '' ? null : s.grade_point, s.credit_point === '' ? null : s.credit_point ]).filter(s => s[2] && s[2].trim() !== '');
@@ -1787,8 +2835,32 @@ app.post('/api/reports', async (req, res) => {
                 await connection.query(subjectsQuery, [subjectValues]);
             }
         }
+        
+        // ★★★★★ START: NEW NOTIFICATION LOGIC FOR CREATION ★★★★★
+        
+        // 1. Get the name of the teacher/admin who uploaded the report
+        const [[uploader]] = await connection.query("SELECT full_name FROM users WHERE id = ?", [uploaded_by]);
+        const senderName = uploader.full_name || "School Administration";
+
+        // 2. Prepare notification details for the student
+        const notificationTitle = `New Report Published: ${report_title}`;
+        const notificationMessage = `Your progress report for "${report_title}" has been published. You can view or download it now.`;
+
+        // 3. Send a single notification to the specific student
+        await createNotification(
+            connection,
+            student_id,
+            senderName,
+            notificationTitle,
+            notificationMessage,
+            `/reports/${report_id}` // Link to the specific report
+        );
+
+        // ★★★★★ END: NEW NOTIFICATION LOGIC FOR CREATION ★★★★★
+
         await connection.commit();
-        res.status(201).json({ message: 'Progress report created successfully.', report_id });
+        res.status(201).json({ message: 'Progress report created successfully and student notified.', report_id });
+
     } catch (error) {
         await connection.rollback();
         console.error("Error creating progress report:", error);
@@ -1798,37 +2870,30 @@ app.post('/api/reports', async (req, res) => {
     }
 });
 
-// UPDATE an existing progress report (FIXED)
+// 📂 File: server.js (REPLACE THIS ROUTE)
+
+// UPDATE an existing progress report
 app.put('/api/reports/:reportId', async (req, res) => {
     const { reportId } = req.params;
-    const { reportDetails, subjectsData } = req.body;
+    const { reportDetails, subjectsData, uploaded_by } = req.body; // Ensure 'uploaded_by' is sent from the form on update
     const { report_title, issue_date, overall_grade, teacher_comments, sgpa, cgpa, total_backlog, result_status } = reportDetails;
 
     const connection = await db.getConnection();
     try {
         await connection.beginTransaction();
 
-        // Step 1: Update the main report details
-        const reportQuery = `
-            UPDATE progress_reports SET 
-            report_title = ?, issue_date = ?, overall_grade = ?, teacher_comments = ?, 
-            sgpa = ?, cgpa = ?, total_backlog = ?, result_status = ? 
-            WHERE report_id = ?
-        `;
-        // ✅ CRITICAL FIX: Sanitize the issue_date. If it's an empty string, use NULL.
+        // --- Step 1 & 2: Update report and subjects (no change here) ---
+        const reportQuery = `UPDATE progress_reports SET report_title = ?, issue_date = ?, overall_grade = ?, teacher_comments = ?, sgpa = ?, cgpa = ?, total_backlog = ?, result_status = ? WHERE report_id = ?`;
         const sanitized_issue_date = issue_date === '' ? null : issue_date;
         await connection.query(reportQuery, [report_title, sanitized_issue_date, overall_grade, teacher_comments, sgpa || null, cgpa || null, total_backlog || 0, result_status, reportId]);
 
-        // Step 2: Delete all old subject entries for this report
         await connection.query('DELETE FROM report_subjects WHERE report_id = ?', [reportId]);
         
-        // Step 3: Insert the new, updated list of subjects
         if (subjectsData && subjectsData.length > 0) {
             const subjectsQuery = `INSERT INTO report_subjects (report_id, subject_code, subject_name, credit, grade, grade_point, credit_point) VALUES ?`;
             const subjectValues = subjectsData.map(s => [
                 reportId, s.subject_code || null, s.subject_name,
-                s.credit === '' ? null : s.credit, 
-                s.grade || null,
+                s.credit === '' ? null : s.credit, s.grade || null,
                 s.grade_point === '' ? null : s.grade_point,
                 s.credit_point === '' ? null : s.credit_point
             ]).filter(s => s[2] && s[2].trim() !== '');
@@ -1837,9 +2902,37 @@ app.put('/api/reports/:reportId', async (req, res) => {
                 await connection.query(subjectsQuery, [subjectValues]);
             }
         }
+        
+        // ★★★★★ START: NEW NOTIFICATION LOGIC FOR UPDATE ★★★★★
+
+        // 1. Get the student's ID from the report we just updated
+        const [[report]] = await connection.query("SELECT student_id FROM progress_reports WHERE report_id = ?", [reportId]);
+
+        if (report) {
+            // 2. Get the name of the teacher/admin who updated the report
+            const [[uploader]] = await connection.query("SELECT full_name FROM users WHERE id = ?", [uploaded_by]);
+            const senderName = uploader.full_name || "School Administration";
+
+            // 3. Prepare notification details
+            const notificationTitle = `Report Updated: ${report_title}`;
+            const notificationMessage = `Your progress report for "${report_title}" has been updated. Please review the changes.`;
+
+            // 4. Send the notification to the student
+            await createNotification(
+                connection,
+                report.student_id,
+                senderName,
+                notificationTitle,
+                notificationMessage,
+                `/reports/${reportId}`
+            );
+        }
+        
+        // ★★★★★ END: NEW NOTIFICATION LOGIC FOR UPDATE ★★★★★
 
         await connection.commit();
-        res.status(200).json({ message: 'Progress report updated successfully.' });
+        res.status(200).json({ message: 'Progress report updated and student notified successfully.' });
+
     } catch (error) {
         await connection.rollback();
         console.error("Error updating progress report:", error);
@@ -1959,6 +3052,31 @@ app.post('/api/syllabus/create', async (req, res) => {
             }
             await connection.query("INSERT INTO syllabus_progress (student_id, lesson_id) VALUES ?", [progressRecords]);
         }
+        // ★★★★★ START: NEW NOTIFICATION LOGIC ★★★★★
+
+        // 1. Find the assigned teacher and all students in the class
+        const teacherId = creator_id;
+        const studentIds = students.map(s => s.id);
+        const allRecipientIds = [teacherId, ...studentIds];
+
+        // 2. Prepare notification details
+        const notificationTitle = `New Syllabus: ${subject_name}`;
+        const notificationMessage = `A new syllabus for ${subject_name} has been assigned to ${class_group}.`;
+        const senderName = "School Administration";
+
+        // 3. Send notifications to the teacher and all students
+        if (allRecipientIds.length > 0) {
+            await createBulkNotifications(
+                connection,
+                allRecipientIds,
+                senderName,
+                notificationTitle,
+                notificationMessage,
+                '/syllabus' // A generic link to the syllabus section
+            );
+        }
+        
+        // ★★★★★ END: NEW NOTIFICATION LOGIC ★★★★★
         await connection.commit();
         res.status(201).json({ message: 'Syllabus created successfully!', syllabusId: newSyllabusId });
     } catch (error) {
@@ -1966,6 +3084,86 @@ app.post('/api/syllabus/create', async (req, res) => {
         console.error("Error creating syllabus:", error);
         if (error.code === 'ER_DUP_ENTRY') return res.status(409).json({ message: 'A syllabus for this class and subject already exists.' });
         res.status(500).json({ message: 'Error creating syllabus.' });
+    } finally {
+        connection.release();
+    }
+});
+
+// 📂 File: backend/server.js (ADD THIS NEW ROUTE)
+
+// ADMIN: UPDATE an existing syllabus (replaces lessons)
+app.put('/api/syllabus/:syllabusId', async (req, res) => {
+    const { syllabusId } = req.params;
+    const { lessons, creator_id } = req.body; // creator_id is the teacher_id
+
+    if (!lessons || !creator_id) {
+        return res.status(400).json({ message: "Lessons and creator ID are required." });
+    }
+
+    const connection = await db.getConnection();
+    try {
+        await connection.beginTransaction();
+
+        // Step 1: Get existing syllabus details for notifications and validation
+        const [[syllabus]] = await connection.query("SELECT class_group, subject_name FROM syllabuses WHERE id = ?", [syllabusId]);
+        if (!syllabus) {
+            await connection.rollback();
+            return res.status(404).json({ message: "Syllabus not found." });
+        }
+
+        // Step 2: Delete all old lessons and their progress records (cascading delete)
+        await connection.query("DELETE FROM syllabus_lessons WHERE syllabus_id = ?", [syllabusId]);
+
+        // Step 3: Insert the new set of lessons
+        const lessonValues = lessons.map(lesson => [syllabusId, lesson.lessonName, lesson.dueDate]);
+        await connection.query('INSERT INTO syllabus_lessons (syllabus_id, lesson_name, due_date) VALUES ?', [lessonValues]);
+
+        // Step 4: Re-create progress records for all students for the new lessons
+        const [students] = await connection.query("SELECT id FROM users WHERE role = 'student' AND class_group = ?", [syllabus.class_group]);
+        const [newlyCreatedLessons] = await connection.query('SELECT id FROM syllabus_lessons WHERE syllabus_id = ?', [syllabusId]);
+
+        if (students.length > 0 && newlyCreatedLessons.length > 0) {
+            const progressRecords = [];
+            for (const student of students) {
+                for (const lesson of newlyCreatedLessons) {
+                    progressRecords.push([student.id, lesson.id]);
+                }
+            }
+            await connection.query("INSERT INTO syllabus_progress (student_id, lesson_id) VALUES ?", [progressRecords]);
+        }
+        
+        // ★★★★★ START: NOTIFICATION LOGIC FOR UPDATE ★★★★★
+        
+        // 1. Find the assigned teacher and all students in the class
+        const studentIds = students.map(s => s.id);
+        const allRecipientIds = [creator_id, ...studentIds]; 
+
+        // 2. Prepare notification details
+        const notificationTitle = `Syllabus Updated: ${syllabus.subject_name}`;
+        const notificationMessage = `The syllabus for ${syllabus.subject_name} (${syllabus.class_group}) has been updated by the administration.`;
+        const senderName = "School Administration";
+
+        // 3. Send notifications
+        if (allRecipientIds.length > 0) {
+            await createBulkNotifications(
+                connection,
+                allRecipientIds,
+                senderName,
+                notificationTitle,
+                notificationMessage,
+                '/syllabus'
+            );
+        }
+        
+        // ★★★★★ END: NOTIFICATION LOGIC FOR UPDATE ★★★★★
+
+        await connection.commit();
+        res.status(200).json({ message: 'Syllabus updated successfully and users notified!' });
+
+    } catch (error) {
+        await connection.rollback();
+        console.error("Error updating syllabus:", error);
+        res.status(500).json({ message: 'Error updating syllabus.' });
     } finally {
         connection.release();
     }
@@ -2049,17 +3247,60 @@ app.patch('/api/syllabus/lesson-status', async (req, res) => {
     if (!class_group || !lesson_id || !status || !teacher_id) {
         return res.status(400).json({ message: "Invalid data provided." });
     }
+    
+    const connection = await db.getConnection(); // Use a transaction
     try {
+        await connection.beginTransaction();
+
+        // Step 1: Update the syllabus progress for all students in the class (No change here)
         const query = `
             UPDATE syllabus_progress sp
             JOIN users u ON sp.student_id = u.id
             SET sp.status = ?, sp.last_updated_by = ? 
             WHERE sp.lesson_id = ? AND u.class_group = ?`;
-        const [result] = await db.query(query, [status, teacher_id, lesson_id, class_group]);
+        const [result] = await connection.query(query, [status, teacher_id, lesson_id, class_group]);
+
+        // ★★★★★ START: NEW NOTIFICATION LOGIC ★★★★★
+
+        // Only send a notification if the status is NOT being reverted to 'Pending'
+        if (status === 'Completed' || status === 'Missed') {
+            
+            // 1. Find all students in the affected class group
+            const [students] = await connection.query("SELECT id FROM users WHERE role = 'student' AND class_group = ?", [class_group]);
+
+            // 2. Get details for the notification message (teacher's name, lesson name)
+            const [[teacher]] = await connection.query("SELECT full_name FROM users WHERE id = ?", [teacher_id]);
+            const [[lesson]] = await connection.query("SELECT lesson_name FROM syllabus_lessons WHERE id = ?", [lesson_id]);
+            
+            // 3. Prepare notification details
+            const notificationTitle = `Syllabus Update: ${lesson.lesson_name}`;
+            const notificationMessage = `${teacher.full_name} has marked the lesson "${lesson.lesson_name}" as ${status}.`;
+            const senderName = teacher.full_name;
+
+            // 4. Send notifications to all students in that class
+            if (students.length > 0) {
+                const studentIds = students.map(s => s.id);
+                await createBulkNotifications(
+                    connection,
+                    studentIds,
+                    senderName,
+                    notificationTitle,
+                    notificationMessage,
+                    '/syllabus'
+                );
+            }
+        }
+        // ★★★★★ END: NEW NOTIFICATION LOGIC ★★★★★
+
+        await connection.commit();
         res.status(200).json({ message: `Lesson marked as ${status} for ${result.affectedRows} students.` });
+
     } catch (error) {
+        await connection.rollback();
         console.error("Error updating lesson status:", error);
         res.status(500).json({ message: 'Error updating lesson status for the class.' });
+    } finally {
+        connection.release();
     }
 });
 
@@ -2108,115 +3349,140 @@ async function geocodeAddress(addressText) {
     throw new Error(`Could not find coordinates for address: "${addressText}"`);
 }
 
+// 📂 File: server.js (REPLACE THIS ROUTE)
+
 // --- CREATE ROUTE ---
 app.post('/api/transport/routes', async (req, res) => {
     const { route_name, driver_name, driver_phone, conductor_name, conductor_phone, stops, city, state, country, created_by } = req.body;
     if (!process.env.OPENROUTESERVICE_API_KEY) return res.status(500).json({ message: "Server configuration error: ORS API key missing." });
     if (!route_name || !stops || stops.length < 2) return res.status(400).json({ message: 'Route Name and at least two boarding points are required.' });
 
+    const connection = await db.getConnection();
     try {
+        // --- Geocoding and Polyline generation (No changes here) ---
         const stopCoordinates = [];
         for (const stop of stops) {
-            try {
-                const fullAddress = `${stop.point}, ${city}, ${state}, ${country}`;
-                const coords = await geocodeAddress(fullAddress);
-                stopCoordinates.push(coords);
-            } catch (geocodingError) {
-                return res.status(400).json({ message: `Could not find location for stop: "${stop.point}". Please provide a more specific name.` });
-            }
+            const fullAddress = `${stop.point}, ${city}, ${state}, ${country}`;
+            const coords = await geocodeAddress(fullAddress);
+            stopCoordinates.push(coords);
         }
-
-        const routeResponse = await ors.calculate({
-            coordinates: stopCoordinates,
-            profile: 'driving-car',
-            format: 'geojson',
-        });
-
-        if (!routeResponse.features || routeResponse.features.length === 0) {
-            throw new Error("OpenRouteService did not return a valid route for the given points.");
-        }
-        
-        const routeGeometry = routeResponse.features[0].geometry.coordinates;
-        const pointsToEncode = routeGeometry.map(p => [p[1], p[0]]); 
-        const routePolyline = encode(pointsToEncode, 5);
-
-        if (!routePolyline || routePolyline.length < 5) {
-            throw new Error("Generated polyline is empty or invalid.");
-        }
-
-        const connection = await db.getConnection();
-        try {
-            await connection.beginTransaction();
-            const routeQuery = 'INSERT INTO transport_routes (route_name, driver_name, driver_phone, conductor_name, conductor_phone, city, state, country, route_path_polyline, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
-            const [routeResult] = await connection.query(routeQuery, [route_name, driver_name, driver_phone, conductor_name, conductor_phone, city, state, country, routePolyline, created_by]);
-            const route_id = routeResult.insertId;
-
-            const stopsQuery = 'INSERT INTO transport_stops (route_id, stop_name, stop_order) VALUES ?';
-            const stopValues = stops.map((stop, index) => [route_id, stop.point, index + 1]);
-            await connection.query(stopsQuery, [stopValues]);
-            
-            await connection.commit();
-            res.status(201).json({ message: 'Route created successfully!' });
-        } catch (dbError) {
-            await connection.rollback();
-            throw dbError;
-        } finally {
-            connection.release();
-        }
-    } catch (error) {
-        res.status(500).json({ message: error.message || 'Failed to calculate route.' });
-    }
-});
-
-// --- UPDATE ROUTE ---
-app.put('/api/transport/routes/:routeId', async (req, res) => {
-    const { routeId } = req.params;
-    const { route_name, driver_name, driver_phone, conductor_name, conductor_phone, stops, city, state, country } = req.body;
-    try {
-        const stopCoordinates = [];
-        for (const stop of stops) {
-            try {
-                const fullAddress = `${stop.point}, ${city}, ${state}, ${country}`;
-                const coords = await geocodeAddress(fullAddress);
-                stopCoordinates.push(coords);
-            } catch (geocodingError) {
-                return res.status(400).json({ message: `Could not find location for stop: "${stop.point}".` });
-            }
-        }
-        
-        const routeResponse = await ors.calculate({
-            coordinates: stopCoordinates,
-            profile: 'driving-car',
-            format: 'geojson',
-        });
-        
-        if (!routeResponse.features || routeResponse.features.length === 0) {
-            throw new Error("OpenRouteService did not return a valid route.");
-        }
-
+        const routeResponse = await ors.calculate({ coordinates: stopCoordinates, profile: 'driving-car', format: 'geojson' });
+        if (!routeResponse.features || routeResponse.features.length === 0) throw new Error("OpenRouteService did not return a valid route.");
         const routeGeometry = routeResponse.features[0].geometry.coordinates;
         const pointsToEncode = routeGeometry.map(p => [p[1], p[0]]);
         const routePolyline = encode(pointsToEncode, 5);
 
-        const connection = await db.getConnection();
-        try {
-            await connection.beginTransaction();
-            const routeQuery = 'UPDATE transport_routes SET route_name = ?, driver_name = ?, driver_phone = ?, conductor_name = ?, conductor_phone = ?, city = ?, state = ?, country = ?, route_path_polyline = ? WHERE route_id = ?';
-            await connection.query(routeQuery, [route_name, driver_name, driver_phone, conductor_name, conductor_phone, city, state, country, routePolyline, routeId]);
-            await connection.query('DELETE FROM transport_stops WHERE route_id = ?', [routeId]);
-            const stopsQuery = 'INSERT INTO transport_stops (route_id, stop_name, stop_order) VALUES ?';
-            const stopValues = stops.map((stop, index) => [routeId, stop.point, index + 1]);
-            await connection.query(stopsQuery, [stopValues]);
-            await connection.commit();
-            res.status(200).json({ message: 'Route updated successfully!' });
-        } catch (dbError) {
-            await connection.rollback();
-            throw dbError;
-        } finally {
-            connection.release();
+        // --- Database Transaction ---
+        await connection.beginTransaction();
+        
+        // Step 1: Insert the new route and its stops (No changes here)
+        const routeQuery = 'INSERT INTO transport_routes (route_name, driver_name, driver_phone, conductor_name, conductor_phone, city, state, country, route_path_polyline, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
+        const [routeResult] = await connection.query(routeQuery, [route_name, driver_name, driver_phone, conductor_name, conductor_phone, city, state, country, routePolyline, created_by]);
+        const route_id = routeResult.insertId;
+        const stopsQuery = 'INSERT INTO transport_stops (route_id, stop_name, stop_order) VALUES ?';
+        const stopValues = stops.map((stop, index) => [route_id, stop.point, index + 1]);
+        await connection.query(stopsQuery, [stopValues]);
+        
+        // ★★★★★ START: NEW NOTIFICATION LOGIC ★★★★★
+        
+        // 1. Find all students and teachers (excluding the admin who created the route)
+        const [usersToNotify] = await connection.query("SELECT id FROM users WHERE role IN ('student', 'teacher') AND id != ?", [created_by]);
+        
+        if (usersToNotify.length > 0) {
+            // 2. Get the admin's name
+            const [[admin]] = await connection.query("SELECT full_name FROM users WHERE id = ?", [created_by]);
+            const senderName = admin.full_name || "Transport Department";
+
+            // 3. Prepare and send notifications
+            const recipientIds = usersToNotify.map(u => u.id);
+            const notificationTitle = "New Transport Route Added";
+            const notificationMessage = `A new bus route, "${route_name}", has been added. Please check if it's relevant for you.`;
+
+            await createBulkNotifications(
+                connection, recipientIds, senderName,
+                notificationTitle, notificationMessage, '/transport'
+            );
         }
+
+        // ★★★★★ END: NEW NOTIFICATION LOGIC ★★★★★
+
+        await connection.commit();
+        res.status(201).json({ message: 'Route created and users notified successfully!' });
+
     } catch (error) {
+        if (connection) await connection.rollback(); // Check if connection exists before rollback
+        console.error("Error creating transport route:", error);
+        res.status(500).json({ message: error.message || 'Failed to create route.' });
+    } finally {
+        if (connection) connection.release();
+    }
+});
+
+// 📂 File: server.js (REPLACE THIS ROUTE)
+
+// --- UPDATE ROUTE ---
+app.put('/api/transport/routes/:routeId', async (req, res) => {
+    const { routeId } = req.params;
+    const { route_name, driver_name, driver_phone, conductor_name, conductor_phone, stops, city, state, country, created_by } = req.body; // Pass created_by (editor's id)
+    
+    const connection = await db.getConnection();
+    try {
+        // --- Geocoding and Polyline generation (No changes here) ---
+        const stopCoordinates = [];
+        for (const stop of stops) {
+            const fullAddress = `${stop.point}, ${city}, ${state}, ${country}`;
+            const coords = await geocodeAddress(fullAddress);
+            stopCoordinates.push(coords);
+        }
+        const routeResponse = await ors.calculate({ coordinates: stopCoordinates, profile: 'driving-car', format: 'geojson' });
+        if (!routeResponse.features || routeResponse.features.length === 0) throw new Error("OpenRouteService did not return a valid route.");
+        const routeGeometry = routeResponse.features[0].geometry.coordinates;
+        const pointsToEncode = routeGeometry.map(p => [p[1], p[0]]);
+        const routePolyline = encode(pointsToEncode, 5);
+
+        // --- Database Transaction ---
+        await connection.beginTransaction();
+        
+        // Step 1: Update the route and stops (No changes here)
+        const routeQuery = 'UPDATE transport_routes SET route_name = ?, driver_name = ?, driver_phone = ?, conductor_name = ?, conductor_phone = ?, city = ?, state = ?, country = ?, route_path_polyline = ? WHERE route_id = ?';
+        await connection.query(routeQuery, [route_name, driver_name, driver_phone, conductor_name, conductor_phone, city, state, country, routePolyline, routeId]);
+        await connection.query('DELETE FROM transport_stops WHERE route_id = ?', [routeId]);
+        const stopsQuery = 'INSERT INTO transport_stops (route_id, stop_name, stop_order) VALUES ?';
+        const stopValues = stops.map((stop, index) => [routeId, stop.point, index + 1]);
+        await connection.query(stopsQuery, [stopValues]);
+
+        // ★★★★★ START: NEW NOTIFICATION LOGIC ★★★★★
+        
+        // 1. Find all students and teachers (excluding the admin who updated the route)
+        const [usersToNotify] = await connection.query("SELECT id FROM users WHERE role IN ('student', 'teacher') AND id != ?", [created_by]);
+        
+        if (usersToNotify.length > 0) {
+            // 2. Get the admin's name
+            const [[admin]] = await connection.query("SELECT full_name FROM users WHERE id = ?", [created_by]);
+            const senderName = admin.full_name || "Transport Department";
+
+            // 3. Prepare and send notifications
+            const recipientIds = usersToNotify.map(u => u.id);
+            const notificationTitle = "Transport Route Updated";
+            const notificationMessage = `The bus route "${route_name}" has been updated. Please review the changes.`;
+
+            await createBulkNotifications(
+                connection, recipientIds, senderName,
+                notificationTitle, notificationMessage, '/transport'
+            );
+        }
+
+        // ★★★★★ END: NEW NOTIFICATION LOGIC ★★★★★
+        
+        await connection.commit();
+        res.status(200).json({ message: 'Route updated and users notified successfully!' });
+
+    } catch (error) {
+        if (connection) await connection.rollback();
+        console.error("Error updating transport route:", error);
         res.status(500).json({ message: error.message || 'Failed to update route.' });
+    } finally {
+        if (connection) connection.release();
     }
 });
 
@@ -2290,15 +3556,15 @@ app.get('/api/gallery', async (req, res) => {
     }
 });
 
-// POST: Upload a new gallery item (Checks for role='admin' in body)
+// 📂 File: server.js (REPLACE THIS ROUTE)
+
+// POST: Upload a new gallery item
 app.post('/api/gallery/upload', galleryUpload.single('media'), async (req, res) => {
-    // We now expect 'role' and 'adminId' to be sent in the form data from the client
     const { title, event_date, role, adminId } = req.body;
     const file = req.file;
 
-    // SECURITY CHECK: Basic role check from request body
     if (role !== 'admin') {
-        if (file) fs.unlinkSync(file.path); // Clean up uploaded file
+        if (file) fs.unlinkSync(file.path);
         return res.status(403).json({ message: "Forbidden: Requires Admin Role." });
     }
 
@@ -2307,18 +3573,54 @@ app.post('/api/gallery/upload', galleryUpload.single('media'), async (req, res) 
         return res.status(400).json({ message: "Missing required fields: adminId, title, event_date, and a media file." });
     }
 
+    const connection = await db.getConnection();
     try {
+        await connection.beginTransaction();
+
+        // Step 1: Insert the gallery item (no change here)
         const file_type = file.mimetype.startsWith('image') ? 'photo' : 'video';
-        const file_path = file.path.replace(/\\/g, "/"); // Standardize path
-
+        const file_path = file.path.replace(/\\/g, "/"); 
         const query = 'INSERT INTO gallery_items (title, event_date, file_path, file_type, uploaded_by) VALUES (?, ?, ?, ?, ?)';
-        const [result] = await db.query(query, [title, event_date, file_path, file_type, adminId]);
+        const [result] = await connection.query(query, [title, event_date, file_path, file_type, adminId]);
+        const newGalleryItemId = result.insertId;
 
-        res.status(201).json({ message: "Media uploaded successfully!", insertId: result.insertId });
+        // ★★★★★ START: NEW NOTIFICATION LOGIC ★★★★★
+        
+        // 1. Find all users who are not the uploading admin
+        const [usersToNotify] = await connection.query("SELECT id FROM users WHERE role IN ('student', 'teacher', 'donor') AND id != ?", [adminId]);
+        
+        if (usersToNotify.length > 0) {
+            // 2. Get the admin's name for the notification
+            const [[admin]] = await connection.query("SELECT full_name FROM users WHERE id = ?", [adminId]);
+            const senderName = admin.full_name || "School Administration";
+
+            // 3. Prepare and send notifications
+            const recipientIds = usersToNotify.map(u => u.id);
+            const notificationTitle = `New Gallery Album: ${title}`;
+            const notificationMessage = `New photos/videos for "${title}" have been added to the gallery. Check them out!`;
+
+            await createBulkNotifications(
+                connection,
+                recipientIds,
+                senderName,
+                notificationTitle,
+                notificationMessage,
+                '/gallery' // Generic link to the gallery screen
+            );
+        }
+
+        // ★★★★★ END: NEW NOTIFICATION LOGIC ★★★★★
+
+        await connection.commit();
+        res.status(201).json({ message: "Media uploaded and users notified successfully!", insertId: newGalleryItemId });
+
     } catch (error) {
-        if (file) fs.unlinkSync(file.path);
+        await connection.rollback();
+        if (file) fs.unlinkSync(file.path); // Clean up the file if the transaction fails
         console.error("POST /api/gallery/upload Error:", error);
         res.status(500).json({ message: "Failed to save gallery item to database." });
+    } finally {
+        connection.release();
     }
 });
 
@@ -2481,6 +3783,8 @@ app.get('/api/suggestions/my-suggestions/:donorId', async (req, res) => {
     } catch (error) { res.status(500).json({ message: 'Error fetching suggestions.' }); }
 });
 
+// 📂 File: server.js (REPLACE THIS ROUTE)
+
 // DONOR: Create a new suggestion thread with an initial message/file
 app.post('/api/suggestions', upload.single('attachment'), async (req, res) => {
     const { donorId, subject, message } = req.body;
@@ -2490,23 +3794,43 @@ app.post('/api/suggestions', upload.single('attachment'), async (req, res) => {
     const connection = await db.getConnection();
     try {
         await connection.beginTransaction();
-        // Create the main suggestion thread
-        const [suggestionResult] = await connection.query(
-            'INSERT INTO suggestions (donor_id, subject) VALUES (?, ?)',
-            [donorId, subject]
-        );
+        
+        // Step 1: Create the suggestion thread and the first message
+        const [suggestionResult] = await connection.query('INSERT INTO suggestions (donor_id, subject) VALUES (?, ?)', [donorId, subject]);
         const newSuggestionId = suggestionResult.insertId;
-
-        // Add the first message to the thread
         const fileUrl = req.file ? `/uploads/${req.file.filename}` : null;
         const fileName = req.file ? req.file.originalname : null;
-        await connection.query(
-            'INSERT INTO suggestion_messages (suggestion_id, user_id, message_text, file_url, file_name) VALUES (?, ?, ?, ?, ?)',
-            [newSuggestionId, donorId, message, fileUrl, fileName]
-        );
+        await connection.query('INSERT INTO suggestion_messages (suggestion_id, user_id, message_text, file_url, file_name) VALUES (?, ?, ?, ?, ?)', [newSuggestionId, donorId, message, fileUrl, fileName]);
+
+        // ★★★★★ START: NEW NOTIFICATION LOGIC ★★★★★
+        
+        // 1. Find all admins
+        const [admins] = await connection.query("SELECT id FROM users WHERE role = 'admin'");
+        
+        if (admins.length > 0) {
+            // 2. Get the donor's name
+            const [[donor]] = await connection.query("SELECT full_name FROM users WHERE id = ?", [donorId]);
+
+            // 3. Prepare and send notifications
+            const adminIds = admins.map(a => a.id);
+            const notificationTitle = `New Suggestion Received`;
+            const notificationMessage = `${donor.full_name} has submitted a new suggestion: "${subject}"`;
+            
+            await createBulkNotifications(
+                connection,
+                adminIds,
+                donor.full_name,
+                notificationTitle,
+                notificationMessage,
+                `/admin/suggestions/${newSuggestionId}` // Link for admins to view the suggestion
+            );
+        }
+
+        // ★★★★★ END: NEW NOTIFICATION LOGIC ★★★★★
 
         await connection.commit();
         res.status(201).json({ message: 'Suggestion submitted successfully!', suggestionId: newSuggestionId });
+
     } catch (error) {
         await connection.rollback();
         console.error("Suggestion Post Error:", error);
@@ -2529,21 +3853,63 @@ app.get('/api/suggestions/:suggestionId', async (req, res) => {
     } catch (error) { res.status(500).json({ message: 'Error fetching suggestion details.' }); }
 });
 
+// 📂 File: server.js (REPLACE THIS ROUTE)
+
 // ADMIN/DONOR: Post a new message/file to an existing thread
 app.post('/api/suggestions/reply', upload.single('attachment'), async (req, res) => {
     const { suggestionId, userId, message } = req.body;
     if (!message && !req.file) {
         return res.status(400).json({ message: 'A message or a file attachment is required.' });
     }
-    const fileUrl = req.file ? `/uploads/${req.file.filename}` : null;
-    const fileName = req.file ? req.file.originalname : null;
+    
+    const connection = await db.getConnection();
     try {
-        await db.query(
-            'INSERT INTO suggestion_messages (suggestion_id, user_id, message_text, file_url, file_name) VALUES (?, ?, ?, ?, ?)',
-            [suggestionId, userId, message, fileUrl, fileName]
-        );
+        await connection.beginTransaction();
+
+        // Step 1: Insert the new reply
+        const fileUrl = req.file ? `/uploads/${req.file.filename}` : null;
+        const fileName = req.file ? req.file.originalname : null;
+        await connection.query('INSERT INTO suggestion_messages (suggestion_id, user_id, message_text, file_url, file_name) VALUES (?, ?, ?, ?, ?)', [suggestionId, userId, message, fileUrl, fileName]);
+
+        // ★★★★★ START: NEW NOTIFICATION LOGIC ★★★★★
+        
+        // 1. Get info about the replier and the suggestion's original creator
+        const [[replier]] = await connection.query("SELECT full_name, role FROM users WHERE id = ?", [userId]);
+        const [[suggestion]] = await connection.query("SELECT donor_id, subject FROM suggestions WHERE id = ?", [suggestionId]);
+
+        // 2. CASE A: An admin replied. Notify the original donor.
+        if (replier.role === 'admin') {
+            const originalDonorId = suggestion.donor_id;
+            // Ensure admin doesn't get notified for their own reply if they started a thread (future-proofing)
+            if (originalDonorId !== userId) { 
+                const notificationTitle = `Reply on Suggestion: "${suggestion.subject}"`;
+                const notificationMessage = `${replier.full_name} has replied to your suggestion.`;
+                await createNotification(connection, originalDonorId, replier.full_name, notificationTitle, notificationMessage, `/suggestions/${suggestionId}`);
+            }
+        } 
+        // 3. CASE B: A donor replied. Notify all admins.
+        else {
+            const [admins] = await connection.query("SELECT id FROM users WHERE role = 'admin'");
+            if (admins.length > 0) {
+                const adminIds = admins.map(a => a.id);
+                const notificationTitle = `Reply on Suggestion: "${suggestion.subject}"`;
+                const notificationMessage = `${replier.full_name} has replied to a suggestion thread.`;
+                await createBulkNotifications(connection, adminIds, replier.full_name, notificationTitle, notificationMessage, `/admin/suggestions/${suggestionId}`);
+            }
+        }
+        
+        // ★★★★★ END: NEW NOTIFICATION LOGIC ★★★★★
+
+        await connection.commit();
         res.status(201).json({ message: 'Reply sent successfully.' });
-    } catch (error) { res.status(500).json({ message: 'Error sending reply.' }); }
+
+    } catch (error) {
+        await connection.rollback();
+        console.error("Error sending suggestion reply:", error);
+        res.status(500).json({ message: 'Error sending reply.' });
+    } finally {
+        connection.release();
+    }
 });
 
 // ADMIN: Get all suggestion threads for the management dashboard
@@ -2562,13 +3928,56 @@ app.get('/api/admin/suggestions', async (req, res) => {
     } catch (error) { res.status(500).json({ message: 'Error fetching all suggestions.' }); }
 });
 
+// 📂 File: server.js (REPLACE THIS ROUTE)
+
 // ADMIN: Change a suggestion's status
 app.put('/api/admin/suggestion/status', async (req, res) => {
-    const { suggestionId, status } = req.body;
+    const { suggestionId, status, adminId } = req.body; // Expect adminId from frontend
+    
+    const connection = await db.getConnection();
     try {
-        await db.query('UPDATE suggestions SET status = ? WHERE id = ?', [status, suggestionId]);
-        res.status(200).json({ message: 'Status updated.' });
-    } catch (error) { res.status(500).json({ message: 'Error updating status.' }); }
+        await connection.beginTransaction();
+
+        // Step 1: Update the status
+        await connection.query('UPDATE suggestions SET status = ? WHERE id = ?', [status, suggestionId]);
+        
+        // ★★★★★ START: NEW NOTIFICATION LOGIC ★★★★★
+
+        // 1. Get the suggestion details to find the original donor
+        const [[suggestion]] = await connection.query("SELECT donor_id, subject FROM suggestions WHERE id = ?", [suggestionId]);
+
+        if (suggestion) {
+            // 2. Get the admin's name
+            const [[admin]] = await connection.query("SELECT full_name FROM users WHERE id = ?", [adminId]);
+            const senderName = admin.full_name || "School Administration";
+
+            // 3. Prepare notification details
+            const notificationTitle = `Suggestion Status Updated`;
+            const notificationMessage = `The status of your suggestion "${suggestion.subject}" has been updated to "${status}".`;
+
+            // 4. Send the notification to the original donor
+            await createNotification(
+                connection,
+                suggestion.donor_id,
+                senderName,
+                notificationTitle,
+                notificationMessage,
+                `/suggestions/${suggestionId}`
+            );
+        }
+
+        // ★★★★★ END: NEW NOTIFICATION LOGIC ★★★★★
+
+        await connection.commit();
+        res.status(200).json({ message: 'Status updated and donor notified.' });
+
+    } catch (error) {
+        await connection.rollback();
+        console.error("Error updating suggestion status:", error);
+        res.status(500).json({ message: 'Error updating status.' });
+    } finally {
+        connection.release();
+    }
 });
 
 
@@ -2673,20 +4082,58 @@ app.get('/api/donor/payment-history/:donorId', async (req, res) => {
 
 // --- SUB-MODULE: SPONSORSHIP (Manual Proof-Based Flow) ---
 
+// 📂 File: server.js (REPLACE THIS ROUTE)
+
 // DONOR: Submit the initial sponsorship application form
 app.post('/api/sponsorship/apply', async (req, res) => {
     const { donorId, fullName, email, phone, organization, message, wantsUpdates, wantsToVisit } = req.body;
+    const connection = await db.getConnection();
     try {
-        const [result] = await db.query(
+        await connection.beginTransaction();
+
+        // Step 1: Insert the application
+        const [result] = await connection.query(
             'INSERT INTO sponsorship_applications (donor_id, full_name, email, phone, organization, message, wants_updates, wants_to_visit) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
             [donorId, fullName, email, phone, organization, message, wantsUpdates, wantsToVisit]
         );
-        res.status(201).json({ message: 'Application received! Please proceed to payment.', applicationId: result.insertId });
+        const newApplicationId = result.insertId;
+
+        // ★★★★★ START: NEW NOTIFICATION LOGIC ★★★★★
+        
+        // 1. Find all admins
+        const [admins] = await connection.query("SELECT id FROM users WHERE role = 'admin'");
+        
+        if (admins.length > 0) {
+            // 2. Prepare and send notifications
+            const adminIds = admins.map(a => a.id);
+            const notificationTitle = `New Sponsorship Application`;
+            const notificationMessage = `${fullName} has submitted a new application for sponsorship.`;
+            
+            await createBulkNotifications(
+                connection,
+                adminIds,
+                fullName, // The donor is the sender
+                notificationTitle,
+                notificationMessage,
+                `/admin/sponsorship/${newApplicationId}` // Link for admins to view the application
+            );
+        }
+
+        // ★★★★★ END: NEW NOTIFICATION LOGIC ★★★★★
+
+        await connection.commit();
+        res.status(201).json({ message: 'Application received! Please proceed to payment.', applicationId: newApplicationId });
+
     } catch (error) { 
+        await connection.rollback();
         console.error("Sponsorship Apply Error:", error);
         res.status(500).json({ message: 'Error submitting application.' }); 
+    } finally {
+        connection.release();
     }
 });
+
+// 📂 File: server.js (REPLACE THIS ROUTE)
 
 // DONOR: Upload their payment screenshot for a specific sponsorship application
 app.post('/api/sponsorship/upload-proof', paymentUpload.single('screenshot'), async (req, res) => {
@@ -2694,12 +4141,48 @@ app.post('/api/sponsorship/upload-proof', paymentUpload.single('screenshot'), as
     if (!req.file || !applicationId || !donorId || !amount) return res.status(400).json({ message: 'Missing required information.' });
 
     const screenshotUrl = `/public/uploads/${req.file.filename}`;
+    const connection = await db.getConnection();
     try {
-        await db.query('INSERT INTO sponsorship_payments (application_id, donor_id, amount, screenshot_url) VALUES (?, ?, ?, ?)', [applicationId, donorId, amount, screenshotUrl]);
+        await connection.beginTransaction();
+
+        // Step 1: Insert the payment record
+        await connection.query('INSERT INTO sponsorship_payments (application_id, donor_id, amount, screenshot_url) VALUES (?, ?, ?, ?)', [applicationId, donorId, amount, screenshotUrl]);
+        
+        // ★★★★★ START: NEW NOTIFICATION LOGIC ★★★★★
+        
+        // 1. Find all admins
+        const [admins] = await connection.query("SELECT id FROM users WHERE role = 'admin'");
+        
+        if (admins.length > 0) {
+            // 2. Get donor's name for the message
+            const [[donor]] = await connection.query("SELECT full_name FROM users WHERE id = ?", [donorId]);
+
+            // 3. Prepare and send notifications
+            const adminIds = admins.map(a => a.id);
+            const notificationTitle = `Sponsorship Payment Proof Uploaded`;
+            const notificationMessage = `${donor.full_name} has uploaded a payment proof of ₹${amount} for their sponsorship application. Please verify.`;
+            
+            await createBulkNotifications(
+                connection,
+                adminIds,
+                donor.full_name,
+                notificationTitle,
+                notificationMessage,
+                `/admin/sponsorship/${applicationId}` // Link for admins to view the application and proof
+            );
+        }
+
+        // ★★★★★ END: NEW NOTIFICATION LOGIC ★★★★★
+        
+        await connection.commit();
         res.status(201).json({ message: 'Sponsorship proof uploaded successfully. Thank you!' });
+
     } catch (error) { 
+        await connection.rollback();
         console.error("Sponsorship Proof Upload Error:", error);
         res.status(500).json({ message: 'Error uploading proof.' }); 
+    } finally {
+        connection.release();
     }
 });
 
@@ -2741,18 +4224,62 @@ app.get('/api/admin/sponsorship/:appId', async (req, res) => {
     }
 });
 
+// 📂 File: server.js (REPLACE THIS ROUTE)
+
 // ADMIN: Verify a payment and update its status
 app.put('/api/admin/sponsorship/verify-payment/:paymentId', async (req, res) => {
     const { paymentId } = req.params;
+    const { adminId } = req.body; // Expect the admin's ID from the frontend
+    
+    const connection = await db.getConnection();
     try {
-        const [result] = await db.query("UPDATE sponsorship_payments SET status = 'Verified' WHERE id = ?", [paymentId]);
-        if (result.affectedRows === 0) return res.status(404).json({ message: "Payment record not found." });
-        res.status(200).json({ message: 'Payment verified successfully!' });
+        await connection.beginTransaction();
+
+        // Step 1: Update the payment status
+        const [result] = await connection.query("UPDATE sponsorship_payments SET status = 'Verified' WHERE id = ?", [paymentId]);
+        if (result.affectedRows === 0) {
+            await connection.rollback();
+            return res.status(404).json({ message: "Payment record not found." });
+        }
+        
+        // ★★★★★ START: NEW NOTIFICATION LOGIC ★★★★★
+        
+        // 1. Get payment details to find the original donor
+        const [[payment]] = await connection.query("SELECT donor_id, amount FROM sponsorship_payments WHERE id = ?", [paymentId]);
+        
+        if (payment) {
+            // 2. Get the admin's name
+            const [[admin]] = await connection.query("SELECT full_name FROM users WHERE id = ?", [adminId]);
+            const senderName = admin.full_name || "School Administration";
+
+            // 3. Prepare notification details
+            const notificationTitle = `Sponsorship Payment Verified`;
+            const notificationMessage = `Thank you! Your sponsorship payment of ₹${payment.amount} has been successfully verified by ${senderName}. We appreciate your support.`;
+            
+            // 4. Send the notification to the donor
+            await createNotification(
+                connection,
+                payment.donor_id,
+                senderName,
+                notificationTitle,
+                notificationMessage,
+                '/sponsorship/history' // A link to their sponsorship history
+            );
+        }
+
+        // ★★★★★ END: NEW NOTIFICATION LOGIC ★★★★★
+
+        await connection.commit();
+        res.status(200).json({ message: 'Payment verified and donor notified successfully!' });
+
     } catch (error) { 
+        await connection.rollback();
+        console.error("Error verifying payment:", error);
         res.status(500).json({ message: 'Failed to verify payment.' }); 
+    } finally {
+        connection.release();
     }
 });
-
 
 
 
@@ -3002,6 +4529,8 @@ app.get('/api/food-menu', async (req, res) => {
 // ★★★ ROUTE ORDER CORRECTED ★★★
 // The specific route for '/time' must come BEFORE the general route for '/:id'.
 
+// 📂 File: server.js (REPLACE THIS ROUTE)
+
 // PUT (update) the TIME for an entire meal column (Admin only)
 app.put('/api/food-menu/time', async (req, res) => {
     const { meal_type, meal_time, editorId } = req.body;
@@ -3010,20 +4539,58 @@ app.put('/api/food-menu/time', async (req, res) => {
         return res.status(401).json({ message: 'Unauthorized: User authentication is required.' });
     }
 
+    const connection = await db.getConnection();
     try {
-        const [[editor]] = await db.query('SELECT role FROM users WHERE id = ?', [editorId]);
+        await connection.beginTransaction();
+
+        // Step 1: Check admin role
+        const [[editor]] = await connection.query('SELECT role, full_name FROM users WHERE id = ?', [editorId]);
         if (!editor || editor.role !== 'admin') {
+            await connection.rollback();
             return res.status(403).json({ message: 'Forbidden: You do not have permission to perform this action.' });
         }
         
-        const [result] = await db.query('UPDATE food_menu SET meal_time = ? WHERE meal_type = ?', [meal_time, meal_type]);
+        // Step 2: Update the meal time
+        const [result] = await connection.query('UPDATE food_menu SET meal_time = ? WHERE meal_type = ?', [meal_time, meal_type]);
 
+        // ★★★★★ START: NEW NOTIFICATION LOGIC ★★★★★
+        
+        // 1. Find all students and teachers (excluding the editor admin)
+        const [usersToNotify] = await connection.query("SELECT id FROM users WHERE role IN ('student', 'teacher') AND id != ?", [editorId]);
+        
+        if (usersToNotify.length > 0) {
+            // 2. Prepare notification details
+            const recipientIds = usersToNotify.map(u => u.id);
+            const senderName = editor.full_name || "School Administration";
+            const notificationTitle = `Food Menu Updated`;
+            const notificationMessage = `The timing for ${meal_type} has been updated to ${meal_time}. Please check the new schedule.`;
+
+            // 3. Send notifications
+            await createBulkNotifications(
+                connection,
+                recipientIds,
+                senderName,
+                notificationTitle,
+                notificationMessage,
+                '/food-menu' // A generic link to the food menu screen
+            );
+        }
+
+        // ★★★★★ END: NEW NOTIFICATION LOGIC ★★★★★
+
+        await connection.commit();
         res.status(200).json({ message: `${meal_type} time updated for all days.`, affectedRows: result.affectedRows });
+
     } catch (error) {
+        await connection.rollback();
         console.error("Error updating meal time:", error);
         res.status(500).json({ message: 'Error updating meal time.' });
+    } finally {
+        connection.release();
     }
 });
+
+// 📂 File: server.js (REPLACE THIS ROUTE)
 
 // PUT (update) a SINGLE food item's text (Admin only)
 app.put('/api/food-menu/:id', async (req, res) => {
@@ -3034,23 +4601,63 @@ app.put('/api/food-menu/:id', async (req, res) => {
         return res.status(401).json({ message: 'Unauthorized: User authentication is required.' });
     }
 
+    const connection = await db.getConnection();
     try {
-        const [[editor]] = await db.query('SELECT role FROM users WHERE id = ?', [editorId]);
+        await connection.beginTransaction();
+
+        // Step 1: Check admin role
+        const [[editor]] = await connection.query('SELECT role, full_name FROM users WHERE id = ?', [editorId]);
         if (!editor || editor.role !== 'admin') {
+            await connection.rollback();
             return res.status(403).json({ message: 'Forbidden: You do not have permission to perform this action.' });
         }
 
-        const [result] = await db.query('UPDATE food_menu SET food_item = ? WHERE id = ?', [food_item, id]);
+        // Step 2: Update the food item
+        const [result] = await connection.query('UPDATE food_menu SET food_item = ? WHERE id = ?', [food_item, id]);
         if (result.affectedRows === 0) {
+            await connection.rollback();
             return res.status(404).json({ message: 'Menu item not found.' });
         }
 
+        // ★★★★★ START: NEW NOTIFICATION LOGIC ★★★★★
+
+        // 1. Find all students and teachers (excluding the editor admin)
+        const [usersToNotify] = await connection.query("SELECT id FROM users WHERE role IN ('student', 'teacher') AND id != ?", [editorId]);
+        
+        if (usersToNotify.length > 0) {
+            // 2. Get details about the meal that was changed
+            const [[mealDetails]] = await connection.query("SELECT day_of_week, meal_type FROM food_menu WHERE id = ?", [id]);
+
+            // 3. Prepare notification details
+            const recipientIds = usersToNotify.map(u => u.id);
+            const senderName = editor.full_name || "School Administration";
+            const notificationTitle = `Food Menu Updated`;
+            const notificationMessage = `The menu for ${mealDetails.day_of_week} ${mealDetails.meal_type} has been updated.`;
+
+            // 4. Send notifications
+            await createBulkNotifications(
+                connection,
+                recipientIds,
+                senderName,
+                notificationTitle,
+                notificationMessage,
+                '/food-menu'
+            );
+        }
+        
+        // ★★★★★ END: NEW NOTIFICATION LOGIC ★★★★★
+
+        await connection.commit();
         res.status(200).json({ message: 'Menu item updated successfully.' });
+
     } catch (error) {
+        await connection.rollback();
         console.error("Error updating food menu item:", error);
         res.status(500).json({ message: 'Error updating menu item.' });
+    } finally {
+        connection.release();
     }
-})
+});
 
 
 
@@ -3059,23 +4666,18 @@ app.put('/api/food-menu/:id', async (req, res) => {
 // ==========================================================
 
 // This single endpoint handles creating an ad for ALL user roles.
-// It accepts multiple files: the ad image and an optional payment screenshot.
+
 app.post('/api/ads', verifyToken, adsUpload.fields([
     { name: 'ad_content_image', maxCount: 1 },
     { name: 'payment_screenshot', maxCount: 1 }
 ]), async (req, res) => {
-    // Get all data from the request
     const { ad_type, ad_content_text, payment_text } = req.body;
-    const { id: user_id, role } = req.user; // Get user ID and role from the secure token
+    const { id: user_id, role, full_name } = req.user; // Now 'full_name' will be correct
 
-    // --- Validation ---
-    // The ad image is always required.
     if (!req.files || !req.files.ad_content_image) {
         return res.status(400).json({ message: 'Ad image is required.' });
     }
     const ad_content_image_url = `/uploads/${req.files.ad_content_image[0].filename}`;
-
-    // For non-admins, the payment screenshot is also required.
     const isPayingUser = role === 'student' || role === 'teacher' || role === 'donor';
     if (isPayingUser && (!req.files || !req.files.payment_screenshot)) {
         return res.status(400).json({ message: 'Payment proof screenshot is required for your role.' });
@@ -3085,8 +4687,6 @@ app.post('/api/ads', verifyToken, adsUpload.fields([
     try {
         await connection.beginTransaction();
 
-        // Step 1: Create the Ad record.
-        // If the user is an admin, the ad is automatically 'approved'. Otherwise, it's 'pending'.
         const adStatus = (role === 'admin') ? 'approved' : 'pending';
         const [result] = await connection.query(
             'INSERT INTO ads (user_id, ad_type, ad_content_image_url, ad_content_text, status) VALUES (?, ?, ?, ?, ?)',
@@ -3094,7 +4694,6 @@ app.post('/api/ads', verifyToken, adsUpload.fields([
         );
         const adId = result.insertId;
 
-        // Step 2: If the user is a paying user, create the associated payment record.
         if (isPayingUser) {
             const payment_screenshot_url = `/uploads/${req.files.payment_screenshot[0].filename}`;
             await connection.query(
@@ -3103,14 +4702,29 @@ app.post('/api/ads', verifyToken, adsUpload.fields([
             );
         }
 
+        if (role !== 'admin') {
+            const [admins] = await connection.query("SELECT id FROM users WHERE role = 'admin'");
+            if (admins.length > 0) {
+                const adminIds = admins.map(a => a.id);
+                const notificationTitle = "New Ad for Review";
+                const notificationMessage = `${full_name} (${role}) has submitted a new advertisement for your approval.`;
+                await createBulkNotifications(connection, adminIds, full_name, notificationTitle, notificationMessage, `/admin/ads`);
+            }
+        }
+        
+        if (role === 'admin') {
+            const [otherUsers] = await connection.query("SELECT id FROM users WHERE role IN ('student', 'teacher', 'donor')");
+            if (otherUsers.length > 0) {
+                const userIds = otherUsers.map(u => u.id);
+                const notificationTitle = "New Advertisement Posted";
+                const notificationMessage = `A new ad "${ad_content_text || 'View Ad'}" has been posted by the administration.`;
+                await createBulkNotifications(connection, userIds, full_name, notificationTitle, notificationMessage, `/ads/display`);
+            }
+        }
+        
         await connection.commit();
-
-        const successMessage = (role === 'admin') 
-            ? 'Ad has been posted successfully!' 
-            : 'Ad and payment proof have been submitted for review!';
-            
+        const successMessage = (role === 'admin') ? 'Ad has been posted and users notified!' : 'Ad and payment proof have been submitted for review!';
         res.status(201).json({ message: successMessage });
-
     } catch (error) {
         await connection.rollback();
         console.error("Error creating ad:", error);
@@ -3159,18 +4773,56 @@ app.get('/api/admin/ads', [verifyToken, isAdmin], async (req, res) => {
 app.put('/api/admin/ads/:adId/status', [verifyToken, isAdmin], async (req, res) => {
     const { adId } = req.params;
     const { status } = req.body;
+    const adminFullName = req.user.full_name; // Get the admin's name from the token
 
     if (!['approved', 'rejected'].includes(status)) {
         return res.status(400).json({ message: 'Invalid status provided.' });
     }
 
+    const connection = await db.getConnection(); // Use connection for multiple queries
     try {
-        const [result] = await db.query("UPDATE ads SET status = ? WHERE id = ?", [status, adId]);
-        if (result.affectedRows === 0) return res.status(404).json({ message: 'Ad not found.' });
+        await connection.beginTransaction();
+
+        // First, get the ad details to find the original creator
+        const [[adDetails]] = await connection.query("SELECT user_id, ad_content_text FROM ads WHERE id = ?", [adId]);
+
+        if (!adDetails) {
+            await connection.rollback();
+            return res.status(404).json({ message: 'Ad not found.' });
+        }
+
+        // Update the ad's status
+        const [result] = await connection.query("UPDATE ads SET status = ? WHERE id = ?", [status, adId]);
+
+        if (result.affectedRows === 0) {
+            await connection.rollback();
+            return res.status(404).json({ message: 'Ad could not be updated.' });
+        }
+       await connection.query("UPDATE ads SET status = ? WHERE id = ?", [status, adId]);
+        // ★★★★★ START: NEW NOTIFICATION LOGIC ★★★★★
+
+        // Only send a notification if the status is changed to 'approved'
+        if (status === 'approved') {
+            const originalCreatorId = adDetails.user_id;
+            const notificationTitle = "Your Ad has been Approved!";
+            const adTitle = adDetails.ad_content_text || "your recent ad submission";
+            const notificationMessage = `Congratulations! Your ad "${adTitle}" has been approved by ${adminFullName}.`;
+
+            // Send a single notification to the user who originally created the ad.
+            await createNotification(connection, originalCreatorId, adminFullName, notificationTitle, notificationMessage, `/my-ads`); // A hypothetical link
+        }
+        
+        // ★★★★★ END: NEW NOTIFICATION LOGIC ★★★★★
+
+        await connection.commit();
         res.json({ message: `Ad has been successfully ${status}.` });
+
     } catch (error) {
+        await connection.rollback();
         console.error("Error updating ad status:", error);
         res.status(500).json({ message: 'Server error updating ad status.' });
+    } finally {
+        connection.release();
     }
 });
 
@@ -3269,14 +4921,14 @@ app.get('/api/group-chat/history', async (req, res) => {
 });
 
 // --- 2. REAL-TIME SOCKET.IO LOGIC ---
-// This handles the live "WhatsApp style" communication.
+// 📂 File: server.js (REPLACE THE 'sendMessage' HANDLER)
+
+// --- 2. REAL-TIME SOCKET.IO LOGIC ---
 io.on('connection', (socket) => {
     console.log(`🔌 A user connected: ${socket.id}`);
 
-    // Automatically add every new user to the one and only group chat room.
     socket.join('school-group-chat');
 
-    // This block runs when any user (student, teacher, or admin) sends a message.
     socket.on('sendMessage', async (data) => {
         const { userId, messageText } = data;
         
@@ -3286,29 +4938,58 @@ io.on('connection', (socket) => {
 
         const connection = await db.getConnection();
         try {
-            // Step A: Save the message to the database so it's stored permanently.
+            await connection.beginTransaction();
+
+            // Step A: Save the message to the database (no change)
             const [result] = await connection.query(
                 'INSERT INTO group_chat_messages (user_id, message_text) VALUES (?, ?)',
                 [userId, messageText]
             );
             const newMessageId = result.insertId;
 
-            // Step B: Get the full message details, including the sender's Name and Role from the `users` table.
+            // Step B: Get the full message details for broadcasting (no change)
             const [[broadcastMessage]] = await connection.query(`
-                SELECT 
-                    m.id, m.message_text, m.timestamp, m.user_id,
-                    u.full_name, u.role
-                FROM group_chat_messages m
-                JOIN users u ON m.user_id = u.id
+                SELECT m.id, m.message_text, m.timestamp, m.user_id, u.full_name, u.role
+                FROM group_chat_messages m JOIN users u ON m.user_id = u.id
                 WHERE m.id = ?
             `, [newMessageId]);
 
-            // ★★★ THIS IS THE MOST IMPORTANT STEP ★★★
-            // Step C: Broadcast the complete message (with name and role) to EVERYONE
-            // who is in the 'school-group-chat' room. This is what makes it a group chat.
+            // Step C: Broadcast the message to everyone in the chat room (no change)
             io.to('school-group-chat').emit('newMessage', broadcastMessage);
 
+            // ★★★★★ START: NEW NOTIFICATION LOGIC ★★★★★
+            
+            // 1. Find all users (student, teacher, admin, donor) EXCEPT the person who sent the message.
+            const [usersToNotify] = await connection.query(
+                "SELECT id FROM users WHERE id != ?", 
+                [userId]
+            );
+
+            if (usersToNotify.length > 0) {
+                const recipientIds = usersToNotify.map(u => u.id);
+                const senderName = broadcastMessage.full_name;
+                
+                // 2. Prepare and send the notifications
+                const notificationTitle = `New Message from ${senderName}`;
+                // Truncate message if it's too long for a notification
+                const notificationMessage = messageText.length > 50 ? `${messageText.substring(0, 50)}...` : messageText;
+                
+                await createBulkNotifications(
+                    connection,
+                    recipientIds,
+                    senderName,
+                    notificationTitle,
+                    notificationMessage,
+                    '/group-chat' // A generic link to the group chat screen
+                );
+            }
+            
+            // ★★★★★ END: NEW NOTIFICATION LOGIC ★★★★★
+
+            await connection.commit();
+
         } catch (error) {
+            await connection.rollback();
             console.error('Error handling message:', error);
         } finally {
             connection.release();
@@ -3318,6 +4999,49 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => {
         console.log(`🔌 User disconnected: ${socket.id}`);
     });
+});
+
+// ==========================================================
+// --- NOTIFICATIONS API ROUTES (NEW) ---
+// ==========================================================
+
+// GET all notifications for the logged-in user (THIS ROUTE ALREADY EXISTS)
+app.get('/api/notifications', verifyToken, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        console.log(`[NOTIFICATIONS GET] Fetching notifications for recipient_id: ${userId}`); 
+
+        const query = 'SELECT * FROM notifications WHERE recipient_id = ? ORDER BY created_at DESC';
+        const [notifications] = await db.query(query, [userId]);
+        res.json(notifications);
+    } catch (error) {
+        console.error("Error fetching notifications:", error);
+        res.status(500).json({ message: 'Failed to fetch notifications.' });
+    }
+});
+
+// ★★★ THIS IS THE MISSING ROUTE - ADD THIS CODE BLOCK ★★★
+// MARK a single notification as read
+app.put('/api/notifications/:notificationId/read', verifyToken, async (req, res) => {
+    try {
+        const { notificationId } = req.params;
+        const userId = req.user.id; // Get user ID from the token for security
+
+        console.log(`[NOTIFICATIONS UPDATE] User ${userId} marking notification ${notificationId} as read.`);
+
+        // This query is secure: it ensures a user can only update THEIR OWN notifications.
+        const query = 'UPDATE notifications SET is_read = 1 WHERE id = ? AND recipient_id = ?';
+        const [result] = await db.query(query, [notificationId, userId]);
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: 'Notification not found or you do not have permission to update it.' });
+        }
+
+        res.status(200).json({ message: 'Notification marked as read.' });
+    } catch (error) {
+        console.error("Error marking notification as read:", error);
+        res.status(500).json({ message: 'Failed to update notification.' });
+    }
 });
 
 
