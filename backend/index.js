@@ -10,7 +10,7 @@ const jwt = require('jsonwebtoken'); // 👈 ADD THIS LINE
 const path = require('path');
 // ... after const path = require('path');
 const crypto = require('crypto');
-const { sendPasswordResetEmail } = require('./mailer');
+const { sendPasswordResetCode } = require('./mailer');
 const fs = require('fs'); // Import the file system module at the top of your file
 const { Client } = require("@googlemaps/google-maps-services-js");
 const googleMapsClient = new Client({});
@@ -29,6 +29,7 @@ const openai = new OpenAI({
 
 
 const app = express();
+
 const PORT = 3001;
 
 app.use(cors());
@@ -172,18 +173,13 @@ app.post('/api/login', async (req, res) => {
             catch (e) { user.subjects_taught = []; }
         }
         const { password: _, ...userData } = user;
-        // ★★★ THIS IS THE FIX ★★★
-        // We are adding 'full_name: user.full_name' to the object that gets signed into the token.
         const tokenPayload = {
             id: user.id,
             username: user.username,
             role: user.role,
-            full_name: user.full_name // Include the full name in the token
+            full_name: user.full_name
         };
-
-        // 2. Sign THE CORRECT PAYLOAD OBJECT to create the token.
         const token = jwt.sign(tokenPayload, process.env.JWT_SECRET || 'YOUR_SUPER_SECRET_KEY', { expiresIn: '24h' });
-        
         res.status(200).json({ message: 'Login successful!', user: userData, token: token });
     } catch (error) { 
         console.error("Login Error:", error);
@@ -282,35 +278,58 @@ app.delete('/api/users/:id', async (req, res) => {
     } catch (error) { res.status(500).json({ message: 'Error: Could not delete user.' }); }
 });
 
-// --- SELF-SERVICE PASSWORD RESET API ROUTES (DONOR-ONLY) ---
+// --- SELF-SERVICE PASSWORD RESET API ROUTES (OTP/CODE METHOD) ---
+
+// This route now generates and sends a 6-digit code.
 app.post('/api/forgot-password', async (req, res) => {
     const { email } = req.body;
     try {
-        if (!email) return res.status(400).json({ message: 'Email address is required.' });
+        if (!email) {
+            return res.status(400).json({ message: 'Email address is required.' });
+        }
         const [profileRows] = await db.query('SELECT user_id FROM user_profiles WHERE email = ?', [email]);
-        if (profileRows.length === 0) return res.status(200).json({ message: 'If an account with that email exists, a password reset link has been sent.' });
+        if (profileRows.length === 0) {
+            return res.status(200).json({ message: 'If an account with that email exists, a reset code has been sent.' });
+        }
         const user_id = profileRows[0].user_id;
         const [userRows] = await db.query('SELECT role FROM users WHERE id = ?', [user_id]);
-        if (userRows.length === 0 || userRows[0].role !== 'donor') return res.status(200).json({ message: 'If a Donor account with that email exists, a password reset link has been sent.' });
-        const resetToken = crypto.randomBytes(20).toString('hex');
-        const tokenExpiry = new Date(Date.now() + 3600000);
-        await db.query('UPDATE users SET reset_password_token = ?, reset_password_expires = ? WHERE id = ?', [resetToken, tokenExpiry, user_id]);
-        await sendPasswordResetEmail(email, resetToken);
-        res.status(200).json({ message: 'If an account with that email exists, a password reset link has been sent.' });
-    } catch (error) { res.status(500).json({ message: 'An unexpected error occurred.' }); }
+        if (userRows.length === 0 || userRows[0].role !== 'donor') {
+            return res.status(200).json({ message: 'If a Donor account with that email exists, a reset code has been sent.' });
+        }
+        const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
+        const tokenExpiry = new Date(Date.now() + 600000); // 10 minutes
+        await db.query('UPDATE users SET reset_password_token = ?, reset_password_expires = ? WHERE id = ?', [resetCode, tokenExpiry, user_id]);
+        await sendPasswordResetCode(email, resetCode);
+        res.status(200).json({ message: 'A 6-digit reset code has been sent to your email.' });
+    } catch (error) {
+        console.error("Forgot Password Error:", error);
+        res.status(500).json({ message: 'An unexpected error occurred.' });
+    }
 });
 
+// ✅ --- STEP 2: USE THE CORRECT RESET PASSWORD ROUTE --- ✅
+// This is the correct route for the OTP/code method.
 app.post('/api/reset-password', async (req, res) => {
-    const { token, newPassword } = req.body;
+    const { email, token, newPassword } = req.body;
     try {
-        if (!token || !newPassword) return res.status(400).json({ message: 'Token and new password are required.' });
-        const [rows] = await db.query('SELECT id FROM users WHERE reset_password_token = ? AND reset_password_expires > NOW()', [token]);
+        if (!email || !token || !newPassword) {
+            return res.status(400).json({ message: 'Email, reset code, and new password are required.' });
+        }
+        const [rows] = await db.query(
+            'SELECT u.id FROM users u JOIN user_profiles p ON u.id = p.user_id WHERE p.email = ? AND u.reset_password_token = ? AND u.reset_password_expires > NOW()',
+            [email, token]
+        );
         const user = rows[0];
-        if (!user) return res.status(400).json({ message: 'Password reset token is invalid or has expired.' });
+        if (!user) {
+            return res.status(400).json({ message: 'Reset code is invalid or has expired.' });
+        }
         const hashedPassword = await bcrypt.hash(newPassword, 10);
         await db.query('UPDATE users SET password = ?, reset_password_token = NULL, reset_password_expires = NULL WHERE id = ?', [hashedPassword, user.id]);
         res.status(200).json({ message: 'Password has been successfully reset. You can now log in.' });
-    } catch (error) { res.status(500).json({ message: 'An error occurred.' }); }
+    } catch (error) {
+        console.error("Reset Password Error:", error);
+        res.status(500).json({ message: 'An error occurred while resetting the password.' });
+    }
 });
 
 
@@ -3539,6 +3558,61 @@ app.get('/api/transport/routes', async (req, res) => {
 // --- GALLERY API ROUTES (WITHOUT MIDDLEWARE AUTH) ---
 // ==========================================================
 
+// 📂 File: server.js (ADD THIS NEW ROUTE)
+// Make sure you have 'fs' imported at the top of your file: const fs = require('fs');
+
+// DELETE: Delete an entire album by its title
+app.delete('/api/gallery/album', async (req, res) => {
+    const { title, role } = req.body; // Get title and role from the request body
+
+    // Security check: Only admins can delete albums
+    if (role !== 'admin') {
+        return res.status(403).json({ message: "Forbidden: Requires Admin Role." });
+    }
+
+    if (!title) {
+        return res.status(400).json({ message: "Album title is required." });
+    }
+
+    const connection = await db.getConnection();
+    try {
+        await connection.beginTransaction();
+
+        // Step 1: Find all file paths associated with the album title before deleting records
+        const [items] = await connection.query('SELECT file_path FROM gallery_items WHERE title = ?', [title]);
+        
+        if (items.length === 0) {
+            await connection.rollback();
+            return res.status(404).json({ message: "Album not found." });
+        }
+
+        // Step 2: Delete all database records for that album
+        await connection.query('DELETE FROM gallery_items WHERE title = ?', [title]);
+
+        // Step 3: Asynchronously delete each associated file from the server's storage
+        items.forEach(item => {
+            if (item.file_path) {
+                fs.unlink(item.file_path, (err) => {
+                    if (err) {
+                        // Log the error but don't stop the process, as the DB record is already gone
+                        console.error(`Failed to delete file from disk: ${item.file_path}`, err);
+                    }
+                });
+            }
+        });
+
+        await connection.commit();
+        res.status(200).json({ message: `Album "${title}" and all its items have been deleted successfully.` });
+
+    } catch (error) {
+        await connection.rollback();
+        console.error(`DELETE /api/gallery/album Error:`, error);
+        res.status(500).json({ message: "An error occurred while deleting the album." });
+    } finally {
+        connection.release();
+    }
+});
+
 // GET: Fetch all gallery items (Open to all)
 app.get('/api/gallery', async (req, res) => {
     const query = `
@@ -3556,7 +3630,7 @@ app.get('/api/gallery', async (req, res) => {
     }
 });
 
-// 📂 File: server.js (REPLACE THIS ROUTE)
+// 📂 File: server.js (UPDATED UPLOAD ROUTE)
 
 // POST: Upload a new gallery item
 app.post('/api/gallery/upload', galleryUpload.single('media'), async (req, res) => {
@@ -3577,46 +3651,44 @@ app.post('/api/gallery/upload', galleryUpload.single('media'), async (req, res) 
     try {
         await connection.beginTransaction();
 
-        // Step 1: Insert the gallery item (no change here)
         const file_type = file.mimetype.startsWith('image') ? 'photo' : 'video';
         const file_path = file.path.replace(/\\/g, "/"); 
         const query = 'INSERT INTO gallery_items (title, event_date, file_path, file_type, uploaded_by) VALUES (?, ?, ?, ?, ?)';
         const [result] = await connection.query(query, [title, event_date, file_path, file_type, adminId]);
         const newGalleryItemId = result.insertId;
 
-        // ★★★★★ START: NEW NOTIFICATION LOGIC ★★★★★
-        
-        // 1. Find all users who are not the uploading admin
+        // --- Notification Logic (Your existing code) ---
+        // (No changes needed here)
         const [usersToNotify] = await connection.query("SELECT id FROM users WHERE role IN ('student', 'teacher', 'donor') AND id != ?", [adminId]);
-        
         if (usersToNotify.length > 0) {
-            // 2. Get the admin's name for the notification
             const [[admin]] = await connection.query("SELECT full_name FROM users WHERE id = ?", [adminId]);
             const senderName = admin.full_name || "School Administration";
-
-            // 3. Prepare and send notifications
             const recipientIds = usersToNotify.map(u => u.id);
             const notificationTitle = `New Gallery Album: ${title}`;
             const notificationMessage = `New photos/videos for "${title}" have been added to the gallery. Check them out!`;
-
             await createBulkNotifications(
                 connection,
                 recipientIds,
                 senderName,
                 notificationTitle,
                 notificationMessage,
-                '/gallery' // Generic link to the gallery screen
+                '/gallery'
             );
         }
-
-        // ★★★★★ END: NEW NOTIFICATION LOGIC ★★★★★
+        // --- End Notification Logic ---
 
         await connection.commit();
-        res.status(201).json({ message: "Media uploaded and users notified successfully!", insertId: newGalleryItemId });
+        
+        // ★★★ IMPORTANT: Return the new item's ID and path ★★★
+        res.status(201).json({ 
+            message: "Media uploaded and users notified successfully!", 
+            insertId: newGalleryItemId,
+            filePath: file_path // Send the path back to the client
+        });
 
     } catch (error) {
         await connection.rollback();
-        if (file) fs.unlinkSync(file.path); // Clean up the file if the transaction fails
+        if (file) fs.unlinkSync(file.path);
         console.error("POST /api/gallery/upload Error:", error);
         res.status(500).json({ message: "Failed to save gallery item to database." });
     } finally {

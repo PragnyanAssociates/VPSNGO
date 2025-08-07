@@ -1,17 +1,18 @@
-// 📂 File: src/screens/gallery/GalleryScreen.tsx (REWRITTEN FOR ALBUMS - COMPLETE)
+// 📂 File: src/screens/gallery/GalleryScreen.tsx (FULLY MODIFIED FOR TRASH ICON)
 
-import React, { useState, useEffect, FC } from 'react';
+import React, { useState, useEffect, FC, useCallback } from 'react';
 import {
     View, Text, StyleSheet, FlatList, Image, Dimensions,
     TouchableOpacity, ActivityIndicator, Alert, Modal, TextInput,
     Button, Platform, SafeAreaView
 } from 'react-native';
 import { TabView, SceneMap, TabBar, Route } from 'react-native-tab-view';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import axios from 'axios';
-import { launchImageLibrary, ImagePickerResponse, Asset } from 'react-native-image-picker';
+import { launchImageLibrary, Asset } from 'react-native-image-picker';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import Icon from 'react-native-vector-icons/Ionicons'; // <-- IMPORT ICON LIBRARY
 import { useAuth } from '../../context/AuthContext'; 
 import { API_BASE_URL } from '../../../apiConfig'; 
 
@@ -38,8 +39,13 @@ type GalleryScreenNavigationProp = StackNavigationProp<RootStackParamList>;
 
 const { width } = Dimensions.get('window');
 
-// --- AlbumCover Component ---
-const AlbumCover: FC<{ section: AlbumSection, onPress: () => void }> = ({ section, onPress }) => {
+// --- AlbumCover Component (UPDATED with Trash Icon) ---
+const AlbumCover: FC<{ 
+    section: AlbumSection, 
+    onPress: () => void,
+    onDelete: () => void,
+    isAdmin: boolean
+}> = ({ section, onPress, onDelete, isAdmin }) => {
     const coverItem = section.items.find(item => item.file_type === 'photo') || section.items[0];
     if (!coverItem) return null;
 
@@ -54,6 +60,17 @@ const AlbumCover: FC<{ section: AlbumSection, onPress: () => void }> = ({ sectio
                 <Text style={styles.albumDate}>{new Date(section.date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</Text>
                 <Text style={styles.albumCount}>{section.items.length} items</Text>
             </View>
+            
+            {/* --- DELETE ALBUM ICON BUTTON --- */}
+            {isAdmin && (
+                <TouchableOpacity 
+                    style={styles.deleteAlbumButton} 
+                    onPress={onDelete}
+                    onPressIn={(e) => e.stopPropagation()} 
+                >
+                    <Icon name="trash" size={20} color="white" />
+                </TouchableOpacity>
+            )}
         </TouchableOpacity>
     );
 };
@@ -93,25 +110,58 @@ const GalleryScreen: FC = () => {
         return Object.values(grouped).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     };
 
-    const fetchData = async (): Promise<void> => {
+    const fetchData = useCallback(async (): Promise<void> => {
         setLoading(true);
         try {
             const response = await axios.get<GalleryItemType[]>(`${API_BASE_URL}/api/gallery`);
             const allItems = response.data;
             const allAlbums = groupDataByTitle(allItems);
-            setPhotoAlbums(allAlbums.filter(album => album.items.some(item => item.file_type === 'photo')));
-            setVideoAlbums(allAlbums.filter(album => album.items.some(item => item.file_type === 'video')));
+            const photoData = allAlbums.filter(album => album.items.some(item => item.file_type === 'photo'));
+            const videoData = allAlbums.filter(album => album.items.some(item => item.file_type === 'video'));
+            setPhotoAlbums(photoData);
+            setVideoAlbums(videoData);
         } catch (error) { 
             console.error('Failed to fetch gallery items:', error); 
+            Alert.alert("Error", "Failed to load gallery items.");
         } finally { 
             setLoading(false); 
         }
-    };
+    }, []);
 
-    useEffect(() => { fetchData(); }, []);
+    useFocusEffect(
+        useCallback(() => {
+            fetchData();
+        }, [fetchData])
+    );
 
     const handleAlbumPress = (section: AlbumSection) => {
         navigation.navigate('AlbumDetail', { title: section.title, items: section.items });
+    };
+
+    const handleDeleteAlbum = (albumTitle: string) => {
+        Alert.alert(
+            "Delete Album",
+            `Are you sure you want to permanently delete the "${albumTitle}" album and all its contents? This cannot be undone.`,
+            [
+                { text: "Cancel", style: "cancel" },
+                {
+                    text: "Delete",
+                    style: "destructive",
+                    onPress: async () => {
+                        try {
+                            await axios.delete(`${API_BASE_URL}/api/gallery/album`, {
+                                data: { title: albumTitle, role: user?.role }
+                            });
+                            Alert.alert("Success", `Album "${albumTitle}" has been deleted.`);
+                            fetchData();
+                        } catch (error) {
+                            console.error("Failed to delete album:", error);
+                            Alert.alert("Error", "An error occurred while deleting the album.");
+                        }
+                    },
+                },
+            ]
+        );
     };
 
     const handleOpenUploadModal = (): void => {
@@ -156,7 +206,14 @@ const GalleryScreen: FC = () => {
                 data={photoAlbums}
                 keyExtractor={(item) => item.title}
                 numColumns={1}
-                renderItem={({ item }) => <AlbumCover section={item} onPress={() => handleAlbumPress(item)} />}
+                renderItem={({ item }) => (
+                    <AlbumCover 
+                        section={item} 
+                        onPress={() => handleAlbumPress(item)}
+                        onDelete={() => handleDeleteAlbum(item.title)}
+                        isAdmin={isAdmin}
+                    />
+                )}
                 ListEmptyComponent={<Text style={styles.emptyText}>No photo albums found.</Text>}
                 contentContainerStyle={styles.listContainer}
                 onRefresh={fetchData}
@@ -168,7 +225,14 @@ const GalleryScreen: FC = () => {
                 data={videoAlbums}
                 keyExtractor={(item) => item.title}
                 numColumns={1}
-                renderItem={({ item }) => <AlbumCover section={item} onPress={() => handleAlbumPress(item)} />}
+                renderItem={({ item }) => (
+                     <AlbumCover 
+                        section={item} 
+                        onPress={() => handleAlbumPress(item)}
+                        onDelete={() => handleDeleteAlbum(item.title)}
+                        isAdmin={isAdmin}
+                    />
+                )}
                 ListEmptyComponent={<Text style={styles.emptyText}>No video albums found.</Text>}
                 contentContainerStyle={styles.listContainer}
                 onRefresh={fetchData}
@@ -193,12 +257,12 @@ const GalleryScreen: FC = () => {
             <Modal visible={isUploadModalVisible} transparent={true} animationType="slide" onRequestClose={() => setUploadModalVisible(false)}>
                 <View style={styles.modalContainer}>
                     <View style={styles.modalView}>
-                        <Text style={styles.modalTitle}>Upload New Media</Text>
-                        <TextInput style={styles.input} placeholder="Event Name / Title" value={title} onChangeText={setTitle} />
+                        <Text style={styles.modalTitle}>Create New Album</Text>
+                        <TextInput style={styles.input} placeholder="Album Title" value={title} onChangeText={setTitle} />
                         <TouchableOpacity style={styles.datePickerButton} onPress={() => setShowDatePicker(true)}><Text>Event Date: {eventDate.toLocaleDateString()}</Text></TouchableOpacity>
                         {showDatePicker && (<DateTimePicker value={eventDate} mode="date" display="default" onChange={onDateChange} />)}
-                        <View style={styles.selectButton}><Button title={mediaAsset ? "1 File Selected" : "Select Photo/Video"} onPress={() => launchImageLibrary({ mediaType: 'mixed' }, r => r.assets && setMediaAsset(r.assets[0]))} color="#6200EE" />{mediaAsset?.fileName && <Text style={styles.fileName}>{mediaAsset.fileName}</Text>}</View>
-                        <View style={styles.modalActions}><Button title="Cancel" onPress={() => setUploadModalVisible(false)} color="gray" /><View style={{ width: 20 }} /><Button title={isSubmitting ? "Submitting..." : 'Upload'} onPress={handleUpload} disabled={isSubmitting} /></View>
+                        <View style={styles.selectButton}><Button title={mediaAsset ? "1 File Selected" : "Select Cover Photo/Video"} onPress={() => launchImageLibrary({ mediaType: 'mixed' }, r => r.assets && setMediaAsset(r.assets[0]))} color="#6200EE" />{mediaAsset?.fileName && <Text style={styles.fileName}>{mediaAsset.fileName}</Text>}</View>
+                        <View style={styles.modalActions}><Button title="Cancel" onPress={() => setUploadModalVisible(false)} color="gray" /><View style={{ width: 20 }} /><Button title={isSubmitting ? "Uploading..." : 'Upload'} onPress={handleUpload} disabled={isSubmitting} /></View>
                     </View>
                 </View>
             </Modal>
@@ -210,22 +274,129 @@ const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#f4f4f4' },
     listContainer: { padding: 12 },
     emptyText: { textAlign: 'center', marginTop: 50, color: 'gray' },
-    albumContainer: { width: '100%', marginBottom: 16, borderRadius: 12, backgroundColor: '#fff', elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4 },
-    albumImage: { width: '100%', height: 180, borderTopLeftRadius: 12, borderTopRightRadius: 12 },
-    albumInfo: { paddingVertical: 12, paddingHorizontal: 16 },
-    albumTitle: { fontSize: 18, fontWeight: 'bold', color: '#333' },
-    albumDate: { fontSize: 13, color: '#666', marginTop: 2 },
-    albumCount: { fontSize: 13, color: '#666', marginTop: 4 },
-    fab: { position: 'absolute', right: 25, bottom: 25, width: 60, height: 60, borderRadius: 30, backgroundColor: '#6200EE', justifyContent: 'center', alignItems: 'center', elevation: 8 },
-    fabText: { fontSize: 30, color: 'white', lineHeight: 32 },
-    modalContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)' },
-    modalView: { width: '90%', backgroundColor: 'white', borderRadius: 20, padding: 25, alignItems: 'center', elevation: 5 },
-    modalTitle: { fontSize: 22, fontWeight: 'bold', marginBottom: 20 },
-    input: { width: '100%', height: 50, borderColor: '#ccc', borderWidth: 1, borderRadius: 8, marginBottom: 15, paddingHorizontal: 15 },
-    datePickerButton: { width: '100%', height: 50, justifyContent: 'center', alignItems: 'center', borderColor: '#ccc', borderWidth: 1, borderRadius: 8, marginBottom: 15 },
-    selectButton: { width: '100%', marginBottom: 20 },
-    fileName: { fontSize: 12, color: 'gray', textAlign: 'center', marginTop: 5 },
-    modalActions: { flexDirection: 'row', justifyContent: 'flex-end', width: '100%', marginTop: 20 },
+    albumContainer: { 
+        width: '100%', 
+        marginBottom: 16, 
+        borderRadius: 12, 
+        backgroundColor: '#fff', 
+        elevation: 4, 
+        shadowColor: '#000', 
+        shadowOffset: { width: 0, height: 2 }, 
+        shadowOpacity: 0.1, 
+        shadowRadius: 4 
+    },
+    albumImage: { 
+        width: '100%', 
+        height: 180, 
+        borderTopLeftRadius: 12, 
+        borderTopRightRadius: 12 
+    },
+    albumInfo: { 
+        padding: 16
+    },
+    albumTitle: { 
+        fontSize: 18, 
+        fontWeight: 'bold', 
+        color: '#333' 
+    },
+    albumDate: { 
+        fontSize: 13, 
+        color: '#666', 
+        marginTop: 2 
+    },
+    albumCount: { 
+        fontSize: 13, 
+        color: '#666', 
+        marginTop: 4 
+    },
+    deleteAlbumButton: {
+        position: 'absolute',
+        top: 10,
+        right: 10,
+        backgroundColor: '#d32f2f', // A strong red color
+        width: 36,
+        height: 36,
+        borderRadius: 18, // Perfect circle
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 1,
+        elevation: 3,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.3,
+        shadowRadius: 2,
+    },
+    fab: { 
+        position: 'absolute', 
+        right: 25, 
+        bottom: 25, 
+        width: 60, 
+        height: 60, 
+        borderRadius: 30, 
+        backgroundColor: '#6200EE', 
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        elevation: 8 
+    },
+    fabText: { 
+        fontSize: 30, 
+        color: 'white', 
+        lineHeight: 32 
+    },
+    modalContainer: { 
+        flex: 1, 
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        backgroundColor: 'rgba(0,0,0,0.5)' 
+    },
+    modalView: { 
+        width: '90%', 
+        backgroundColor: 'white', 
+        borderRadius: 20, 
+        padding: 25, 
+        alignItems: 'center', 
+        elevation: 5 
+    },
+    modalTitle: { 
+        fontSize: 22, 
+        fontWeight: 'bold', 
+        marginBottom: 20 
+    },
+    input: { 
+        width: '100%', 
+        height: 50, 
+        borderColor: '#ccc', 
+        borderWidth: 1, 
+        borderRadius: 8, 
+        marginBottom: 15, 
+        paddingHorizontal: 15 
+    },
+    datePickerButton: { 
+        width: '100%', 
+        height: 50, 
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        borderColor: '#ccc', 
+        borderWidth: 1, 
+        borderRadius: 8, 
+        marginBottom: 15 
+    },
+    selectButton: { 
+        width: '100%', 
+        marginBottom: 20 
+    },
+    fileName: { 
+        fontSize: 12, 
+        color: 'gray', 
+        textAlign: 'center', 
+        marginTop: 5 
+    },
+    modalActions: { 
+        flexDirection: 'row', 
+        justifyContent: 'flex-end', 
+        width: '100%', 
+        marginTop: 20 
+    },
 });
 
 export default GalleryScreen;

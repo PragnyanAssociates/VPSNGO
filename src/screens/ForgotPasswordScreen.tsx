@@ -1,4 +1,4 @@
-// 📂 File: src/screens/ForgotPasswordScreen.tsx (FINAL CORRECTED VERSION)
+// 📂 File: src/screens/ForgotPasswordScreen.tsx (CORRECTED FOR OTP/CODE METHOD)
 
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, ActivityIndicator, SafeAreaView } from 'react-native';
@@ -6,35 +6,53 @@ import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityI
 import { API_BASE_URL } from '../../apiConfig';
 
 const ForgotPasswordScreen = ({ navigation }) => {
-    const [email, setEmail] = useState(''); // ✅ CORRECT: State should be for email
+    const [email, setEmail] = useState('');
     const [loading, setLoading] = useState(false);
 
-    const validateEmail = (email: string) => {
+    const validateEmail = (emailToValidate: string) => {
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        return emailRegex.test(email);
+        return emailRegex.test(emailToValidate);
     };
 
-    const handleResetRequest = async () => {
+    // ✅ --- THIS IS THE FIX --- ✅
+    // This function now sends the email to the backend and, on success,
+    // navigates the user to the ResetPasswordScreen, passing the email along.
+    const handleSendCodeRequest = async () => {
         if (!email.trim()) {
-            return Alert.alert('Required', 'Please enter your email address.');
+            return Alert.alert('Email Required', 'Please enter your email address.');
         }
         if (!validateEmail(email)) {
-            return Alert.alert('Invalid Input', 'Please enter a valid email address.');
+            return Alert.alert('Invalid Email', 'Please enter a valid email address.');
         }
+
         setLoading(true);
         try {
             const response = await fetch(`${API_BASE_URL}/api/forgot-password`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email }), // ✅ CORRECT: Send the email in the body
+                body: JSON.stringify({ email }),
             });
+
             const data = await response.json();
-            // Show the success message regardless of whether the email was found
-            Alert.alert('Request Sent', data.message, [
-                { text: 'OK', onPress: () => navigation.goBack() },
-            ]);
+            
+            // The backend always sends a 200 status for security.
+            // We use the response message to inform the user.
+            if (response.ok) {
+                Alert.alert('Check Your Email', data.message, [
+                    {
+                        text: 'OK',
+                        // Navigate to the next screen, passing the email as a parameter.
+                        // This is essential for the next step to work.
+                        onPress: () => navigation.navigate('ResetPasswordScreen', { email: email }),
+                    },
+                ]);
+            } else {
+                // This would catch server errors (e.g., status 500)
+                Alert.alert('Request Failed', data.message || 'An error occurred on the server.');
+            }
         } catch (error) {
-            Alert.alert('Error', 'Could not connect to the server.');
+            console.error("Forgot Password network error:", error);
+            Alert.alert('Connection Error', 'Could not connect to the server. Please check your internet connection.');
         } finally {
             setLoading(false);
         }
@@ -43,30 +61,32 @@ const ForgotPasswordScreen = ({ navigation }) => {
     return (
         <SafeAreaView style={styles.container}>
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => navigation.goBack()}>
+                <TouchableOpacity onPress={() => navigation.goBack()} accessibilityLabel="Go back">
                     <MaterialCommunityIcons name="arrow-left" size={28} color="#008080" />
                 </TouchableOpacity>
-                <Text style={styles.title}>Reset Password</Text>
+                <Text style={styles.title}>Forgot Password</Text>
             </View>
             <View style={styles.form}>
+                {/* Instructions updated for the code method */}
                 <Text style={styles.instructions}>
-                    Enter the email address associated with your Donor account. If an account exists, we will send a password reset link.
+                    Enter the email address associated with your Donor account. If an account exists, we will send a 6-digit reset code.
                 </Text>
                 <TextInput
-                    placeholder="Enter your email" // ✅ CORRECT: Placeholder asks for email
+                    placeholder="Enter your registered email"
                     style={styles.input}
                     value={email}
                     onChangeText={setEmail}
                     autoCapitalize="none"
                     keyboardType="email-address"
                     autoComplete="email"
-                    accessibilityLabel="Email input for password reset"
+                    accessibilityLabel="Email input for password reset code"
                 />
-                <TouchableOpacity style={styles.button} onPress={handleResetRequest} disabled={loading}>
+                {/* Button text and function updated */}
+                <TouchableOpacity style={styles.button} onPress={handleSendCodeRequest} disabled={loading}>
                     {loading ? (
                         <ActivityIndicator color="#fff" />
                     ) : (
-                        <Text style={styles.buttonText}>Send Reset Link</Text>
+                        <Text style={styles.buttonText}>Send Reset Code</Text>
                     )}
                 </TouchableOpacity>
             </View>
