@@ -1,16 +1,15 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { SafeAreaView, StyleSheet, View, Text, TouchableOpacity, ScrollView, FlatList, ActivityIndicator, Alert, Modal, TextInput, Linking, Platform } from 'react-native';
 import { createStackNavigator } from '@react-navigation/stack';
 import Icon from 'react-native-vector-icons/FontAwesome5';
-import { useIsFocused, useNavigation } from '@react-navigation/native';
+import { useIsFocused } from '@react-navigation/native';
 import { decode } from "@googlemaps/polyline-codec";
-
-import MapView, { Marker, Polyline, UrlTile, PROVIDER_GOOGLE } from 'react-native-maps';
-
+import MapView, { Marker, Polyline, UrlTile } from 'react-native-maps';
 import { useAuth } from '../../context/AuthContext';
 import { API_BASE_URL } from '../../../apiConfig';
 import DropDownPicker from 'react-native-dropdown-picker';
 import { Country, State, City }  from 'country-state-city';
+import Toast from 'react-native-simple-toast'; 
 
 const Stack = createStackNavigator();
 
@@ -126,103 +125,161 @@ const TransportListScreen = ({ navigation }) => {
     );
 };
 
-// --- COMPONENT 3: The Route Detail View with Map ---
+// --- COMPONENT 3: The Route Detail View with Map (UPGRADED FOR LIVE ANIMATION) ---
 const RouteDetailScreen = ({ route }) => {
     const { routeId } = route.params;
     const [routeData, setRouteData] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isMapFullScreen, setIsMapFullScreen] = useState(false);
     const mapRef = useRef(null); 
-
+    const liveMarkerRef = useRef(null);
     const [routeCoordinates, setRouteCoordinates] = useState([]);
+    const [busHeading, setBusHeading] = useState(0);
+    const prevCoordsRef = useRef(null);
+
+    const getBearing = (startLat, startLng, destLat, destLng) => {
+        startLat = startLat * Math.PI / 180;
+        startLng = startLng * Math.PI / 180;
+        destLat = destLat * Math.PI / 180;
+        destLng = destLng * Math.PI / 180;
+        const y = Math.sin(destLng - startLng) * Math.cos(destLat);
+        const x = Math.cos(startLat) * Math.sin(destLat) - Math.sin(startLat) * Math.cos(destLat) * Math.cos(destLng - startLng);
+        let brng = Math.atan2(y, x);
+        brng = brng * 180 / Math.PI;
+        return (brng + 360) % 360;
+    };
 
     useEffect(() => {
-        const fetchAndTrack = async () => { 
+        const fetchAndTrack = async (isInitialLoad = false) => { 
             try { 
                 const response = await fetch(`${API_BASE_URL}/api/transport/routes/${routeId}`); 
                 if (!response.ok) throw new Error("Could not fetch route details."); 
                 const data = await response.json(); 
-                setRouteData(data); 
-
-                if (data && data.route_path_polyline) {
-                    const decoded = decode(data.route_path_polyline, 5);
-                    setRouteCoordinates(decoded.map(c => ({ latitude: c[0], longitude: c[1] })));
+                
+                if (isInitialLoad) {
+                    setRouteData(data); 
+                    if (data && data.route_path_polyline) {
+                        const decoded = decode(data.route_path_polyline, 5);
+                        setRouteCoordinates(decoded.map(c => ({ latitude: parseFloat(c[0]), longitude: parseFloat(c[1]) })));
+                    } else {
+                        setRouteCoordinates([]);
+                    }
                 } else {
-                    setRouteCoordinates([]);
+                    setRouteData(prevData => ({ ...prevData, ...data }));
                 }
+
+                const newLat = parseFloat(data.current_lat);
+                const newLng = parseFloat(data.current_lng);
+
+                if (!isNaN(newLat) && !isNaN(newLng)) {
+                    const newCoordinate = { latitude: newLat, longitude: newLng };
+                    if (prevCoordsRef.current) {
+                        const prevLat = prevCoordsRef.current.latitude;
+                        const prevLng = prevCoordsRef.current.longitude;
+                        if (prevLat !== newLat || prevLng !== newLng) {
+                           const heading = getBearing(prevLat, prevLng, newLat, newLng);
+                           setBusHeading(heading);
+                           liveMarkerRef.current?.animateMarkerToCoordinate(newCoordinate, 2000); // 2-second animation
+                        }
+                    }
+                    prevCoordsRef.current = newCoordinate;
+                }
+
             } catch (error) { 
-                if (isLoading) Alert.alert("Error", error.message); 
+                console.error("Failed to update route data:", error.message);
+                if (isInitialLoad) Alert.alert("Error", error.message);
+                else Toast.show('Could not update live location.', Toast.SHORT);
             } finally { 
-                if (isLoading) setIsLoading(false); 
+                if (isInitialLoad) setIsLoading(false); 
             } 
         };
-        fetchAndTrack();
-        const interval = setInterval(fetchAndTrack, 15000);
+
+        fetchAndTrack(true);
+        const interval = setInterval(() => fetchAndTrack(false), 5000); // Check every 5 seconds
         return () => clearInterval(interval);
     }, [routeId]);
 
     useEffect(() => {
-        if (mapRef.current && routeCoordinates.length > 0) {
-            mapRef.current.fitToCoordinates(routeCoordinates, {
-                edgePadding: { top: 40, right: 40, bottom: 40, left: 40 },
-                animated: true,
-            });
+        if (mapRef.current && routeCoordinates.length > 1) {
+            setTimeout(() => {
+                mapRef.current.fitToCoordinates(routeCoordinates, { edgePadding: { top: 50, right: 50, bottom: 50, left: 50 }, animated: true });
+            }, 500); 
         }
-    }, [routeCoordinates]);
+    }, [routeCoordinates, isMapFullScreen]);
 
     if (isLoading) return <View style={styles.centered}><ActivityIndicator size="large" color="#3498db" /></View>;
     if (!routeData) return <View style={styles.centered}><Text>Route data not found.</Text></View>;
     
-    const osmTileUrl = "https://api.maptiler.com/maps/streets-v2/{z}/{x}/{y}.png?key=LcjtfAnfWsn73mRnaArK";
-
-    const MapContent = () => (
+    const osmTileUrl = "https://api.maptiler.com/maps/topo-v2/{z}/{x}/{y}.png?key=LcjtfAnfWsn73mRnaArK";
+    
+    const MapDisplay = (
         <MapView
             ref={mapRef}
             style={StyleSheet.absoluteFillObject}
             provider={null} 
             mapType="none"
+            initialRegion={routeCoordinates.length > 0 ? { latitude: routeCoordinates[0].latitude, longitude: routeCoordinates[0].longitude, latitudeDelta: 0.0922, longitudeDelta: 0.0421 } : undefined}
         >
-            <UrlTile 
-                urlTemplate={osmTileUrl} 
-                maximumZ={19}
-                zIndex={-1}
-            />
-            {routeCoordinates.length > 0 && (
-                <Polyline coordinates={routeCoordinates} strokeColor="#E53935" strokeWidth={6} />
-            )}
-            {routeData.current_lat && (
-                <Marker coordinate={{ latitude: routeData.current_lat, longitude: routeData.current_lng }} anchor={{ x: 0.5, y: 0.5 }}>
-                     <View style={styles.busMarker}><Icon name="bus" size={18} color="#fff" /></View>
-                </Marker>
-            )}
+            <UrlTile urlTemplate={osmTileUrl} maximumZ={19} zIndex={-1} shouldReplaceMapContent={true} />
+            {routeCoordinates.length > 0 && <Polyline coordinates={routeCoordinates} strokeColor="#E53935" strokeWidth={6} />}
+            {routeData.stops && routeData.stops.map(stop => {
+                const stopLat = parseFloat(stop.stop_lat);
+                const stopLng = parseFloat(stop.stop_lng);
+                if (!isNaN(stopLat) && !isNaN(stopLng)) {
+                    return (<Marker key={`stop-${stop.sno}`} coordinate={{ latitude: stopLat, longitude: stopLng }}><View style={styles.stopMarker}><Text style={styles.stopMarkerText}>{stop.sno}</Text></View></Marker>);
+                }
+                return null;
+            })}
+
+            {(() => {
+                const currentLat = parseFloat(routeData.current_lat);
+                const currentLng = parseFloat(routeData.current_lng);
+                if (!isNaN(currentLat) && !isNaN(currentLng)) {
+                    return (
+                        <Marker 
+                            ref={liveMarkerRef}
+                            anchor={{ x: 0.5, y: 0.5 }}
+                            coordinate={{ latitude: currentLat, longitude: currentLng }} 
+                            rotation={busHeading}
+                            flat={true} // Important for smooth rotation on Android
+                        >
+                             <View style={styles.liveMarker}>
+                                <Icon name="location-arrow" size={18} color="#fff" style={styles.liveMarkerArrow} />
+                             </View>
+                        </Marker>
+                    );
+                }
+                return null;
+            })()}
         </MapView>
     );
 
     return (
         <SafeAreaView style={styles.detailContainerSafe}>
-            <ScrollView>
-                <View style={styles.detailHeader}><View style={styles.driverInfo}><Text style={styles.infoLabel}>Driver</Text><View style={styles.contactRow}><Text style={styles.infoValue}>{routeData.driver_name}</Text><TouchableOpacity onPress={() => makeCall(routeData.driver_phone)} style={{marginLeft: 10}}><Icon name="phone-alt" size={16} color="#3498db"/></TouchableOpacity></View></View><View style={styles.driverInfo}><Text style={styles.infoLabel}>Conductor</Text><View style={styles.contactRow}><Text style={styles.infoValue}>{routeData.conductor_name}</Text><TouchableOpacity onPress={() => makeCall(routeData.conductor_phone)} style={{marginLeft: 10}}><Icon name="phone-alt" size={16} color="#3498db"/></TouchableOpacity></View></View></View>
-                
-                <TouchableOpacity activeOpacity={0.9} onPress={() => setIsMapFullScreen(true)} style={styles.mapContainer}>
-                    <Text style={styles.mapTitle}>Live Bus Tracking</Text>
-                    {routeCoordinates.length > 0 ? <MapContent /> : <View style={styles.mapPlaceholder}><Text>Route map is unavailable.</Text></View>}
-                    <View style={styles.mapOverlay}><Text style={styles.mapOverlayText}>Tap to track live</Text></View>
-                </TouchableOpacity>
-
-                <View style={styles.stopsTable}><View style={styles.tableHeader}><Text style={[styles.tableHeaderCell, {flex: 0.2}]}>S.No.</Text><Text style={[styles.tableHeaderCell, {flex: 0.8}]}>Boarding Point</Text></View>{routeData.stops.map((stop, index) => (<View key={index} style={styles.tableRow}><Text style={styles.snoCell}>{stop.sno}</Text><Text style={styles.boardingCell}>{stop.point}</Text></View>))}</View>
-            </ScrollView>
-
-            {isMapFullScreen && routeCoordinates.length > 0 && (
-                <Modal visible={isMapFullScreen} animationType="slide" onRequestClose={() => setIsMapFullScreen(false)}>
-                    <SafeAreaView style={{flex: 1}}>
-                        <TouchableOpacity style={styles.closeMapButton} onPress={() => setIsMapFullScreen(false)}><Icon name="times" size={24} color="#333" /></TouchableOpacity>
-                        <MapContent />
-                    </SafeAreaView>
-                </Modal>
+            {!isMapFullScreen && (
+                <ScrollView>
+                    <View style={styles.detailHeader}><View style={styles.driverInfo}><Text style={styles.infoLabel}>Driver</Text><View style={styles.contactRow}><Text style={styles.infoValue}>{routeData.driver_name}</Text><TouchableOpacity onPress={() => makeCall(routeData.driver_phone)} style={{marginLeft: 10}}><Icon name="phone-alt" size={16} color="#3498db"/></TouchableOpacity></View></View><View style={styles.driverInfo}><Text style={styles.infoLabel}>Conductor</Text><View style={styles.contactRow}><Text style={styles.infoValue}>{routeData.conductor_name}</Text><TouchableOpacity onPress={() => makeCall(routeData.conductor_phone)} style={{marginLeft: 10}}><Icon name="phone-alt" size={16} color="#3498db"/></TouchableOpacity></View></View></View>
+                    <TouchableOpacity activeOpacity={0.9} onPress={() => setIsMapFullScreen(true)} style={styles.mapContainer}>
+                        <Text style={styles.mapTitle}>Live Bus Tracking</Text>
+                        {routeCoordinates.length > 0 ? MapDisplay : <View style={styles.mapPlaceholder}><Text>Route map is unavailable.</Text></View>}
+                        <View style={styles.mapOverlay}><Text style={styles.mapOverlayText}>Tap to track live</Text></View>
+                    </TouchableOpacity>
+                    <View style={styles.stopsTable}><View style={styles.tableHeader}><Text style={[styles.tableHeaderCell, {flex: 0.2}]}>S.No.</Text><Text style={[styles.tableHeaderCell, {flex: 0.8}]}>Boarding Point</Text></View>{routeData.stops.map((stop, index) => (<View key={index} style={styles.tableRow}><Text style={styles.snoCell}>{stop.sno}</Text><Text style={styles.boardingCell}>{stop.point}</Text></View>))}</View>
+                </ScrollView>
+            )}
+            
+            {isMapFullScreen && (
+                <View style={styles.fullScreenMapContainer}>
+                    {MapDisplay}
+                    <TouchableOpacity style={styles.closeMapButton} onPress={() => setIsMapFullScreen(false)}>
+                        <Icon name="times" size={24} color="#333" />
+                    </TouchableOpacity>
+                </View>
             )}
         </SafeAreaView>
     );
 };
+
 
 // --- COMPONENT 4: The Admin Panel ---
 const AdminTransportPanel = ({ navigation }) => { 
@@ -260,7 +317,7 @@ const AdminTransportPanel = ({ navigation }) => {
     );
 };
 
-// --- Navigators for different user roles ---
+// --- Navigators & Main Export ---
 const StudentTransportNavigator = () => (
     <Stack.Navigator screenOptions={{ headerStyle: { backgroundColor: '#2c3e50' }, headerTintColor: '#fff', headerTitleStyle: { fontWeight: 'bold' } }}>
         <Stack.Screen name="TransportRoutesList" component={TransportListScreen} options={{ title: 'School Transport' }} />
@@ -275,7 +332,6 @@ const AdminNavigator = () => (
     </Stack.Navigator>
 );
 
-// --- The MAIN exported component that decides which navigator to show ---
 const TransportScreen = () => {
     const { user } = useAuth();
     if (!user) return <View style={styles.centered}><ActivityIndicator size="large" color="#3498db" /></View>;
@@ -284,7 +340,61 @@ const TransportScreen = () => {
     return <View style={styles.centered}><Text>Transport module not available for your role.</Text></View>;
 };
 
-// --- All styles go here ---
-const styles = StyleSheet.create({ centered: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f5f5f5' }, emptyText: { textAlign: 'center', marginTop: 50, fontSize: 16, color: '#7f8c8d' }, listContainerSafe: { flex: 1, backgroundColor: '#f5f5f5' }, listContentContainer: { paddingHorizontal: 16, paddingVertical: 10, }, routeListItem: { backgroundColor: '#fff', flexDirection: 'row', alignItems: 'center', padding: 15, borderRadius: 10, marginBottom: 12, elevation: 2, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 5, shadowOffset: { width: 0, height: 2 }, }, routeIconContainer: { width: 45, height: 45, borderRadius: 22.5, backgroundColor: '#eaf5ff', justifyContent: 'center', alignItems: 'center', marginRight: 15, }, routeListItemText: { flex: 1, fontSize: 17, fontWeight: '600', color: '#34495e', }, detailContainerSafe: { flex: 1, backgroundColor: '#f8f9fa' }, detailHeader: { flexDirection: 'row', justifyContent: 'space-between', padding: 15, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#ecf0f1' }, driverInfo: { flex: 1, alignItems: 'center', gap: 5 }, contactRow: { flexDirection: 'row', alignItems: 'center' }, infoLabel: { fontSize: 14, color: '#7f8c8d' }, infoValue: { fontSize: 16, fontWeight: 'bold', color: '#2c3e50' }, mapContainer: { marginHorizontal: 15, marginTop: 15, borderRadius: 12, overflow: 'hidden', elevation: 5, backgroundColor: '#ddd', height: 220 }, mapPlaceholder: { height: 220, justifyContent: 'center', alignItems: 'center', backgroundColor: '#e9ecef', marginHorizontal: 15, marginTop: 15, borderRadius: 12, borderWidth: 1, borderColor: '#ced4da', }, mapTitle: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 1, fontSize: 18, fontWeight: 'bold', padding: 15, textAlign: 'center', color: '#34495e', backgroundColor: 'rgba(236, 240, 241, 0.8)' }, map: { ...StyleSheet.absoluteFillObject }, mapOverlay: { ...StyleSheet.absoluteFillObject, top: 50, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'center', alignItems: 'center' }, mapOverlayText: { color: '#fff', fontWeight: 'bold', fontSize: 16, textShadowColor: 'rgba(0, 0, 0, 0.75)', textShadowOffset: {width: -1, height: 1}, textShadowRadius: 10 }, closeMapButton: { position: 'absolute', top: Platform.OS === 'ios' ? 60 : 20, right: 20, zIndex: 10, backgroundColor: 'rgba(255,255,255,0.9)', padding: 10, borderRadius: 20, elevation: 5 }, busMarker: { backgroundColor: '#3498db', padding: 8, borderRadius: 20, elevation: 5, shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 3, borderWidth: 2, borderColor: '#fff' }, stopsTable: { marginHorizontal: 15, borderWidth: 1, borderColor: '#e0e0e0', borderRadius: 8, overflow: 'hidden', marginBottom: 20, backgroundColor: '#fff' }, tableHeader: { flexDirection: 'row', backgroundColor: '#34495e' }, tableHeaderCell: { padding: 12, fontWeight: 'bold', fontSize: 15, color: '#fff', textAlign: 'left' }, tableRow: { flexDirection: 'row', borderBottomWidth: 1, borderColor: '#ecf0f1' }, snoCell: { flex: 0.2, textAlign: 'center', paddingVertical: 12, fontSize: 14, color: '#7f8c8d', backgroundColor: '#f8f9fa' }, boardingCell: { flex: 0.8, paddingVertical: 12, paddingHorizontal: 10, fontSize: 16, color: '#2c3e50' }, adminHeader: { fontSize: 22, fontWeight: 'bold', textAlign: 'center', padding: 15, backgroundColor: '#fff' }, adminCard: { backgroundColor: '#fff', padding: 20, marginVertical: 8, marginHorizontal: 15, borderRadius: 8, elevation: 3, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, adminCardTitle: { fontSize: 18, fontWeight: '600' }, adminCardActions: { flexDirection: 'row', gap: 25 }, adminAddButton: { backgroundColor: '#27ae60', padding: 15, margin: 15, borderRadius: 8, alignItems: 'center' }, adminAddButtonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' }, modalContainer: { flex: 1, padding: 20, backgroundColor: '#f8f9fa' }, modalHeader: { fontSize: 24, fontWeight: 'bold', marginBottom: 20, textAlign: 'center' }, input: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#ced4da', padding: 12, borderRadius: 8, fontSize: 16, marginBottom: 15 }, formSectionHeader: { fontSize: 20, fontWeight: 'bold', marginTop: 15, marginBottom: 10, color: '#2c3e50' }, dropdownContainer: { marginBottom: 15 }, dropdown: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#ced4da' }, stopInputContainer: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 }, stopInput: { flex: 1, backgroundColor: '#fff', borderWidth: 1, borderColor: '#ced4da', padding: 12, borderRadius: 8, marginRight: 10, fontSize: 16 }, addStopButton: { backgroundColor: '#e9ecef', padding: 12, borderRadius: 8, alignItems: 'center', borderWidth: 1, borderColor: '#ced4da', marginTop: 10 }, addStopButtonText: { color: '#495057', fontWeight: 'bold' }, removeStopButton: { marginLeft: 10, padding: 5, justifyContent: 'center' }, modalButtonContainer: { flexDirection: 'row', justifyContent: 'space-around', marginTop: 30, paddingBottom: 20 }, modalButton: { flex: 1, padding: 15, borderRadius: 8, alignItems: 'center' }, cancelButton: { backgroundColor: '#6c757d', marginRight: 10 }, saveButton: { backgroundColor: '#28a745', marginLeft: 10 }, modalButtonText: { color: '#fff', fontWeight: 'bold' }, saveButtonText: { color: '#fff', fontWeight: 'bold', fontSize: 16 }, });
+// --- Styles ---
+const styles = StyleSheet.create({
+    fullScreenMapContainer: { ...StyleSheet.absoluteFillObject, backgroundColor: 'white', zIndex: 1000, },
+    centered: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f5f5f5' },
+    emptyText: { textAlign: 'center', marginTop: 50, fontSize: 16, color: '#7f8c8d' },
+    listContainerSafe: { flex: 1, backgroundColor: '#f5f5f5' },
+    listContentContainer: { paddingHorizontal: 16, paddingVertical: 10, },
+    routeListItem: { backgroundColor: '#fff', flexDirection: 'row', alignItems: 'center', padding: 15, borderRadius: 10, marginBottom: 12, elevation: 2, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 5, shadowOffset: { width: 0, height: 2 }, },
+    routeIconContainer: { width: 45, height: 45, borderRadius: 22.5, backgroundColor: '#eaf5ff', justifyContent: 'center', alignItems: 'center', marginRight: 15, },
+    routeListItemText: { flex: 1, fontSize: 17, fontWeight: '600', color: '#34495e', },
+    detailContainerSafe: { flex: 1, backgroundColor: '#f8f9fa' },
+    detailHeader: { flexDirection: 'row', justifyContent: 'space-between', padding: 15, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#ecf0f1' },
+    driverInfo: { flex: 1, alignItems: 'center', gap: 5 },
+    contactRow: { flexDirection: 'row', alignItems: 'center' },
+    infoLabel: { fontSize: 14, color: '#7f8c8d' },
+    infoValue: { fontSize: 16, fontWeight: 'bold', color: '#2c3e50' },
+    mapContainer: { marginHorizontal: 15, marginTop: 15, borderRadius: 12, overflow: 'hidden', elevation: 5, backgroundColor: '#ddd', height: 220 },
+    mapPlaceholder: { height: 220, justifyContent: 'center', alignItems: 'center', backgroundColor: '#e9ecef', marginHorizontal: 15, marginTop: 15, borderRadius: 12, borderWidth: 1, borderColor: '#ced4da', },
+    mapTitle: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 1, fontSize: 18, fontWeight: 'bold', padding: 15, textAlign: 'center', color: '#34495e', backgroundColor: 'rgba(236, 240, 241, 0.8)' },
+    mapOverlay: { ...StyleSheet.absoluteFillObject, top: 50, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'center', alignItems: 'center' },
+    mapOverlayText: { color: '#fff', fontWeight: 'bold', fontSize: 16, textShadowColor: 'rgba(0, 0, 0, 0.75)', textShadowOffset: {width: -1, height: 1}, textShadowRadius: 10 },
+    closeMapButton: { position: 'absolute', top: Platform.OS === 'ios' ? 60 : 20, right: 20, zIndex: 10, backgroundColor: 'rgba(255,255,255,0.9)', padding: 10, borderRadius: 20, elevation: 5 }, 
+    stopMarker: { backgroundColor: '#fff', borderColor: '#555', borderWidth: 2, borderRadius: 15, width: 30, height: 30, justifyContent: 'center', alignItems: 'center', elevation: 4, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 2, },
+    stopMarkerText: { color: '#555', fontWeight: 'bold', fontSize: 14, },
+    liveMarker: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#4285F4', justifyContent: 'center', alignItems: 'center', borderColor: '#fff', borderWidth: 3, elevation: 6, },
+    liveMarkerArrow: { transform: [{ translateY: -1 }] },
+    stopsTable: { marginHorizontal: 15, borderWidth: 1, borderColor: '#e0e0e0', borderRadius: 8, overflow: 'hidden', marginBottom: 20, backgroundColor: '#fff' },
+    tableHeader: { flexDirection: 'row', backgroundColor: '#34495e' },
+    tableHeaderCell: { padding: 12, fontWeight: 'bold', fontSize: 15, color: '#fff', textAlign: 'left' },
+    tableRow: { flexDirection: 'row', borderBottomWidth: 1, borderColor: '#ecf0f1' },
+    snoCell: { flex: 0.2, textAlign: 'center', paddingVertical: 12, fontSize: 14, color: '#7f8c8d', backgroundColor: '#f8f9fa' },
+    boardingCell: { flex: 0.8, paddingVertical: 12, paddingHorizontal: 10, fontSize: 16, color: '#2c3e50' },
+    adminHeader: { fontSize: 22, fontWeight: 'bold', textAlign: 'center', padding: 15, backgroundColor: '#fff' },
+    adminCard: { backgroundColor: '#fff', padding: 20, marginVertical: 8, marginHorizontal: 15, borderRadius: 8, elevation: 3, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+    adminCardTitle: { fontSize: 18, fontWeight: '600' },
+    adminCardActions: { flexDirection: 'row', gap: 25 },
+    adminAddButton: { backgroundColor: '#27ae60', padding: 15, margin: 15, borderRadius: 8, alignItems: 'center' },
+    adminAddButtonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+    modalContainer: { flex: 1, padding: 20, backgroundColor: '#f8f9fa' },
+    modalHeader: { fontSize: 24, fontWeight: 'bold', marginBottom: 20, textAlign: 'center' },
+    input: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#ced4da', padding: 12, borderRadius: 8, fontSize: 16, marginBottom: 15 },
+    formSectionHeader: { fontSize: 20, fontWeight: 'bold', marginTop: 15, marginBottom: 10, color: '#2c3e50' },
+    dropdownContainer: { marginBottom: 15 },
+    dropdown: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#ced4da' },
+    stopInputContainer: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+    stopInput: { flex: 1, backgroundColor: '#fff', borderWidth: 1, borderColor: '#ced4da', padding: 12, borderRadius: 8, marginRight: 10, fontSize: 16 },
+    addStopButton: { backgroundColor: '#e9ecef', padding: 12, borderRadius: 8, alignItems: 'center', borderWidth: 1, borderColor: '#ced4da', marginTop: 10 },
+    addStopButtonText: { color: '#495057', fontWeight: 'bold' },
+    removeStopButton: { marginLeft: 10, padding: 5, justifyContent: 'center' },
+    modalButtonContainer: { flexDirection: 'row', justifyContent: 'space-around', marginTop: 30, paddingBottom: 20 },
+    modalButton: { flex: 1, padding: 15, borderRadius: 8, alignItems: 'center' },
+    cancelButton: { backgroundColor: '#6c757d', marginRight: 10 },
+    saveButton: { backgroundColor: '#28a745', marginLeft: 10 },
+    modalButtonText: { color: '#fff', fontWeight: 'bold' },
+    saveButtonText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
+});
 
 export default TransportScreen;
