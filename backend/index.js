@@ -3869,7 +3869,7 @@ app.get('/api/chat/history/:userId', async (req, res) => {
   if (!userId) return res.status(400).json({ message: 'User ID is required.' });
 
   try {
-    const query = "SELECT id, role, content, created_at FROM chat_messages WHERE user_id = ? ORDER BY created_at ASC";
+    const query = "SELECT id, role, content, type, created_at FROM chat_messages WHERE user_id = ? ORDER BY created_at ASC";
     const [messages] = await db.query(query, [userId]);
     res.status(200).json(messages);
   } catch (error) {
@@ -3878,22 +3878,31 @@ app.get('/api/chat/history/:userId', async (req, res) => {
   }
 });
 
-// Post a user message and get AI response
+// Post a user message and get AI response (TEXT ONLY)
 app.post('/api/chat/message', async (req, res) => {
-  const { userId, message } = req.body;
+  const { userId, message, type } = req.body;
 
   if (!userId || !message || typeof message !== 'string') {
     return res.status(400).json({ message: "userId and message are required." });
   }
+
+  const messageType = type || 'text';
 
   const connection = await db.getConnection();
   try {
     await connection.beginTransaction();
 
     await connection.query(
-      'INSERT INTO chat_messages (user_id, role, content) VALUES (?, ?, ?)',
-      [userId, 'user', message]
+      'INSERT INTO chat_messages (user_id, role, content, type) VALUES (?, ?, ?, ?)',
+      [userId, 'user', message, messageType]
     );
+
+    if (messageType !== 'text') {
+      // Don't get AI reply for non-text messages
+      await connection.commit();
+      res.status(200).json({ reply: null });
+      return;
+    }
 
     const [history] = await connection.query(
       "SELECT role, content FROM chat_messages WHERE user_id = ? ORDER BY created_at DESC LIMIT 10",
@@ -3914,8 +3923,8 @@ app.post('/api/chat/message', async (req, res) => {
     const aiReply = completion.choices[0].message.content;
 
     await connection.query(
-      'INSERT INTO chat_messages (user_id, role, content) VALUES (?, ?, ?)',
-      [userId, 'ai', aiReply]
+      'INSERT INTO chat_messages (user_id, role, content, type) VALUES (?, ?, ?, ?)',
+      [userId, 'ai', aiReply, 'text']
     );
 
     await connection.commit();
@@ -3928,6 +3937,8 @@ app.post('/api/chat/message', async (req, res) => {
     connection.release();
   }
 });
+
+// Optional: Add /api/chat/message/image and /audio routes to accept uploads and store file URLs in DB.
 
 
 
