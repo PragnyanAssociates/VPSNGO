@@ -332,6 +332,68 @@ app.post('/api/reset-password', async (req, res) => {
     }
 });
 
+// ==========================================================
+// --- ✨ NEW: SELF-SERVICE PASSWORD CHANGE API ROUTE ---
+// ==========================================================
+// This route should be protected by your JWT authentication middleware.
+// The middleware should verify the token and attach the user payload to req.user.
+// Example: app.post('/api/auth/change-password', verifyToken, async (req, res) => { ... });
+
+app.post('/api/auth/change-password', async (req, res) => {
+    // In a real app, req.user.id would be populated by your authentication middleware.
+    // For demonstration, we'll assume it's there.
+    // const { id } = req.user; 
+    
+    // If you don't have middleware yet, you'd have to decode the token here.
+    // This is a basic example of how to do it without dedicated middleware:
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    if (!token) return res.status(401).json({ message: 'Access Denied. No token provided.' });
+
+    let userId;
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'YOUR_SUPER_SECRET_KEY');
+        userId = decoded.id;
+    } catch (err) {
+        return res.status(403).json({ message: 'Invalid Token.' });
+    }
+    // End of token verification example
+
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+        return res.status(400).json({ message: 'Current and new passwords are required.' });
+    }
+
+    try {
+        // 1. Fetch the user from the database
+        const [rows] = await db.query('SELECT password FROM users WHERE id = ?', [userId]);
+        const user = rows[0];
+
+        if (!user) {
+            return res.status(404).json({ message: 'User not found.' });
+        }
+
+        // 2. Verify the current password
+        const isMatch = await bcrypt.compare(currentPassword, user.password);
+        if (!isMatch) {
+            return res.status(401).json({ message: 'Incorrect current password.' });
+        }
+
+        // 3. Hash the new password and update the database
+        const hashedNewPassword = await bcrypt.hash(newPassword, 10);
+        await db.query('UPDATE users SET password = ? WHERE id = ?', [hashedNewPassword, userId]);
+
+        res.status(200).json({ message: 'Password changed successfully.' });
+
+    } catch (error) {
+        console.error("Change Password Error:", error);
+        res.status(500).json({ message: 'An internal server error occurred.' });
+    }
+});
+
+
+
 
 
 // --- CALENDAR API ROUTES ---
@@ -3347,7 +3409,7 @@ app.get('/api/syllabus/student/subject-details/:syllabusId/:studentId', async (r
 
 
 // ==========================================================
-// --- TRANSPORT API ROUTES (FINAL & CORRECTED) ---
+// --- FULL TRANSPORT API ROUTES (WITH STOP COORDINATES) ---
 // ==========================================================
 const Openrouteservice = require('openrouteservice-js');
 const { encode } = require('@googlemaps/polyline-codec');
@@ -3368,9 +3430,37 @@ async function geocodeAddress(addressText) {
     throw new Error(`Could not find coordinates for address: "${addressText}"`);
 }
 
-// 📂 File: server.js (REPLACE THIS ROUTE)
+// =========================================================================
+// ★★★ THIS IS THE NEW CODE YOU MUST ADD ★★★
+// This is the special, public endpoint for the driver's phone.
+// It does not require a login token.
+// =========================================================================
+app.put('/api/transport/routes/public/:routeId/location', async (req, res) => {
+  const { lat, lng } = req.body;
+  const { routeId } = req.params;
 
-// --- CREATE ROUTE ---
+  if (!lat || !lng) {
+    return res.status(400).json({ message: 'Latitude and Longitude are required.' });
+  }
+
+  try {
+    const [result] = await db.query(
+      'UPDATE transport_routes SET current_lat = ?, current_lng = ?, last_location_update = NOW() WHERE route_id = ?', 
+      [lat, lng, routeId]
+    );
+
+    if (result.affectedRows === 0) {
+        return res.status(404).json({ message: 'Route not found to update location.' });
+    }
+
+    res.status(200).json({ message: 'Location updated successfully.' });
+  } catch (error) {
+    console.error("Error updating public location:", error);
+    res.status(500).json({ message: 'Failed to update location.' });
+  }
+});
+
+// --- CREATE ROUTE (MODIFIED) ---
 app.post('/api/transport/routes', async (req, res) => {
     const { route_name, driver_name, driver_phone, conductor_name, conductor_phone, stops, city, state, country, created_by } = req.body;
     if (!process.env.OPENROUTESERVICE_API_KEY) return res.status(500).json({ message: "Server configuration error: ORS API key missing." });
@@ -3378,58 +3468,55 @@ app.post('/api/transport/routes', async (req, res) => {
 
     const connection = await db.getConnection();
     try {
-        // --- Geocoding and Polyline generation (No changes here) ---
-        const stopCoordinates = [];
+        // Geocode each stop to get its coordinates and store them
+        const stopData = [];
         for (const stop of stops) {
             const fullAddress = `${stop.point}, ${city}, ${state}, ${country}`;
-            const coords = await geocodeAddress(fullAddress);
-            stopCoordinates.push(coords);
+            const coords = await geocodeAddress(fullAddress); // Gets [longitude, latitude]
+            stopData.push({ name: stop.point, coordinates: coords });
         }
-        const routeResponse = await ors.calculate({ coordinates: stopCoordinates, profile: 'driving-car', format: 'geojson' });
+
+        // Calculate the full route polyline using the geocoded coordinates
+        const routeResponse = await ors.calculate({ coordinates: stopData.map(s => s.coordinates), profile: 'driving-car', format: 'geojson' });
         if (!routeResponse.features || routeResponse.features.length === 0) throw new Error("OpenRouteService did not return a valid route.");
         const routeGeometry = routeResponse.features[0].geometry.coordinates;
-        const pointsToEncode = routeGeometry.map(p => [p[1], p[0]]);
+        const pointsToEncode = routeGeometry.map(p => [p[1], p[0]]); // Flip to [lat, lng] for encoding
         const routePolyline = encode(pointsToEncode, 5);
 
-        // --- Database Transaction ---
         await connection.beginTransaction();
         
-        // Step 1: Insert the new route and its stops (No changes here)
+        // Insert the main route details
         const routeQuery = 'INSERT INTO transport_routes (route_name, driver_name, driver_phone, conductor_name, conductor_phone, city, state, country, route_path_polyline, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
         const [routeResult] = await connection.query(routeQuery, [route_name, driver_name, driver_phone, conductor_name, conductor_phone, city, state, country, routePolyline, created_by]);
         const route_id = routeResult.insertId;
-        const stopsQuery = 'INSERT INTO transport_stops (route_id, stop_name, stop_order) VALUES ?';
-        const stopValues = stops.map((stop, index) => [route_id, stop.point, index + 1]);
+        
+        // Insert each stop with its name, order, AND coordinates
+        const stopsQuery = 'INSERT INTO transport_stops (route_id, stop_name, stop_order, stop_lat, stop_lng) VALUES ?';
+        const stopValues = stopData.map((stop, index) => [
+            route_id, 
+            stop.name, 
+            index + 1,
+            stop.coordinates[1], // Latitude is the second element
+            stop.coordinates[0]  // Longitude is the first element
+        ]);
         await connection.query(stopsQuery, [stopValues]);
         
-        // ★★★★★ START: NEW NOTIFICATION LOGIC ★★★★★
-        
-        // 1. Find all students and teachers (excluding the admin who created the route)
+        // Notification logic (unchanged)
         const [usersToNotify] = await connection.query("SELECT id FROM users WHERE role IN ('student', 'teacher') AND id != ?", [created_by]);
-        
         if (usersToNotify.length > 0) {
-            // 2. Get the admin's name
             const [[admin]] = await connection.query("SELECT full_name FROM users WHERE id = ?", [created_by]);
             const senderName = admin.full_name || "Transport Department";
-
-            // 3. Prepare and send notifications
             const recipientIds = usersToNotify.map(u => u.id);
             const notificationTitle = "New Transport Route Added";
             const notificationMessage = `A new bus route, "${route_name}", has been added. Please check if it's relevant for you.`;
-
-            await createBulkNotifications(
-                connection, recipientIds, senderName,
-                notificationTitle, notificationMessage, '/transport'
-            );
+            await createBulkNotifications(connection, recipientIds, senderName, notificationTitle, notificationMessage, '/transport');
         }
-
-        // ★★★★★ END: NEW NOTIFICATION LOGIC ★★★★★
 
         await connection.commit();
         res.status(201).json({ message: 'Route created and users notified successfully!' });
 
     } catch (error) {
-        if (connection) await connection.rollback(); // Check if connection exists before rollback
+        if (connection) await connection.rollback();
         console.error("Error creating transport route:", error);
         res.status(500).json({ message: error.message || 'Failed to create route.' });
     } finally {
@@ -3437,61 +3524,57 @@ app.post('/api/transport/routes', async (req, res) => {
     }
 });
 
-// 📂 File: server.js (REPLACE THIS ROUTE)
 
-// --- UPDATE ROUTE ---
+// --- UPDATE ROUTE (MODIFIED) ---
 app.put('/api/transport/routes/:routeId', async (req, res) => {
     const { routeId } = req.params;
-    const { route_name, driver_name, driver_phone, conductor_name, conductor_phone, stops, city, state, country, created_by } = req.body; // Pass created_by (editor's id)
+    const { route_name, driver_name, driver_phone, conductor_name, conductor_phone, stops, city, state, country, created_by } = req.body;
     
     const connection = await db.getConnection();
     try {
-        // --- Geocoding and Polyline generation (No changes here) ---
-        const stopCoordinates = [];
+        // Geocode each stop to get its coordinates and store them
+        const stopData = [];
         for (const stop of stops) {
             const fullAddress = `${stop.point}, ${city}, ${state}, ${country}`;
             const coords = await geocodeAddress(fullAddress);
-            stopCoordinates.push(coords);
+            stopData.push({ name: stop.point, coordinates: coords });
         }
-        const routeResponse = await ors.calculate({ coordinates: stopCoordinates, profile: 'driving-car', format: 'geojson' });
-        if (!routeResponse.features || routeResponse.features.length === 0) throw new Error("OpenRouteService did not return a valid route.");
+
+        // Recalculate the full route polyline
+        const routeResponse = await ors.calculate({ coordinates: stopData.map(s => s.coordinates), profile: 'driving-car', format: 'geojson' });
+        if (!routeResponse.features || !routeResponse.features.length) throw new Error("OpenRouteService did not return a valid route.");
         const routeGeometry = routeResponse.features[0].geometry.coordinates;
         const pointsToEncode = routeGeometry.map(p => [p[1], p[0]]);
         const routePolyline = encode(pointsToEncode, 5);
 
-        // --- Database Transaction ---
         await connection.beginTransaction();
         
-        // Step 1: Update the route and stops (No changes here)
+        // Update the main route details
         const routeQuery = 'UPDATE transport_routes SET route_name = ?, driver_name = ?, driver_phone = ?, conductor_name = ?, conductor_phone = ?, city = ?, state = ?, country = ?, route_path_polyline = ? WHERE route_id = ?';
         await connection.query(routeQuery, [route_name, driver_name, driver_phone, conductor_name, conductor_phone, city, state, country, routePolyline, routeId]);
+        
+        // Delete old stops and insert the new ones with coordinates
         await connection.query('DELETE FROM transport_stops WHERE route_id = ?', [routeId]);
-        const stopsQuery = 'INSERT INTO transport_stops (route_id, stop_name, stop_order) VALUES ?';
-        const stopValues = stops.map((stop, index) => [routeId, stop.point, index + 1]);
+        const stopsQuery = 'INSERT INTO transport_stops (route_id, stop_name, stop_order, stop_lat, stop_lng) VALUES ?';
+        const stopValues = stopData.map((stop, index) => [
+            routeId, 
+            stop.name, 
+            index + 1,
+            stop.coordinates[1], // Latitude
+            stop.coordinates[0]  // Longitude
+        ]);
         await connection.query(stopsQuery, [stopValues]);
 
-        // ★★★★★ START: NEW NOTIFICATION LOGIC ★★★★★
-        
-        // 1. Find all students and teachers (excluding the admin who updated the route)
+        // Notification logic (unchanged)
         const [usersToNotify] = await connection.query("SELECT id FROM users WHERE role IN ('student', 'teacher') AND id != ?", [created_by]);
-        
         if (usersToNotify.length > 0) {
-            // 2. Get the admin's name
             const [[admin]] = await connection.query("SELECT full_name FROM users WHERE id = ?", [created_by]);
             const senderName = admin.full_name || "Transport Department";
-
-            // 3. Prepare and send notifications
             const recipientIds = usersToNotify.map(u => u.id);
             const notificationTitle = "Transport Route Updated";
             const notificationMessage = `The bus route "${route_name}" has been updated. Please review the changes.`;
-
-            await createBulkNotifications(
-                connection, recipientIds, senderName,
-                notificationTitle, notificationMessage, '/transport'
-            );
+            await createBulkNotifications(connection, recipientIds, senderName, notificationTitle, notificationMessage, '/transport');
         }
-
-        // ★★★★★ END: NEW NOTIFICATION LOGIC ★★★★★
         
         await connection.commit();
         res.status(200).json({ message: 'Route updated and users notified successfully!' });
@@ -3505,25 +3588,32 @@ app.put('/api/transport/routes/:routeId', async (req, res) => {
     }
 });
 
-// --- GET ROUTE DETAILS ---
+
+// --- GET ROUTE DETAILS (MODIFIED) ---
 app.get('/api/transport/routes/:routeId', async (req, res) => { 
     try { 
         const [routeResult] = await db.query('SELECT * FROM transport_routes WHERE route_id = ?', [req.params.routeId]); 
-        if (!routeResult[0]) { return res.status(404).json({ message: 'Route not found.' }); } 
+        if (!routeResult[0]) { 
+            return res.status(404).json({ message: 'Route not found.' }); 
+        } 
+        // Modified to select the new stop_lat and stop_lng columns
         const [stopsResult] = await db.query(
-            'SELECT stop_name as point, stop_order as sno FROM transport_stops WHERE route_id = ? ORDER BY stop_order ASC', 
+            'SELECT stop_name as point, stop_order as sno, stop_lat, stop_lng FROM transport_stops WHERE route_id = ? ORDER BY stop_order ASC', 
             [req.params.routeId]
         ); 
+        
         const route = routeResult[0]; 
         const stops = stopsResult;
         res.json({ ...route, stops }); 
+
     } catch (error) { 
+        console.error("Error getting route details:", error);
         res.status(500).json({ message: 'Failed to fetch route details.' }); 
     }
 });
 
 
-// --- Other routes ---
+// --- Other routes (Unchanged) ---
 app.delete('/api/transport/routes/:routeId', async (req, res) => {
   try {
     const [result] = await db.query('DELETE FROM transport_routes WHERE route_id = ?', [req.params.routeId]);
@@ -3533,6 +3623,7 @@ app.delete('/api/transport/routes/:routeId', async (req, res) => {
     res.status(500).json({ message: 'Failed to delete route.' });
   }
 });
+
 app.put('/api/transport/routes/:routeId/location', async (req, res) => {
   const { lat, lng } = req.body;
   if (!lat || !lng) return res.status(400).json({ message: 'Latitude and Longitude are required.' });
@@ -3543,6 +3634,7 @@ app.put('/api/transport/routes/:routeId/location', async (req, res) => {
     res.status(500).json({ message: 'Failed to update location.' });
   }
 });
+
 app.get('/api/transport/routes', async (req, res) => {
   try {
     const [routes] = await db.query('SELECT route_id, route_name FROM transport_routes ORDER BY route_name ASC');
@@ -3777,7 +3869,7 @@ app.get('/api/chat/history/:userId', async (req, res) => {
   if (!userId) return res.status(400).json({ message: 'User ID is required.' });
 
   try {
-    const query = "SELECT id, role, content, created_at FROM chat_messages WHERE user_id = ? ORDER BY created_at ASC";
+    const query = "SELECT id, role, content, type, created_at FROM chat_messages WHERE user_id = ? ORDER BY created_at ASC";
     const [messages] = await db.query(query, [userId]);
     res.status(200).json(messages);
   } catch (error) {
@@ -3786,22 +3878,31 @@ app.get('/api/chat/history/:userId', async (req, res) => {
   }
 });
 
-// Post a user message and get AI response
+// Post a user message and get AI response (TEXT ONLY)
 app.post('/api/chat/message', async (req, res) => {
-  const { userId, message } = req.body;
+  const { userId, message, type } = req.body;
 
   if (!userId || !message || typeof message !== 'string') {
     return res.status(400).json({ message: "userId and message are required." });
   }
+
+  const messageType = type || 'text';
 
   const connection = await db.getConnection();
   try {
     await connection.beginTransaction();
 
     await connection.query(
-      'INSERT INTO chat_messages (user_id, role, content) VALUES (?, ?, ?)',
-      [userId, 'user', message]
+      'INSERT INTO chat_messages (user_id, role, content, type) VALUES (?, ?, ?, ?)',
+      [userId, 'user', message, messageType]
     );
+
+    if (messageType !== 'text') {
+      // Don't get AI reply for non-text messages
+      await connection.commit();
+      res.status(200).json({ reply: null });
+      return;
+    }
 
     const [history] = await connection.query(
       "SELECT role, content FROM chat_messages WHERE user_id = ? ORDER BY created_at DESC LIMIT 10",
@@ -3822,8 +3923,8 @@ app.post('/api/chat/message', async (req, res) => {
     const aiReply = completion.choices[0].message.content;
 
     await connection.query(
-      'INSERT INTO chat_messages (user_id, role, content) VALUES (?, ?, ?)',
-      [userId, 'ai', aiReply]
+      'INSERT INTO chat_messages (user_id, role, content, type) VALUES (?, ?, ?, ?)',
+      [userId, 'ai', aiReply, 'text']
     );
 
     await connection.commit();
@@ -3836,6 +3937,8 @@ app.post('/api/chat/message', async (req, res) => {
     connection.release();
   }
 });
+
+// Optional: Add /api/chat/message/image and /audio routes to accept uploads and store file URLs in DB.
 
 
 
@@ -4953,116 +5056,104 @@ app.post('/api/admin/payment-details', [verifyToken, isAdmin], paymentUpload.sin
 
 
 // ==========================================================
-// --- GROUP CHAT API & REAL-TIME ROUTES ---
+// --- GROUP CHAT API & REAL-TIME ROUTES (WITH MEDIA) ---
 // ==========================================================
 
-// ★★★ NEW SERVER SETUP FOR SOCKET.IO ★★★
+// ★★★ NEW: Multer storage configuration for chat media ★★★
+const chatStorage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        cb(null, 'uploads/'); // Use your existing uploads folder
+    },
+    filename: (req, file, cb) => {
+        // Creates a unique filename like 'chat-media-1678886400000.jpg'
+        cb(null, `chat-media-${Date.now()}${path.extname(file.originalname)}`);
+    }
+});
+const chatUpload = multer({ storage: chatStorage });
+
 // We create an HTTP server from the Express app, then attach Socket.IO to it.
 const server = http.createServer(app);
 const io = new Server(server, {
-    cors: {
-        origin: "*", // Allow all origins for simplicity in development
-        methods: ["GET", "POST"]
-    }
+    cors: { origin: "*", methods: ["GET", "POST"] }
 });
 
-// --- 1. API ROUTE TO GET MESSAGE HISTORY ---
-// This fetches the last 100 messages when a user first opens the chat.
+
+// --- 1. NEW API ROUTE TO UPLOAD CHAT MEDIA ---
+app.post('/api/group-chat/upload-media', chatUpload.single('media'), (req, res) => {
+    if (!req.file) {
+        return res.status(400).json({ message: 'No file uploaded.' });
+    }
+    // Return the URL path that the client can use
+    const fileUrl = `/uploads/${req.file.filename}`;
+    res.status(201).json({ fileUrl: fileUrl });
+});
+
+
+// --- 2. API ROUTE TO GET MESSAGE HISTORY (MODIFIED) ---
 app.get('/api/group-chat/history', async (req, res) => {
     try {
-        // The JOIN with the users table is crucial. It adds the full_name and role to every message.
         const query = `
             SELECT 
-                m.id, 
-                m.message_text, 
-                m.timestamp, 
-                m.user_id,
-                COALESCE(u.full_name, 'Deleted User') as full_name, 
-                u.role
+                m.id, m.message_text, m.timestamp, m.user_id,
+                m.message_type, m.file_url, -- ★ Fetch new columns
+                COALESCE(u.full_name, 'Deleted User') as full_name, u.role
             FROM group_chat_messages m
             LEFT JOIN users u ON m.user_id = u.id
-            ORDER BY m.timestamp DESC
+            ORDER BY m.timestamp ASC -- ★ Changed to ASC, no need to reverse
             LIMIT 100; 
         `;
         const [messages] = await db.query(query);
-        res.json(messages.reverse());
+        res.json(messages);
     } catch (error) {
         console.error("Error fetching chat history:", error);
         res.status(500).json({ message: "Error fetching chat history." });
     }
 });
 
-// --- 2. REAL-TIME SOCKET.IO LOGIC ---
-// 📂 File: server.js (REPLACE THE 'sendMessage' HANDLER)
 
-// --- 2. REAL-TIME SOCKET.IO LOGIC ---
+// --- 3. REAL-TIME SOCKET.IO LOGIC (MODIFIED) ---
 io.on('connection', (socket) => {
     console.log(`🔌 A user connected: ${socket.id}`);
-
     socket.join('school-group-chat');
 
     socket.on('sendMessage', async (data) => {
-        const { userId, messageText } = data;
+        // ★ Data payload is now more complex
+        const { userId, messageType, messageText, fileUrl } = data;
         
-        if (!userId || !messageText || !messageText.trim()) {
-            return; // Safety check
-        }
+        if (!userId || !messageType) return;
+        if (messageType === 'text' && (!messageText || !messageText.trim())) return;
+        if (messageType !== 'text' && !fileUrl) return;
 
         const connection = await db.getConnection();
         try {
             await connection.beginTransaction();
 
-            // Step A: Save the message to the database (no change)
+            // ★ STEP A: Insert the new message with its type
             const [result] = await connection.query(
-                'INSERT INTO group_chat_messages (user_id, message_text) VALUES (?, ?)',
-                [userId, messageText]
-            );
+    'INSERT INTO group_chat_messages (user_id, message_type, message_text, file_url) VALUES (?, ?, ?, ?)',
+    // If messageText is null or undefined, use '' instead
+    [userId, messageType, messageText || '', fileUrl]
+);
             const newMessageId = result.insertId;
 
-            // Step B: Get the full message details for broadcasting (no change)
+            // ★ STEP B: Get full message details for broadcasting
             const [[broadcastMessage]] = await connection.query(`
-                SELECT m.id, m.message_text, m.timestamp, m.user_id, u.full_name, u.role
-                FROM group_chat_messages m JOIN users u ON m.user_id = u.id
+                SELECT m.id, m.message_text, m.timestamp, m.user_id,
+                       m.message_type, m.file_url, -- ★ Fetch new columns
+                       u.full_name, u.role
+                FROM group_chat_messages m 
+                JOIN users u ON m.user_id = u.id
                 WHERE m.id = ?
             `, [newMessageId]);
 
-            // Step C: Broadcast the message to everyone in the chat room (no change)
-            io.to('school-group-chat').emit('newMessage', broadcastMessage);
-
-            // ★★★★★ START: NEW NOTIFICATION LOGIC ★★★★★
-            
-            // 1. Find all users (student, teacher, admin, donor) EXCEPT the person who sent the message.
-            const [usersToNotify] = await connection.query(
-                "SELECT id FROM users WHERE id != ?", 
-                [userId]
-            );
-
-            if (usersToNotify.length > 0) {
-                const recipientIds = usersToNotify.map(u => u.id);
-                const senderName = broadcastMessage.full_name;
-                
-                // 2. Prepare and send the notifications
-                const notificationTitle = `New Message from ${senderName}`;
-                // Truncate message if it's too long for a notification
-                const notificationMessage = messageText.length > 50 ? `${messageText.substring(0, 50)}...` : messageText;
-                
-                await createBulkNotifications(
-                    connection,
-                    recipientIds,
-                    senderName,
-                    notificationTitle,
-                    notificationMessage,
-                    '/group-chat' // A generic link to the group chat screen
-                );
-            }
-            
-            // ★★★★★ END: NEW NOTIFICATION LOGIC ★★★★★
-
             await connection.commit();
+
+            // ★ STEP C: Broadcast to everyone EXCEPT the sender
+            socket.broadcast.to('school-group-chat').emit('newMessage', broadcastMessage);
 
         } catch (error) {
             await connection.rollback();
-            console.error('Error handling message:', error);
+            console.error('❌ CRITICAL ERROR: Failed to save and broadcast message.', error);
         } finally {
             connection.release();
         }
@@ -5072,6 +5163,9 @@ io.on('connection', (socket) => {
         console.log(`🔌 User disconnected: ${socket.id}`);
     });
 });
+
+
+
 
 // ==========================================================
 // --- NOTIFICATIONS API ROUTES (NEW) ---
@@ -5117,7 +5211,9 @@ app.put('/api/notifications/:notificationId/read', verifyToken, async (req, res)
 });
 
 
-// Start the server
-app.listen(PORT, () => {
-    console.log(`✅ Backend server is running on http://localhost:${PORT}`);
+// By using "server.listen", you enable both your API routes and the real-time chat.
+server.listen(PORT, '0.0.0.0', () => {
+    console.log(`✅ Server is running on port ${PORT} and is now accessible on your network.`);
+    // You can add your IP address reminder here if you like, for example:
+    // console.log(`   On your phone, use the IP Address: http://192.168.1.4:${PORT}`);
 });

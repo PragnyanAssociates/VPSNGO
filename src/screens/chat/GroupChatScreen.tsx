@@ -1,21 +1,29 @@
-// 📂 File: src/screens/chat/GroupChatScreen.tsx (FINAL AND CORRECTED)
+// 📂 File: src/screens/chat/GroupChatScreen.tsx (FINAL, COMPLETE VERSION)
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
     View, Text, StyleSheet, SafeAreaView, FlatList, TextInput,
-    TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, Alert
+    TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, Alert, Image, Keyboard
 } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
 import { API_BASE_URL } from '../../../apiConfig';
 import { io, Socket } from 'socket.io-client';
+import { launchImageLibrary, ImageLibraryOptions, ImagePickerResponse } from 'react-native-image-picker';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+
+// NEW, CORRECT IMPORT for the modern emoji keyboard
+import EmojiPicker, { EmojiType } from 'rn-emoji-keyboard';
 
 const THEME = { primary: '#007bff', background: '#f4f7fc', text: '#212529', muted: '#86909c', border: '#dee2e6', myMessageBg: '#dcf8c6', otherMessageBg: '#ffffff' };
 
 const GroupChatScreen = () => {
     const { user } = useAuth();
-    const [messages, setMessages] = useState([]);
+    const [messages, setMessages] = useState<any[]>([]);
     const [newMessage, setNewMessage] = useState('');
     const [loading, setLoading] = useState(true);
+    const [isUploading, setIsUploading] = useState(false);
+    const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
+
     const socketRef = useRef<Socket | null>(null);
     const flatListRef = useRef<FlatList | null>(null);
 
@@ -23,6 +31,7 @@ const GroupChatScreen = () => {
         const fetchHistory = async () => {
             try {
                 const response = await fetch(`${API_BASE_URL}/api/group-chat/history`);
+                if (!response.ok) throw new Error('Failed to fetch history');
                 const history = await response.json();
                 setMessages(history);
             } catch (error) {
@@ -34,9 +43,7 @@ const GroupChatScreen = () => {
 
         fetchHistory();
         socketRef.current = io(API_BASE_URL);
-
         socketRef.current.on('connect', () => console.log('Connected to chat server'));
-
         socketRef.current.on('newMessage', (receivedMessage) => {
             setMessages(prevMessages => [...prevMessages, receivedMessage]);
         });
@@ -46,75 +53,184 @@ const GroupChatScreen = () => {
         };
     }, []);
 
-    const handleSendMessage = () => {
-        if (newMessage.trim() === '' || !user || !socketRef.current) return;
-
-        const messageText = newMessage.trim();
-
+    const sendMessage = (type: 'text' | 'image', text: string | null, url: string | null) => {
+        if (!user || !socketRef.current) return;
+        
         const optimisticMessage = {
             id: Date.now(),
             user_id: parseInt(user.id, 10),
-            full_name: user.full_name, // This relies on full_name being in your user object
+            full_name: user.full_name,
             role: user.role,
-            message_text: messageText,
+            message_type: type,
+            message_text: text,
+            file_url: url,
             timestamp: new Date().toISOString(),
         };
         setMessages(prevMessages => [...prevMessages, optimisticMessage]);
         
         socketRef.current.emit('sendMessage', {
             userId: user.id,
-            messageText: messageText,
+            messageType: type,
+            messageText: text,
+            fileUrl: url,
         });
 
-        setNewMessage('');
+        if (type === 'text') {
+            setNewMessage('');
+        }
+    };
+
+    const handleSendText = () => {
+        if (newMessage.trim() === '') return;
+        sendMessage('text', newMessage.trim(), null);
+    };
+
+    const handlePickImage = () => {
+        const options: ImageLibraryOptions = { mediaType: 'photo', quality: 0.7 };
+        launchImageLibrary(options, async (response: ImagePickerResponse) => {
+            if (response.didCancel) return;
+            if (response.errorCode) {
+                Alert.alert("Error", "Could not pick image. " + response.errorMessage);
+                return;
+            }
+            if (response.assets && response.assets[0]) {
+                setIsUploading(true);
+                const image = response.assets[0];
+                const formData = new FormData();
+                formData.append('media', {
+                    uri: image.uri,
+                    type: image.type,
+                    name: image.fileName,
+                });
+
+                try {
+                    const res = await fetch(`${API_BASE_URL}/api/group-chat/upload-media`, {
+                        method: 'POST',
+                        body: formData,
+                        headers: { 'Content-Type': 'multipart/form-data' },
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.message || 'Upload failed');
+                    
+                    sendMessage('image', null, data.fileUrl);
+                } catch (error: any) {
+                    Alert.alert("Upload Failed", error.message || 'An unknown error occurred.');
+                } finally {
+                    setIsUploading(false);
+                }
+            }
+        });
+    };
+
+    const handleEmojiSelect = (emoji: EmojiType) => {
+        setNewMessage(prevMessage => prevMessage + emoji.emoji);
+    };
+
+    const openEmojiPicker = () => {
+        Keyboard.dismiss();
+        setIsEmojiPickerOpen(true);
     };
     
     useEffect(() => {
-        if (flatListRef.current) flatListRef.current.scrollToEnd({ animated: true });
+        if (flatListRef.current) {
+            flatListRef.current.scrollToEnd({ animated: true });
+        }
     }, [messages]);
 
-    const renderMessageItem = ({ item }) => {
+    const renderMessageItem = ({ item }: { item: any }) => {
+        if (!user) return null; // Ensure user object is available
         const isMyMessage = item.user_id === parseInt(user.id, 10);
         const messageTime = new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
 
+        const renderContent = () => {
+            switch (item.message_type) {
+                case 'image':
+                    return (
+                        <Image 
+                            source={{ uri: `${API_BASE_URL}${item.file_url}` }} 
+                            style={styles.imageMessage} 
+                            resizeMode="cover"
+                        />
+                    );
+                case 'text':
+                default:
+                    return <Text style={styles.messageText}>{item.message_text}</Text>;
+            }
+        };
+
         return (
             <View style={[styles.messageContainer, isMyMessage ? styles.myMessageContainer : styles.otherMessageContainer]}>
-                <View style={[styles.messageBubble, isMyMessage ? styles.myMessageBubble : styles.otherMessageBubble]}>
+                <View style={[styles.messageBubble, isMyMessage ? styles.myMessageBubble : styles.otherMessageBubble, item.message_type === 'image' && styles.imageBubble]}>
                     {!isMyMessage && (
                         <Text style={[styles.senderName, { color: getRoleColor(item.role) }]}>
                             {item.full_name} ({item.role})
                         </Text>
                     )}
-                    <Text style={styles.messageText}>{item.message_text}</Text>
-                    <Text style={styles.messageTime}>{messageTime}</Text>
+                    {renderContent()}
+                    <Text style={[styles.messageTime, item.message_type === 'image' && styles.imageTime]}>{messageTime}</Text>
                 </View>
             </View>
         );
     };
 
-    if (loading) return <ActivityIndicator size="large" color={THEME.primary} style={{ flex: 1 }} />;
+    if (loading) {
+        return <ActivityIndicator size="large" color={THEME.primary} style={{ flex: 1 }} />;
+    }
 
     return (
         <SafeAreaView style={styles.container}>
-            <View style={styles.header}><Text style={styles.headerTitle}>School Group Chat</Text></View>
+            <View style={styles.header}>
+                <Text style={styles.headerTitle}>School Group Chat</Text>
+            </View>
             <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }} keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}>
                 <FlatList
                     ref={flatListRef}
                     data={messages}
                     renderItem={renderMessageItem}
-                    keyExtractor={(item, index) => item.id.toString() + index}
+                    keyExtractor={(item) => item.id.toString()}
                     contentContainerStyle={styles.messageList}
+                    onStartShouldSetResponder={() => {
+                        if (isEmojiPickerOpen) {
+                            setIsEmojiPickerOpen(false);
+                            return true;
+                        }
+                        return false;
+                    }}
                 />
                 <View style={styles.inputContainer}>
-                    <TextInput style={styles.input} value={newMessage} onChangeText={setNewMessage} placeholder="Type a message..." placeholderTextColor={THEME.muted} />
-                    <TouchableOpacity style={styles.sendButton} onPress={handleSendMessage}><Text style={styles.sendButtonText}>Send</Text></TouchableOpacity>
+                    <TouchableOpacity style={styles.iconButton} onPress={handlePickImage} disabled={isUploading}>
+                        {isUploading ? <ActivityIndicator size="small" color={THEME.primary} /> : <Icon name="paperclip" size={24} color={THEME.muted} />}
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity style={styles.iconButton} onPress={openEmojiPicker}>
+                        <Icon name="emoticon-happy-outline" size={24} color={THEME.muted} />
+                    </TouchableOpacity>
+
+                    <TextInput 
+                        style={styles.input} 
+                        value={newMessage} 
+                        onChangeText={setNewMessage} 
+                        placeholder="Type a message..." 
+                        placeholderTextColor={THEME.muted} 
+                        multiline 
+                        onFocus={() => setIsEmojiPickerOpen(false)}
+                    />
+                    <TouchableOpacity style={styles.sendButton} onPress={handleSendText}>
+                        <Icon name="send" size={24} color="#fff" />
+                    </TouchableOpacity>
                 </View>
             </KeyboardAvoidingView>
+
+            <EmojiPicker
+                onEmojiSelected={handleEmojiSelect}
+                open={isEmojiPickerOpen}
+                onClose={() => setIsEmojiPickerOpen(false)}
+            />
         </SafeAreaView>
     );
 };
 
-const getRoleColor = (role) => {
+const getRoleColor = (role: string) => {
     switch (role) {
         case 'admin': return '#d9534f';
         case 'teacher': return '#5cb85c';
@@ -137,10 +253,40 @@ const styles = StyleSheet.create({
     senderName: { fontWeight: 'bold', marginBottom: 4, fontSize: 14 },
     messageText: { fontSize: 16, color: THEME.text },
     messageTime: { fontSize: 11, color: THEME.muted, alignSelf: 'flex-end', marginTop: 5 },
-    inputContainer: { flexDirection: 'row', alignItems: 'center', padding: 10, borderTopWidth: 1, borderTopColor: THEME.border, backgroundColor: '#fff' },
-    input: { flex: 1, height: 45, backgroundColor: THEME.light, borderRadius: 25, paddingHorizontal: 15, fontSize: 16 },
-    sendButton: { marginLeft: 10, backgroundColor: THEME.primary, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 25 },
-    sendButtonText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
+    inputContainer: { 
+        flexDirection: 'row', 
+        alignItems: 'center', 
+        paddingHorizontal: 10,
+        paddingVertical: 8,
+        borderTopWidth: 1, 
+        borderTopColor: THEME.border, 
+        backgroundColor: '#fff' 
+    },
+    input: { 
+        flex: 1, 
+        maxHeight: 100, 
+        backgroundColor: '#f0f0f0', 
+        borderRadius: 20, 
+        paddingHorizontal: 15, 
+        paddingVertical: Platform.OS === 'ios' ? 12 : 8,
+        fontSize: 16, 
+        marginHorizontal: 5,
+    },
+    sendButton: { 
+        backgroundColor: THEME.primary, 
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginLeft: 5,
+    },
+    iconButton: {
+        padding: 5,
+    },
+    imageMessage: { width: 200, height: 200, borderRadius: 15 },
+    imageBubble: { padding: 5, backgroundColor: 'transparent' },
+    imageTime: { position: 'absolute', bottom: 10, right: 10, color: 'white', backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 10, fontSize: 10 },
 });
 
 export default GroupChatScreen;
