@@ -2316,29 +2316,78 @@ app.delete('/api/exam-schedules/:id', async (req, res) => {
 
 
 // --- STUDENT ROUTE ---
-
-// Get the latest exam schedule for the student's class
 app.get('/api/exam-schedules/class/:classGroup', async (req, res) => {
     const { classGroup } = req.params;
+    
     try {
+        // 🔍 DEBUG: Log the incoming request
+        console.log('🔥 =================================');
+        console.log('🔍 API CALLED: /api/exam-schedules/class/' + classGroup);
+        console.log('📅 Timestamp:', new Date().toISOString());
+        console.log('🔥 =================================');
+        
+        // 🐛 DEBUG: Log the exact query we're about to execute
         const query = `
-            SELECT * FROM exam_schedules 
-            WHERE class_group = ? 
-            ORDER BY updated_at DESC 
-            LIMIT 1
+            SELECT 
+                es.*,
+                u.full_name AS created_by
+            FROM exam_schedules es
+            LEFT JOIN users u ON es.created_by_id = u.id
+            WHERE es.class_group = ? 
+            ORDER BY es.updated_at DESC
         `;
+        
+        console.log('📝 SQL Query:', query.trim());
+        console.log('🎯 Query Parameters:', [classGroup]);
+        
+        // Execute the database query
         const [schedules] = await db.query(query, [classGroup]);
-        if (schedules.length === 0) {
-            return res.status(404).json({ message: "No exam schedule found for your class." });
+        
+        // 🐛 DEBUG: Log exactly what the database returned
+        console.log('🔥 DATABASE RESPONSE:');
+        console.log('📊 Type:', Array.isArray(schedules) ? 'Array' : 'Object');
+        console.log('📈 Raw Length:', schedules ? schedules.length : 'null/undefined');
+        console.log('🔢 Actual Count:', schedules ? Object.keys(schedules).length : 0);
+        
+        if (schedules && schedules.length > 0) {
+            console.log('📦 Schedule Details:');
+            schedules.forEach((schedule, index) => {
+                console.log(`  ${index + 1}. ID: ${schedule.id}, Title: "${schedule.title}", Class: "${schedule.class_group}"`);
+            });
+        } else {
+            console.log('❌ No schedules found in database result');
         }
-        res.json(schedules[0]);
+        
+        // Check for empty results
+        if (!schedules || schedules.length === 0) {
+            console.log('❌ Returning 404 - No schedules found');
+            return res.status(404).json({ message: "No exam schedules found for your class." });
+        }
+        
+        // 🐛 DEBUG: Log exactly what we're about to return to the client
+        console.log('🚀 ABOUT TO SEND RESPONSE:');
+        console.log('📊 Response Type:', Array.isArray(schedules) ? 'Array' : 'Object');
+        console.log('📈 Response Length:', schedules.length);
+        console.log('🎯 Response Preview:', JSON.stringify(schedules).substring(0, 300) + '...');
+        console.log('📦 Response Titles:', schedules.map(s => s.title));
+        
+        // 🔥 CRITICAL: Make sure we're returning the full array
+        console.log('✅ Sending full schedules array to client...');
+        res.json(schedules); // This MUST be 'schedules', NOT 'schedules[0]'
+        
+        console.log('🔥 Response sent successfully');
+        console.log('🔥 =================================');
+        
     } catch (error) {
-        console.error("Error fetching student exam schedule:", error);
-        res.status(500).json({ message: "Failed to fetch exam schedule." });
+        console.error('❌ ERROR in exam-schedules API:');
+        console.error('❌ Error Message:', error.message);
+        console.error('❌ Error Stack:', error.stack);
+        console.error('❌ Class Group:', classGroup);
+        console.error('🔥 =================================');
+        
+        res.status(500).json({ message: "Failed to fetch exam schedules." });
     }
 });
-
-
 
 // ==========================================================
 // --- ONLINE EXAMS API ROUTES (ALL MIDDLEWARE REMOVED) ---
@@ -4402,9 +4451,12 @@ app.get('/api/admin/sponsorship/:appId', async (req, res) => {
 // 📂 File: server.js (REPLACE THIS ROUTE)
 
 // ADMIN: Verify a payment and update its status
+// ADMIN: Verify a payment and update its status
 app.put('/api/admin/sponsorship/verify-payment/:paymentId', async (req, res) => {
     const { paymentId } = req.params;
-    const { adminId } = req.body; // Expect the admin's ID from the frontend
+    
+    // ✅ SAFE: Handle missing adminId gracefully
+    const adminId = req.body?.adminId;
     
     const connection = await db.getConnection();
     try {
@@ -4417,32 +4469,49 @@ app.put('/api/admin/sponsorship/verify-payment/:paymentId', async (req, res) => 
             return res.status(404).json({ message: "Payment record not found." });
         }
         
-        // ★★★★★ START: NEW NOTIFICATION LOGIC ★★★★★
-        
-        // 1. Get payment details to find the original donor
-        const [[payment]] = await connection.query("SELECT donor_id, amount FROM sponsorship_payments WHERE id = ?", [paymentId]);
-        
-        if (payment) {
-            // 2. Get the admin's name
-            const [[admin]] = await connection.query("SELECT full_name FROM users WHERE id = ?", [adminId]);
-            const senderName = admin.full_name || "School Administration";
-
-            // 3. Prepare notification details
-            const notificationTitle = `Sponsorship Payment Verified`;
-            const notificationMessage = `Thank you! Your sponsorship payment of ₹${payment.amount} has been successfully verified by ${senderName}. We appreciate your support.`;
+        // ★★★★★ SAFE NOTIFICATION LOGIC ★★★★★
+        try {
+            // 1. Get payment details to find the original donor
+            const [paymentRows] = await connection.query("SELECT donor_id, amount FROM sponsorship_payments WHERE id = ?", [paymentId]);
+            const payment = paymentRows[0];
             
-            // 4. Send the notification to the donor
-            await createNotification(
-                connection,
-                payment.donor_id,
-                senderName,
-                notificationTitle,
-                notificationMessage,
-                '/sponsorship/history' // A link to their sponsorship history
-            );
-        }
+            if (payment) {
+                // 2. Get the admin's name (with safe fallback)
+                let senderName = "School Administration"; // Default fallback
+                
+                if (adminId) {
+                    try {
+                        const [adminRows] = await connection.query("SELECT full_name FROM users WHERE id = ?", [adminId]);
+                        const admin = adminRows[0];
+                        
+                        if (admin && admin.full_name) {
+                            senderName = admin.full_name;
+                        }
+                    } catch (adminError) {
+                        console.log('⚠️ Could not fetch admin name, using default');
+                    }
+                }
 
-        // ★★★★★ END: NEW NOTIFICATION LOGIC ★★★★★
+                // 3. Prepare notification details
+                const notificationTitle = `Sponsorship Payment Verified`;
+                const notificationMessage = `Thank you! Your sponsorship payment of ₹${payment.amount} has been successfully verified by ${senderName}. We appreciate your support.`;
+                
+                // 4. Send the notification to the donor
+                if (typeof createNotification === 'function') {
+                    await createNotification(
+                        connection,
+                        payment.donor_id,
+                        senderName,
+                        notificationTitle,
+                        notificationMessage,
+                        '/sponsorship/history'
+                    );
+                }
+            }
+        } catch (notificationError) {
+            // Don't fail the main operation if notification fails
+            console.error('⚠️ Notification error (non-critical):', notificationError);
+        }
 
         await connection.commit();
         res.status(200).json({ message: 'Payment verified and donor notified successfully!' });

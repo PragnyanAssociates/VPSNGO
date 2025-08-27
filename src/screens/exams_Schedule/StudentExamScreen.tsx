@@ -1,14 +1,16 @@
-// 📂 File: src/screens/exams/StudentExamScreen.tsx (FINAL - With Improved Table Layout)
+// 📂 File: src/screens/exams/StudentExamScreen.tsx (Simple Multiple Schedules Support)
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, ScrollView, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, ScrollView, RefreshControl, TouchableOpacity } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { useAuth } from '../../context/AuthContext';
 import { API_BASE_URL } from '../../../apiConfig';
 
 const StudentExamScreen = () => {
     const { user } = useAuth();
-    const [schedule, setSchedule] = useState<any>(null);
+    const [schedules, setSchedules] = useState<any[]>([]);
+    const [selectedSchedule, setSelectedSchedule] = useState<any>(null);
+    const [showList, setShowList] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
@@ -29,7 +31,22 @@ const StudentExamScreen = () => {
                 throw new Error("Failed to fetch the exam schedule.");
             }
             const data = await response.json();
-            setSchedule(data);
+            
+            // Handle both single schedule and array of schedules
+            if (Array.isArray(data)) {
+                setSchedules(data);
+                if (data.length === 1) {
+                    setSelectedSchedule(data[0]);
+                    setShowList(false);
+                } else {
+                    setSelectedSchedule(data[0]); // Show latest by default
+                    setShowList(data.length > 1);
+                }
+            } else {
+                setSchedules([data]);
+                setSelectedSchedule(data);
+                setShowList(false);
+            }
         } catch (e: any) {
             setError(e.message);
         } finally {
@@ -43,7 +60,7 @@ const StudentExamScreen = () => {
 
     // This function renders the improved, robust table layout.
     const renderTable = () => {
-        if (!schedule || !schedule.schedule_data) return null;
+        if (!selectedSchedule || !selectedSchedule.schedule_data) return null;
 
         return (
             <View style={styles.table}>
@@ -55,7 +72,7 @@ const StudentExamScreen = () => {
                     <Text style={[styles.headerCell, styles.blockCol]}>Block</Text>
                 </View>
                 {/* Data Rows */}
-                {schedule.schedule_data.map((row: any, index: number) => {
+                {selectedSchedule.schedule_data.map((row: any, index: number) => {
                     if (row.type === 'special') {
                         return (
                             <View key={index} style={styles.specialRow}>
@@ -79,6 +96,34 @@ const StudentExamScreen = () => {
         );
     };
 
+    // Render schedule selection (only when multiple schedules)
+    const renderScheduleSelector = () => {
+        if (!showList || schedules.length <= 1) return null;
+
+        return (
+            <View style={styles.selectorContainer}>
+                <Text style={styles.selectorLabel}>Select Schedule:</Text>
+                {schedules.map((schedule, index) => (
+                    <TouchableOpacity
+                        key={schedule.id || index}
+                        style={[
+                            styles.selectorButton,
+                            selectedSchedule?.id === schedule.id && styles.selectorButtonActive
+                        ]}
+                        onPress={() => setSelectedSchedule(schedule)}
+                    >
+                        <Text style={[
+                            styles.selectorButtonText,
+                            selectedSchedule?.id === schedule.id && styles.selectorButtonTextActive
+                        ]}>
+                            {schedule.title} {schedule.subtitle && `- ${schedule.subtitle}`}
+                        </Text>
+                    </TouchableOpacity>
+                ))}
+            </View>
+        );
+    };
+
     return (
         <ScrollView 
             style={styles.container}
@@ -90,7 +135,7 @@ const StudentExamScreen = () => {
                 <Text style={styles.mainHeaderText}>Exam Schedule</Text>
             </View>
 
-            {isLoading && !schedule && <ActivityIndicator size="large" color="#FF6347" style={{ marginTop: 50 }}/>}
+            {isLoading && !selectedSchedule && <ActivityIndicator size="large" color="#FF6347" style={{ marginTop: 50 }}/>}
             
             {error && (
                  <View style={styles.errorContainer}>
@@ -99,10 +144,11 @@ const StudentExamScreen = () => {
                 </View>
             )}
 
-            {schedule && (
+            {selectedSchedule && (
                 <View style={styles.scheduleContainer}>
-                    <Text style={styles.scheduleTitle}>{schedule.title}</Text>
-                    <Text style={styles.scheduleSubtitle}>{schedule.subtitle}</Text>
+                    <Text style={styles.scheduleTitle}>{selectedSchedule.title}</Text>
+                    <Text style={styles.scheduleSubtitle}>{selectedSchedule.subtitle}</Text>
+                    {renderScheduleSelector()}
                     {renderTable()}
                 </View>
             )}
@@ -165,12 +211,46 @@ const styles = StyleSheet.create({
         textAlign: 'center',
         marginBottom: 20,
     },
-    // --- Improved Table Styles ---
+    // Schedule Selector Styles
+    selectorContainer: {
+        marginBottom: 20,
+        borderBottomWidth: 1,
+        borderBottomColor: '#e0e0e0',
+        paddingBottom: 15,
+    },
+    selectorLabel: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: '#455a64',
+        marginBottom: 10,
+    },
+    selectorButton: {
+        backgroundColor: '#f5f5f5',
+        borderRadius: 8,
+        padding: 12,
+        marginBottom: 8,
+        borderWidth: 1,
+        borderColor: '#e0e0e0',
+    },
+    selectorButtonActive: {
+        backgroundColor: '#e3f2fd',
+        borderColor: '#FF6347',
+    },
+    selectorButtonText: {
+        fontSize: 14,
+        color: '#666',
+        textAlign: 'center',
+    },
+    selectorButtonTextActive: {
+        color: '#FF6347',
+        fontWeight: 'bold',
+    },
+    // --- Table Styles (Same as before) ---
     table: {
         borderWidth: 1,
         borderColor: '#e0e0e0',
         borderRadius: 8,
-        overflow: 'hidden', // Ensures inner contents respect the border radius
+        overflow: 'hidden',
     },
     tableHeader: {
         flexDirection: 'row',
@@ -206,7 +286,6 @@ const styles = StyleSheet.create({
         fontSize: 14,
     },
     // --- Column Sizing ---
-    // Using flex properties to create responsive columns that don't break.
     dateCol: {
         flex: 2.5,
     },
@@ -219,7 +298,7 @@ const styles = StyleSheet.create({
     blockCol: {
         flex: 1,
     },
-    // --- Special Row (e.g., "Teacher Work Day") ---
+    // --- Special Row ---
     specialRow: {
         padding: 20,
         backgroundColor: '#e3f2fd',

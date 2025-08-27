@@ -1,4 +1,4 @@
-// 📂 File: src/screens/sports/AdminSportsScreen.tsx (FINAL, DYNAMIC VERSION)
+// 📂 File: src/screens/sports/AdminSportsScreen.tsx (FIXED VERSION)
 
 import React, { useState, useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, ActivityIndicator, TextInput, ScrollView } from 'react-native';
@@ -69,7 +69,6 @@ const ActivityListView = ({ onSelect, onCreate }) => {
     );
 };
 
-
 // --- Child Component: Shows the details and application history for one activity ---
 const ActivityDetails = ({ activity, onBack }) => {
     const [allApplications, setAllApplications] = useState([]);
@@ -124,6 +123,8 @@ const ActivityDetails = ({ activity, onBack }) => {
 
 // --- Child Component: Renders a single application card with all logic ---
 const ApplicationCard = ({ application, onUpdate }) => {
+    const { user } = useAuth(); // ✅ ADD THIS LINE TO GET ADMIN USER
+
     const handleStatusUpdate = (regId, status) => {
         Alert.alert(
             `Confirm Action`,
@@ -131,11 +132,28 @@ const ApplicationCard = ({ application, onUpdate }) => {
             [
                 { text: 'Cancel', style: 'cancel' },
                 { text: 'Confirm', onPress: () => {
+                    // ✅ FIXED: Add adminId to the request body
                     fetch(`${API_BASE_URL}/api/sports/application/status`, {
                         method: 'PUT',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ registrationId: regId, status })
-                    }).then(res => { if(res.ok) onUpdate() });
+                        body: JSON.stringify({ 
+                            registrationId: regId, 
+                            status,
+                            adminId: user?.id // ✅ ADD THIS LINE
+                        })
+                    })
+                    .then(res => { 
+                        if(res.ok) {
+                            onUpdate();
+                            Alert.alert('Success', `Application ${status.toLowerCase()} successfully!`);
+                        } else {
+                            Alert.alert('Error', `Failed to ${status.toLowerCase()} application`);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error updating status:', error);
+                        Alert.alert('Error', 'Network error occurred');
+                    });
                 }}
             ]
         );
@@ -252,6 +270,7 @@ const CreateActivityForm = ({ onBack, editorId }) => {
     );
 };
 
+// Styles remain the same...
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#f0f4f0' },
     // LIST VIEW STYLES
