@@ -1,13 +1,13 @@
-// 📂 File: src/screens/ads/AdminAdDashboardScreen.tsx (FINAL - WITH DELETE FUNCTIONALITY)
+// 📂 File: src/screens/ads/AdminAdDashboardScreen.tsx (UPDATED with 'Review' Tab)
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { View, Text, FlatList, StyleSheet, Alert, ActivityIndicator, Image, TouchableOpacity, Modal, SafeAreaView } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import apiClient, { API_BASE_URL } from '../../api/client';
 
 interface AdForAdmin {
     id: number;
-    status: 'pending' | 'approved' | 'rejected';
+    status: 'pending' | 'approved' | 'rejected' | 'stopped';
     ad_type: string;
     userName: string;
     ad_content_image_url: string;
@@ -16,6 +16,9 @@ interface AdForAdmin {
 }
 
 const AdminAdDashboardScreen: React.FC = () => {
+    // CHANGED: State for active tab now includes 'review' and defaults to it.
+    const [activeTab, setActiveTab] = useState<'review' | 'current' | 'history'>('review');
+    
     const [ads, setAds] = useState<AdForAdmin[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -34,34 +37,48 @@ const AdminAdDashboardScreen: React.FC = () => {
 
     useFocusEffect(useCallback(() => { fetchAds(); }, [fetchAds]));
 
-    const handleUpdateStatus = (adId: number, status: 'approved' | 'rejected') => {
-        Alert.alert(`Confirm Action`, `Are you sure you want to ${status} this ad?`,
+    const handleUpdateStatus = (adId: number, status: 'approved' | 'rejected' | 'stopped') => {
+        const actionVerb = status === 'stopped' ? 'stop' : status;
+        Alert.alert(`Confirm Action`, `Are you sure you want to ${actionVerb} this ad?`,
             [{ text: 'Cancel' }, { text: 'Confirm', onPress: async () => {
                 try {
                     await apiClient.put(`/api/admin/ads/${adId}/status`, { status });
                     Alert.alert('Success', `Ad has been ${status}.`);
                     fetchAds();
                 } catch (error: any) {
-                    Alert.alert('Error', error.response?.data?.message || `Failed to ${status} ad.`);
+                    Alert.alert('Error', error.response?.data?.message || `Failed to ${actionVerb} ad.`);
                 }
             }}]
         );
     };
     
-    // This is the new handler for the Delete button
     const handleDeleteAd = (adId: number) => {
-        Alert.alert(`Confirm Deletion`, `Are you sure you want to permanently delete this ad?`,
+        Alert.alert(`Confirm Deletion`, `Are you sure you want to permanently delete this ad? This action cannot be undone.`,
             [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: async () => {
                 try {
                     await apiClient.delete(`/api/admin/ads/${adId}`);
                     Alert.alert('Success', 'Ad has been deleted.');
-                    fetchAds(); // Refresh the list
+                    fetchAds();
                 } catch (error: any) {
                     Alert.alert('Error', error.response?.data?.message || `Failed to delete ad.`);
                 }
             }}]
         );
     };
+
+    // CHANGED: Filter logic updated for three tabs
+    const filteredAds = useMemo(() => {
+        switch (activeTab) {
+            case 'review':
+                return ads.filter(ad => ad.status === 'pending');
+            case 'current':
+                return ads.filter(ad => ad.status === 'approved');
+            case 'history':
+                return ads.filter(ad => ad.status === 'rejected' || ad.status === 'stopped');
+            default:
+                return [];
+        }
+    }, [ads, activeTab]);
 
     const renderAdItem = ({ item }: { item: AdForAdmin }) => (
         <View style={styles.adItem}>
@@ -86,6 +103,7 @@ const AdminAdDashboardScreen: React.FC = () => {
                 </View>
             )}
 
+            {/* This logic remains the same as it correctly shows buttons based on the item's status */}
             <View style={styles.actions}>
                 {item.status === 'pending' && (
                     <>
@@ -98,10 +116,16 @@ const AdminAdDashboardScreen: React.FC = () => {
                     </>
                 )}
                 
-                {/* The Delete button is now available for all non-pending ads */}
-                {(item.status === 'approved' || item.status === 'rejected') && (
+                {item.status === 'approved' && (
+                    <TouchableOpacity style={[styles.actionButton, styles.stopButton]} onPress={() => handleUpdateStatus(item.id, 'stopped')}>
+                        <View style={styles.stopButtonIcon} />
+                        <Text style={styles.actionButtonText}>Stop Ad</Text>
+                    </TouchableOpacity>
+                )}
+                
+                {(item.status === 'rejected' || item.status === 'stopped') && (
                     <TouchableOpacity style={[styles.actionButton, styles.deleteButton]} onPress={() => handleDeleteAd(item.id)}>
-                        <Text style={styles.actionButtonText}>🗑️ Delete</Text>
+                        <Text style={styles.actionButtonText}>🗑️ Delete Permanently</Text>
                     </TouchableOpacity>
                 )}
             </View>
@@ -112,13 +136,37 @@ const AdminAdDashboardScreen: React.FC = () => {
 
     return (
         <SafeAreaView style={styles.safeArea}>
+            <Text style={styles.headerTitle}>Ad Management</Text>
+            
+            {/* CHANGED: Tab Selector UI now has three tabs */}
+            <View style={styles.tabSelectorContainer}>
+                <TouchableOpacity 
+                    style={[styles.tabButton, activeTab === 'review' && styles.tabButtonActive]} 
+                    onPress={() => setActiveTab('review')}>
+                    <Text style={activeTab === 'review' ? styles.tabTextActive : styles.tabText}>Review</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                    style={[styles.tabButton, activeTab === 'current' && styles.tabButtonActive]} 
+                    onPress={() => setActiveTab('current')}>
+                    <Text style={activeTab === 'current' ? styles.tabTextActive : styles.tabText}>Current Ads</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                    style={[styles.tabButton, activeTab === 'history' && styles.tabButtonActive]} 
+                    onPress={() => setActiveTab('history')}>
+                     <Text style={activeTab === 'history' ? styles.tabTextActive : styles.tabText}>History</Text>
+                </TouchableOpacity>
+            </View>
+
             <FlatList
-                data={ads}
+                data={filteredAds}
                 keyExtractor={(item) => item.id.toString()}
                 renderItem={renderAdItem}
-                contentContainerStyle={{ padding: 10 }}
-                ListHeaderComponent={<Text style={styles.headerTitle}>Ad Management</Text>}
-                ListEmptyComponent={<View style={styles.emptyContainer}><Text>No ads found.</Text></View>}
+                contentContainerStyle={{ padding: 10, paddingTop: 0 }}
+                ListEmptyComponent={
+                    <View style={styles.emptyContainer}>
+                        <Text>No ads in this section.</Text>
+                    </View>
+                }
             />
             <Modal visible={!!selectedImage} transparent={true} onRequestClose={() => setSelectedImage(null)}>
                 <View style={styles.modalContainer}>
@@ -134,7 +182,13 @@ const styles = StyleSheet.create({
     safeArea: { flex: 1, backgroundColor: '#f0f2f5' },
     loader: { flex: 1, justifyContent: 'center' },
     headerTitle: { fontSize: 24, fontWeight: 'bold', textAlign: 'center', marginVertical: 15 },
-    adItem: { padding: 15, marginVertical: 8, backgroundColor: 'white', borderRadius: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.2, shadowRadius: 1.41, elevation: 3 },
+    tabSelectorContainer: { flexDirection: 'row', marginHorizontal: 15, marginBottom: 10, backgroundColor: '#fff', borderRadius: 8, elevation: 2, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 5, overflow: 'hidden' },
+    tabButton: { flex: 1, paddingVertical: 12, alignItems: 'center', justifyContent: 'center' },
+    tabButtonActive: { backgroundColor: '#007AFF' },
+    // CHANGED: Slightly smaller font size to better fit three tabs
+    tabText: { fontSize: 15, color: '#007AFF', fontWeight: '500' },
+    tabTextActive: { fontSize: 15, color: '#fff', fontWeight: 'bold' },
+    adItem: { padding: 15, marginHorizontal: 5, marginVertical: 8, backgroundColor: 'white', borderRadius: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.2, shadowRadius: 1.41, elevation: 3 },
     adUser: { fontSize: 16, marginBottom: 5 },
     detailRow: { flexDirection: 'row', justifyContent: 'space-between' },
     adDetail: { color: '#555', marginBottom: 4 },
@@ -142,16 +196,19 @@ const styles = StyleSheet.create({
     status_pending: { color: '#FF8C00' },
     status_approved: { color: '#28a745' },
     status_rejected: { color: '#dc3545' },
+    status_stopped: { color: '#6c757d' },
     imageLabel: { fontWeight: 'bold', marginTop: 10, color: '#333' },
     image: { width: '100%', height: 180, resizeMode: 'contain', marginVertical: 8, backgroundColor: '#e9ecef', borderRadius: 4 },
     paymentSection: { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#eee' },
-    actions: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 15, paddingTop: 15, borderTopWidth: 1, borderTopColor: '#eee' },
-    actionButton: { paddingVertical: 12, borderRadius: 5, alignItems: 'center', flex: 1, marginHorizontal: 5 },
+    actions: { flexDirection: 'row', justifyContent: 'center', marginTop: 15, paddingTop: 15, borderTopWidth: 1, borderTopColor: '#eee' },
+    actionButton: { paddingVertical: 12, borderRadius: 5, alignItems: 'center', flex: 1, marginHorizontal: 5, flexDirection: 'row', justifyContent: 'center' },
     approveButton: { backgroundColor: '#28a745' },
     rejectButton: { backgroundColor: '#dc3545' },
-    deleteButton: { backgroundColor: '#6c757d' }, // Grey for delete
+    stopButton: { backgroundColor: '#ffc107' },
+    stopButtonIcon: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#dc3545', marginRight: 8 },
+    deleteButton: { backgroundColor: '#dc3545' },
     actionButtonText: { color: '#fff', fontWeight: 'bold' },
-    emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', marginTop: 50 },
+    emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', marginTop: 50, padding: 20 },
     modalContainer: { flex: 1, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'center', alignItems: 'center', padding: 20 },
     modalImage: { width: '100%', height: '80%', resizeMode: 'contain' },
     modalCloseButton: { marginTop: 20, backgroundColor: 'white', paddingVertical: 10, paddingHorizontal: 30, borderRadius: 5 },

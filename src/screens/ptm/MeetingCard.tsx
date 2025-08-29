@@ -8,19 +8,20 @@ export interface Meeting {
   meeting_datetime: string;
   teacher_id: number;
   teacher_name: string;
+  class_group: string; // ✅ NEW: Added class_group
   subject_focus: string;
   status: 'Scheduled' | 'Completed';
   notes: string | null;
-  meeting_link?: string | null; // ✅ NEW: Added meeting_link
+  meeting_link?: string | null;
 }
 
 // These are the props (parameters) that our MeetingCard component accepts.
 interface MeetingCardProps {
   meeting: Meeting;
-  isAdmin: boolean; // ✅ NEW: To differentiate between Teacher/Admin and Student views
+  isAdmin: boolean; 
   onEdit?: (meeting: Meeting) => void;
   onDelete?: (id: number) => void;
-  onJoin?: (link: string) => void; // ✅ NEW: Handler for the join button
+  onJoin?: (link: string) => void; 
 }
 
 // This helper function takes a date string and makes it look nice and readable.
@@ -53,7 +54,6 @@ export const MeetingCard = ({ meeting, isAdmin, onEdit, onDelete, onJoin }: Meet
             </View>
         </View>
 
-        {/* ✅ MODIFIED: Show management buttons only for admins */}
         {isAdmin && (
             <View style={styles.cardActions}>
               <TouchableOpacity onPress={() => onEdit(meeting)} style={[styles.actionBtn, styles.editBtn]}>
@@ -71,6 +71,11 @@ export const MeetingCard = ({ meeting, isAdmin, onEdit, onDelete, onJoin }: Meet
             <Text style={styles.icon}>🧑‍🏫</Text>
             <Text style={styles.detailText}>Teacher: {meeting.teacher_name}</Text>
         </View>
+        {/* ✅ NEW: Display the class group for the meeting */}
+        <View style={styles.detailRow}>
+            <Text style={styles.icon}>🏫</Text>
+            <Text style={styles.detailText}>Class: {meeting.class_group}</Text>
+        </View>
         <View style={styles.detailRow}>
             <Text style={styles.icon}>💬</Text>
             <Text style={styles.detailText}>Subject Focus: {meeting.subject_focus}</Text>
@@ -84,7 +89,6 @@ export const MeetingCard = ({ meeting, isAdmin, onEdit, onDelete, onJoin }: Meet
         </View>
       </View>
 
-      {/* ✅ NEW: Conditionally render the "Join Meeting" button for students */}
       {canJoin && (
           <TouchableOpacity style={styles.joinButton} onPress={() => onJoin(meeting.meeting_link)}>
               <MaterialIcons name="videocam" size={18} color="white" />
@@ -102,7 +106,6 @@ export const MeetingCard = ({ meeting, isAdmin, onEdit, onDelete, onJoin }: Meet
   );
 };
 
-// ✅ ADDED NEW STYLES for the Join button
 const styles = StyleSheet.create({
     cardContainer: {
         backgroundColor: '#ffffff',
@@ -162,12 +165,12 @@ const styles = StyleSheet.create({
     notesText: { color: '#4a5568', fontSize: 15, lineHeight: 22 },
     joinButton: {
       flexDirection: 'row',
-      backgroundColor: '#5a67d8', // A nice purple for video calls
+      backgroundColor: '#5a67d8',
       paddingVertical: 12,
       borderRadius: 8,
       justifyContent: 'center',
       alignItems: 'center',
-      marginTop: 15, // Space above the notes section
+      marginTop: 15,
       marginBottom: 10,
     },
     joinButtonText: {

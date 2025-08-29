@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import apiClient from '../../api/client';
-import TopNotchAd, { Ad } from './TopNotchAd'; // Import Ad interface from TopNotchAd
-import MotionAd from './MotionAd';
+import TopNotchAd, { Ad } from './TopNotchAd';
 
 const AdDisplay: React.FC = () => {
   const [currentAd, setCurrentAd] = useState<Ad | null>(null);
@@ -29,8 +28,11 @@ const AdDisplay: React.FC = () => {
 
   if (!currentAd) return null;
   
-  if (currentAd.ad_type === 'top_notch') return <TopNotchAd ad={currentAd} />;
-  if (currentAd.ad_type === 'motion') return <MotionAd ad={currentAd} />;
+  // Since the API now only returns 'top_notch' ads, this check is for safety.
+  // All other ad types will be ignored.
+  if (currentAd.ad_type === 'top_notch') {
+    return <TopNotchAd ad={currentAd} />;
+  }
   
   return null;
 };

@@ -226,6 +226,78 @@ app.post('/api/users', async (req, res) => {
     } finally { connection.release(); }
 });
 
+
+// Add this new route to your backend API file
+
+app.put('/api/users/:id', async (req, res) => {
+    const { id } = req.params;
+    const { username, password, full_name, role, class_group, subjects_taught } = req.body;
+
+    // Build the query dynamically based on the fields provided
+    let queryFields = [];
+    let queryParams = [];
+
+    if (username !== undefined) {
+        queryFields.push('username = ?');
+        queryParams.push(username);
+    }
+    if (full_name !== undefined) {
+        queryFields.push('full_name = ?');
+        queryParams.push(full_name);
+    }
+    if (role !== undefined) {
+        queryFields.push('role = ?');
+        queryParams.push(role);
+    }
+    if (class_group !== undefined) {
+        queryFields.push('class_group = ?');
+        queryParams.push(class_group);
+    }
+    // Only update subjects if the role is teacher and subjects are provided
+    if (role === 'teacher' && subjects_taught !== undefined) {
+        const subjectsJson = Array.isArray(subjects_taught) ? JSON.stringify(subjects_taught) : null;
+        queryFields.push('subjects_taught = ?');
+        queryParams.push(subjectsJson);
+    }
+
+    // CRITICAL: Only hash and update the password if a new one was provided
+    if (password) {
+        try {
+            const hashedPassword = await bcrypt.hash(password, 10);
+            queryFields.push('password = ?');
+            queryParams.push(hashedPassword);
+        } catch (hashError) {
+            console.error("Password Hashing Error:", hashError);
+            return res.status(500).json({ message: 'Error processing password.' });
+        }
+    }
+
+    // If no fields are being updated, return an error
+    if (queryFields.length === 0) {
+        return res.status(400).json({ message: 'No valid fields provided for update.' });
+    }
+
+    // Add the user ID to the end of the parameters for the WHERE clause
+    queryParams.push(id);
+
+    const sql = `UPDATE users SET ${queryFields.join(', ')} WHERE id = ?`;
+
+    try {
+        const [result] = await db.query(sql, queryParams);
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: 'User not found.' });
+        }
+        res.status(200).json({ message: 'User updated successfully!' });
+    } catch (error) {
+        console.error("User Update Error:", error);
+        if (error.code === 'ER_DUP_ENTRY') {
+            return res.status(409).json({ message: 'Error: This username already exists.' });
+        }
+        res.status(500).json({ message: 'Error: Could not update user.' });
+    }
+});
+
+
 app.get('/api/profiles/:userId', async (req, res) => {
     try {
         const { userId } = req.params;
@@ -1559,7 +1631,7 @@ app.put('/api/admin/donor-query/status', async (req, res) => {
 
 
 // ==========================================================
-// --- PARENT-TEACHER MEETING (PTM) API ROUTES (MODIFIED) ---
+// --- PARENT-TEACHER MEETING (PTM) API ROUTES (CORRECTED) --
 // ==========================================================
 
 // GET all meetings
@@ -1585,48 +1657,61 @@ app.get('/api/ptm/teachers', async (req, res) => {
     }
 });
 
-// 📂 File: server.js (REPLACE THIS ROUTE)
+// GET a unique list of all classes for the form
+app.get('/api/ptm/classes', async (req, res) => {
+    try {
+        const query = "SELECT DISTINCT class_group FROM users WHERE class_group IS NOT NULL AND class_group != '' ORDER BY class_group ASC";
+        const [results] = await db.query(query);
+        const classes = results.map(item => item.class_group);
+        res.status(200).json(classes);
+    } catch (error) {
+        console.error("GET /api/ptm/classes Error:", error);
+        res.status(500).json({ message: 'Could not fetch the list of classes.' });
+    }
+});
 
-// POST a new meeting (with meeting_link)
+
+// POST a new meeting (This is the single, correct version)
 app.post('/api/ptm', async (req, res) => {
-    const { meeting_datetime, teacher_id, subject_focus, notes, meeting_link, created_by } = req.body; // Assuming created_by (adminId) is sent
+    const { meeting_datetime, teacher_id, class_group, subject_focus, notes, meeting_link, created_by } = req.body; 
     
-    if (!meeting_datetime || !teacher_id || !subject_focus) {
-        return res.status(400).json({ message: 'Meeting Date, Teacher, and Subject are required.' });
+    if (!meeting_datetime || !teacher_id || !subject_focus || !class_group) {
+        return res.status(400).json({ message: 'Meeting Date, Teacher, Class, and Subject are required.' });
     }
 
     const connection = await db.getConnection();
     try {
         await connection.beginTransaction();
 
-        // Step 1: Get teacher's name and create the PTM record
         const [[teacher]] = await connection.query('SELECT full_name FROM users WHERE id = ?', [teacher_id]);
         if (!teacher) {
             await connection.rollback();
             return res.status(404).json({ message: 'Selected teacher not found.' });
         }
         
-        const query = `INSERT INTO ptm_meetings (meeting_datetime, teacher_id, teacher_name, subject_focus, notes, meeting_link) VALUES (?, ?, ?, ?, ?, ?)`;
-        await connection.query(query, [meeting_datetime, teacher_id, teacher.full_name, subject_focus, notes || null, meeting_link || null]);
+        const query = `INSERT INTO ptm_meetings (meeting_datetime, teacher_id, teacher_name, class_group, subject_focus, notes, meeting_link) VALUES (?, ?, ?, ?, ?, ?, ?)`;
+        await connection.query(query, [meeting_datetime, teacher_id, teacher.full_name, class_group, subject_focus, notes || null, meeting_link || null]);
 
-        // ★★★★★ START: NEW NOTIFICATION LOGIC ★★★★★
+        // ★★★★★ START: MODIFIED NOTIFICATION LOGIC ★★★★★
         
-        // 1. Find all students
-        const [students] = await connection.query("SELECT id FROM users WHERE role = 'student'");
-        
-        // 2. Combine the specific teacher and all students into one recipient list
+        const [students] = await connection.query("SELECT id FROM users WHERE role = 'student' AND class_group = ?", [class_group]);
         const studentIds = students.map(s => s.id);
-        const allRecipientIds = [...new Set([teacher_id, ...studentIds])]; // Use Set to avoid notifying teacher twice if they are also in student list somehow
+        const allRecipientIds = [...new Set([parseInt(teacher_id, 10), ...studentIds])]; 
 
         if (allRecipientIds.length > 0) {
-            // 3. Get the admin's name who scheduled the meeting
-            const [[admin]] = await connection.query("SELECT full_name FROM users WHERE id = ?", [created_by]);
-            const senderName = admin.full_name || "School Administration";
+            
+            // ✅ MODIFIED: Safely get the admin's name to prevent server crash
+            let senderName = "School Administration"; // Default value
+            if (created_by) {
+                const [adminRows] = await connection.query("SELECT full_name FROM users WHERE id = ?", [created_by]);
+                if (adminRows.length > 0) {
+                    senderName = adminRows[0].full_name;
+                }
+            }
 
-            // 4. Prepare and send notifications
-            const notificationTitle = "New Parent-Teacher Meeting";
+            const notificationTitle = `New PTM: ${class_group}`;
             const eventDate = new Date(meeting_datetime).toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
-            const notificationMessage = `A PTM regarding "${subject_focus}" with ${teacher.full_name} has been scheduled for ${eventDate}.`;
+            const notificationMessage = `A PTM for ${class_group} regarding "${subject_focus}" with ${teacher.full_name} has been scheduled for ${eventDate}.`;
 
             await createBulkNotifications(
                 connection,
@@ -1634,11 +1719,11 @@ app.post('/api/ptm', async (req, res) => {
                 senderName,
                 notificationTitle,
                 notificationMessage,
-                '/ptm' // A generic link to the PTM screen
+                '/ptm'
             );
         }
 
-        // ★★★★★ END: NEW NOTIFICATION LOGIC ★★★★★
+        // ★★★★★ END: MODIFIED NOTIFICATION LOGIC ★★★★★
         
         await connection.commit();
         res.status(201).json({ message: 'Meeting scheduled and users notified successfully!' });
@@ -1652,10 +1737,9 @@ app.post('/api/ptm', async (req, res) => {
     }
 });
 
-// PUT (update) an existing meeting (with meeting_link)
+// PUT (update) an existing meeting
 app.put('/api/ptm/:id', async (req, res) => {
     const { id } = req.params;
-    // ✅ ADDED meeting_link
     const { status, notes, meeting_link } = req.body;
 
     if (status === undefined) {
@@ -1663,7 +1747,6 @@ app.put('/api/ptm/:id', async (req, res) => {
     }
 
     try {
-        // ✅ ADDED meeting_link to query
         const query = 'UPDATE ptm_meetings SET status = ?, notes = ?, meeting_link = ? WHERE id = ?';
         const [result] = await db.query(query, [status, notes || null, meeting_link || null, id]);
         if (result.affectedRows === 0) {
@@ -4983,9 +5066,16 @@ app.post('/api/ads', verifyToken, adsUpload.fields([
 
 
 // PUBLIC: Get approved ads for display (The "Small Key" endpoint)
+// CHANGED: Added a WHERE condition to only fetch 'top_notch' ads.
 app.get('/api/ads/display', async (req, res) => {
     try {
-        const [ads] = await db.query("SELECT id, ad_type, ad_content_image_url, ad_content_text FROM ads WHERE status = 'approved' ORDER BY RAND()");
+        const query = `
+            SELECT id, ad_type, ad_content_image_url, ad_content_text 
+            FROM ads 
+            WHERE status = 'approved' AND ad_type = 'top_notch' 
+            ORDER BY RAND()
+        `;
+        const [ads] = await db.query(query);
         res.json(ads);
     } catch (error) {
         console.error("Error fetching display ads:", error);
@@ -5013,21 +5103,20 @@ app.get('/api/admin/ads', [verifyToken, isAdmin], async (req, res) => {
     }
 });
 
-// PUT /api/admin/ads/:adId/status - Allows admin to approve or reject a pending ad.
+// PUT /api/admin/ads/:adId/status - Allows admin to approve, reject, or stop a pending ad.
 app.put('/api/admin/ads/:adId/status', [verifyToken, isAdmin], async (req, res) => {
     const { adId } = req.params;
     const { status } = req.body;
-    const adminFullName = req.user.full_name; // Get the admin's name from the token
+    const adminFullName = req.user.full_name;
 
-    if (!['approved', 'rejected'].includes(status)) {
+    if (!['approved', 'rejected', 'stopped'].includes(status)) {
         return res.status(400).json({ message: 'Invalid status provided.' });
     }
 
-    const connection = await db.getConnection(); // Use connection for multiple queries
+    const connection = await db.getConnection();
     try {
         await connection.beginTransaction();
 
-        // First, get the ad details to find the original creator
         const [[adDetails]] = await connection.query("SELECT user_id, ad_content_text FROM ads WHERE id = ?", [adId]);
 
         if (!adDetails) {
@@ -5035,29 +5124,21 @@ app.put('/api/admin/ads/:adId/status', [verifyToken, isAdmin], async (req, res) 
             return res.status(404).json({ message: 'Ad not found.' });
         }
 
-        // Update the ad's status
         const [result] = await connection.query("UPDATE ads SET status = ? WHERE id = ?", [status, adId]);
 
         if (result.affectedRows === 0) {
             await connection.rollback();
             return res.status(404).json({ message: 'Ad could not be updated.' });
         }
-       await connection.query("UPDATE ads SET status = ? WHERE id = ?", [status, adId]);
-        // ★★★★★ START: NEW NOTIFICATION LOGIC ★★★★★
-
-        // Only send a notification if the status is changed to 'approved'
+       
         if (status === 'approved') {
             const originalCreatorId = adDetails.user_id;
             const notificationTitle = "Your Ad has been Approved!";
             const adTitle = adDetails.ad_content_text || "your recent ad submission";
             const notificationMessage = `Congratulations! Your ad "${adTitle}" has been approved by ${adminFullName}.`;
-
-            // Send a single notification to the user who originally created the ad.
-            await createNotification(connection, originalCreatorId, adminFullName, notificationTitle, notificationMessage, `/my-ads`); // A hypothetical link
+            await createNotification(connection, originalCreatorId, adminFullName, notificationTitle, notificationMessage, `/my-ads`);
         }
         
-        // ★★★★★ END: NEW NOTIFICATION LOGIC ★★★★★
-
         await connection.commit();
         res.json({ message: `Ad has been successfully ${status}.` });
 
@@ -5070,11 +5151,11 @@ app.put('/api/admin/ads/:adId/status', [verifyToken, isAdmin], async (req, res) 
     }
 });
 
+
 // DELETE /api/admin/ads/:adId - Allows admin to delete any ad.
 app.delete('/api/admin/ads/:adId', [verifyToken, isAdmin], async (req, res) => {
     const { adId } = req.params;
     try {
-        // Future improvement: also delete the image files from the /uploads folder.
         const [result] = await db.query("DELETE FROM ads WHERE id = ?", [adId]);
         if (result.affectedRows === 0) return res.status(404).json({ message: 'Ad not found.' });
         res.json({ message: 'Ad successfully deleted.' });
@@ -5085,40 +5166,67 @@ app.delete('/api/admin/ads/:adId', [verifyToken, isAdmin], async (req, res) => {
 });
 
 
+
 // ==========================================================
-// --- ADS PAYMENT SETTINGS API ROUTES (No Changes Needed) ---
+// --- UPDATED ADVERTISEMENT PAYMENT SETTINGS ROUTES ---
 // ==========================================================
 
-// PUBLIC: Gets the Admin's payment details to show to users.
-app.get('/api/payment-details', async (req, res) => {
+// PUBLIC: Gets the Admin's payment details, including the ad amount.
+// CHANGED: Endpoint name and table name in query
+app.get('/api/ad-payment-details', async (req, res) => {
     try {
-        const [[details]] = await db.query('SELECT * FROM ad_payment_settings WHERE id = 1');
-        res.json(details || {});
+        const [rows] = await db.query('SELECT * FROM ad_payment_details WHERE id = 1');
+        res.json(rows[0] || {});
     } catch (error) {
-        console.error("Error fetching payment details:", error);
-        res.status(500).json({ message: 'Error fetching payment details.' });
+        console.error("Error fetching ad payment details:", error);
+        res.status(500).json({ message: 'Error fetching ad payment details.' });
     }
 });
 
-// ADMIN-ONLY: Updates the Admin's payment details.
-app.post('/api/admin/payment-details', [verifyToken, isAdmin], paymentUpload.single('qrCodeImage'), async (req, res) => {
-    const { accountHolderName, accountNumber, ifscCode, cifCode } = req.body;
-    let sql = 'UPDATE ad_payment_settings SET account_holder_name = ?, account_number = ?, ifsc_code = ?, cif_code = ?';
-    const params = [accountHolderName, accountNumber, ifscCode, cifCode];
-
-    if (req.file) {
-        const qrCodeUrl = `/public/uploads/${req.file.filename}`;
-        sql += ', qr_code_url = ?';
-        params.push(qrCodeUrl);
-    }
-    sql += ' WHERE id = 1';
-
+// ADMIN: Creates or Updates the payment details, including the ad amount.
+// CHANGED: Endpoint name and table name in queries
+app.post('/api/admin/ad-payment-details', [verifyToken, isAdmin], paymentUpload.single('qrCodeImage'), async (req, res) => {
+    const { adAmount, accountHolderName, accountNumber, ifscCode, cifCode } = req.body;
+    
+    const connection = await db.getConnection();
     try {
-        await db.query(sql, params);
-        res.status(200).json({ message: 'Payment details updated successfully!' });
+        await connection.beginTransaction();
+
+        // CHANGED: Table name in the query
+        const upsertQuery = `
+            INSERT INTO ad_payment_details (id, ad_amount, account_holder_name, account_number, ifsc_code, cif_code, qr_code_url)
+            VALUES (1, ?, ?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+                ad_amount = VALUES(ad_amount),
+                account_holder_name = VALUES(account_holder_name),
+                account_number = VALUES(account_number),
+                ifsc_code = VALUES(ifsc_code),
+                cif_code = VALUES(cif_code),
+                qr_code_url = VALUES(qr_code_url);
+        `;
+
+        // CHANGED: Table name in the query
+        const [rows] = await connection.query('SELECT qr_code_url FROM ad_payment_details WHERE id = 1');
+        const currentDetails = rows[0];
+
+        let qrCodeUrlToSave = currentDetails ? currentDetails.qr_code_url : null;
+        if (req.file) {
+            qrCodeUrlToSave = `/public/uploads/${req.file.filename}`;
+        }
+        
+        const params = [adAmount, accountHolderName, accountNumber, ifscCode, cifCode, qrCodeUrlToSave];
+        
+        await connection.query(upsertQuery, params);
+        await connection.commit();
+        
+        res.status(200).json({ message: 'Ad payment details saved successfully!' });
+
     } catch (error) {
-        console.error("Error updating payment details:", error);
-        res.status(500).json({ message: 'Error updating details.' });
+        await connection.rollback();
+        console.error("Error saving ad payment details:", error);
+        res.status(500).json({ message: 'Error saving details.' });
+    } finally {
+        if (connection) connection.release();
     }
 });
 

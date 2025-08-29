@@ -1,12 +1,11 @@
-// 📂 File: src/screens/ads/CreateAdScreen.tsx (FINAL AND COMPLETE - NO SHORTCUTS)
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, TextInput, Button, StyleSheet, Alert, Image, ActivityIndicator, TouchableOpacity, ScrollView, SafeAreaView } from 'react-native';
 import { launchImageLibrary, Asset } from 'react-native-image-picker';
 import apiClient, { API_BASE_URL } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
 
-interface PaymentDetails {
+interface AdPaymentDetails {
+    ad_amount?: string | number;
     account_holder_name?: string;
     account_number?: string;
     ifsc_code?: string;
@@ -20,28 +19,40 @@ const CreateAdScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     const isAdmin = user?.role === 'admin';
 
     const [activeTab, setActiveTab] = useState<'create' | 'bank'>('create');
-    const [adType, setAdType] = useState<'motion' | 'top_notch'>('motion');
+    // REMOVED: const [adType, setAdType] = useState<'motion' | 'top_notch'>('motion');
     const [adText, setAdText] = useState('');
     const [adImage, setAdImage] = useState<Asset | null>(null);
     
-    // State for payment proof, only used by non-admins
     const [paymentProof, setPaymentProof] = useState<Asset | null>(null);
     const [paymentText, setPaymentText] = useState('');
 
-    // State for bank details tab (editable by admin)
-    const [paymentDetails, setPaymentDetails] = useState<PaymentDetails>({});
-    const [newQrImage, setNewQrImage] = useState<Asset | null>(null);
+    const [dbPaymentDetails, setDbPaymentDetails] = useState<AdPaymentDetails>({});
     
-    // General state for loading indicators
+    const [formDetails, setFormDetails] = useState<AdPaymentDetails>({
+        ad_amount: '',
+        account_holder_name: '',
+        account_number: '',
+        ifsc_code: '',
+        cif_code: ''
+    });
+
+    const [newQrImage, setNewQrImage] = useState<Asset | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isDetailsLoading, setIsDetailsLoading] = useState(true);
 
     // --- DATA FETCHING ---
-    const fetchDetails = useCallback(async () => {
+    const fetchAdPaymentDetails = useCallback(async () => {
         setIsDetailsLoading(true);
         try {
-            const { data } = await apiClient.get('/api/payment-details');
-            setPaymentDetails(data || {});
+            const { data } = await apiClient.get<AdPaymentDetails>('/api/ad-payment-details');
+            setDbPaymentDetails(data || {});
+            setFormDetails({
+                ad_amount: String(data?.ad_amount || ''),
+                account_holder_name: data?.account_holder_name || '',
+                account_number: data?.account_number || '',
+                ifsc_code: data?.ifsc_code || '',
+                cif_code: data?.cif_code || ''
+            });
         } catch (error) {
             Alert.alert('Error', 'Could not load payment instructions.');
         } finally {
@@ -49,10 +60,9 @@ const CreateAdScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         }
     }, []);
 
-    useEffect(() => { fetchDetails(); }, [fetchDetails]);
+    useEffect(() => { fetchAdPaymentDetails(); }, [fetchAdPaymentDetails]);
 
     // --- HANDLER FUNCTIONS ---
-    // Handles submitting the ad and (if applicable) the payment proof in one request.
     const handleCreateAd = async () => {
         if (!adImage) {
             Alert.alert('Missing Ad Image', 'Please select an image for your advertisement.');
@@ -65,7 +75,8 @@ const CreateAdScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
 
         setIsSubmitting(true);
         const formData = new FormData();
-        formData.append('ad_type', adType);
+        // CHANGED: Hardcoded 'top_notch' as the ad_type
+        formData.append('ad_type', 'top_notch'); 
         formData.append('ad_content_text', adText);
         formData.append('ad_content_image', { uri: adImage.uri, type: adImage.type, name: adImage.fileName });
         
@@ -79,33 +90,33 @@ const CreateAdScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                 headers: { 'Content-Type': 'multipart/form-data' },
             });
             Alert.alert('Success!', data.message, [{ text: 'OK', onPress: () => navigation.goBack() }]);
-        } catch (error: any) {
+        } catch (error: any)
+        {
             Alert.alert('Submission Failed', error.response?.data?.message || 'An error occurred.');
         } finally {
             setIsSubmitting(false);
         }
     };
     
-    // Handles saving the bank details (Admin only).
     const handleSaveChanges = async () => {
+        // ... (This function remains unchanged)
         setIsSubmitting(true);
         const formData = new FormData();
-        formData.append('accountHolderName', paymentDetails.account_holder_name || '');
-        formData.append('accountNumber', paymentDetails.account_number || '');
-        formData.append('ifscCode', paymentDetails.ifsc_code || '');
-        formData.append('cifCode', paymentDetails.cif_code || '');
-
+        formData.append('adAmount', formDetails.ad_amount || '');
+        formData.append('accountHolderName', formDetails.account_holder_name || '');
+        formData.append('accountNumber', formDetails.account_number || '');
+        formData.append('ifscCode', formDetails.ifsc_code || '');
+        formData.append('cifCode', formDetails.cif_code || '');
         if (newQrImage) {
             formData.append('qrCodeImage', { uri: newQrImage.uri, type: newQrImage.type, name: newQrImage.fileName });
         }
-        
         try {
-            const { data } = await apiClient.post('/api/admin/payment-details', formData, {
+            const { data } = await apiClient.post('/api/admin/ad-payment-details', formData, {
                 headers: { 'Content-Type': 'multipart/form-data' }
             });
             Alert.alert('Success', data.message);
             setNewQrImage(null);
-            fetchDetails();
+            fetchAdPaymentDetails();
         } catch (error: any) {
             Alert.alert('Error', error.response?.data?.message || 'Failed to update details.');
         } finally {
@@ -113,34 +124,28 @@ const CreateAdScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         }
     };
 
-    // --- RENDER FUNCTIONS ---
-    // Renders the UI for the "Create Ad" tab.
     const renderCreateAdTab = () => (
         <ScrollView contentContainerStyle={styles.tabContentContainer}>
-            <Text style={styles.label}>1. Choose Ad Type</Text>
-            <View style={styles.toggleContainer}>
-                <TouchableOpacity style={[styles.toggleButton, adType === 'motion' && styles.toggleActive]} onPress={() => setAdType('motion')}><Text style={adType === 'motion' ? styles.toggleTextActive : styles.toggleText}>Motion (Scrolling)</Text></TouchableOpacity>
-                <TouchableOpacity style={[styles.toggleButton, adType === 'top_notch' && styles.toggleActive]} onPress={() => setAdType('top_notch')}><Text style={adType === 'top_notch' ? styles.toggleTextActive : styles.toggleText}>Pop-up Ad</Text></TouchableOpacity>
-            </View>
-
-            <Text style={styles.label}>2. Upload Ad Image</Text>
+            {/* REMOVED: Ad Type selection UI */}
+            
+            {/* CHANGED: Step numbers are updated */}
+            <Text style={styles.label}>1. Upload Ad Image</Text>
             <TouchableOpacity style={styles.imagePicker} onPress={() => launchImageLibrary({ mediaType: 'photo' }, r => r.assets && setAdImage(r.assets[0]))}>
                 {adImage ? <Image source={{ uri: adImage.uri }} style={styles.preview} /> : <Text style={styles.imagePickerText}>Tap to select an image</Text>}
             </TouchableOpacity>
 
-            <Text style={styles.label}>3. Add Text (Optional)</Text>
+            <Text style={styles.label}>2. Add Text (Optional)</Text>
             <TextInput style={styles.input} placeholder="e.g., Annual Sports Day this Saturday!" value={adText} onChangeText={setAdText} />
             
-            {/* This payment section is only shown to non-admin users */}
             {!isAdmin && (
                 <>
                     <View style={styles.divider} />
-                    <Text style={styles.label}>4. Upload Payment Proof</Text>
+                    <Text style={styles.label}>3. Upload Payment Proof</Text>
                     <Text style={styles.infoText}>Please make payment using the details in the "Bank Details" tab first.</Text>
                     <TouchableOpacity style={styles.imagePicker} onPress={() => launchImageLibrary({ mediaType: 'photo' }, r => r.assets && setPaymentProof(r.assets[0]))}>
                         {paymentProof ? <Image source={{ uri: paymentProof.uri }} style={styles.preview} /> : <Text style={styles.imagePickerText}>Tap to upload screenshot</Text>}
                     </TouchableOpacity>
-                    <Text style={styles.label}>5. Transaction ID (Optional)</Text>
+                    <Text style={styles.label}>4. Transaction ID (Optional)</Text>
                     <TextInput style={styles.input} placeholder="Enter any reference or transaction ID" value={paymentText} onChangeText={setPaymentText} />
                 </>
             )}
@@ -153,75 +158,75 @@ const CreateAdScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         </ScrollView>
     );
 
-    // Renders the UI for the "Bank Details" tab, with logic for admin vs. other users.
+    // ... (renderBankDetailsTab and the return statement remain the same)
     const renderBankDetailsTab = () => {
-        if (isDetailsLoading) {
-            return <ActivityIndicator size="large" style={{ marginTop: 50 }} />;
-        }
-
-        // --- UI FOR ADMIN (EDITABLE FORM) ---
+        if (isDetailsLoading) return <ActivityIndicator size="large" style={{ marginTop: 50 }} />;
         if (isAdmin) {
             return (
                 <ScrollView contentContainerStyle={styles.tabContentContainer}>
                     <View style={styles.detailsCard}>
                         <Image 
-                            source={newQrImage?.uri ? { uri: newQrImage.uri } : (paymentDetails.qr_code_url ? { uri: `${API_BASE_URL}${paymentDetails.qr_code_url}` } : require('../../assets/placeholder.png'))}
+                            source={newQrImage?.uri ? { uri: newQrImage.uri } : (dbPaymentDetails.qr_code_url ? { uri: `${API_BASE_URL}${dbPaymentDetails.qr_code_url}` } : require('../../assets/placeholder.png'))}
                             style={styles.qrImage}
                         />
                         <Button title="Change QR Code" onPress={() => launchImageLibrary({ mediaType: 'photo' }, r => r.assets && setNewQrImage(r.assets[0]))} />
                     </View>
                     <View style={styles.detailsCard}>
+                        <Text style={styles.detailLabel}>Ad Amount (₹)</Text>
+                        <TextInput 
+                            style={styles.input} 
+                            placeholder="e.g., 500"
+                            value={String(formDetails.ad_amount || '')} 
+                            onChangeText={(text) => setFormDetails(p => ({ ...p, ad_amount: text }))}
+                            keyboardType="numeric"
+                        />
                         <Text style={styles.detailLabel}>Account Holder Name</Text>
-                        <TextInput style={styles.input} value={paymentDetails.account_holder_name} onChangeText={(text) => setPaymentDetails(p => ({ ...p, account_holder_name: text }))} />
-
+                        <TextInput style={styles.input} value={formDetails.account_holder_name || ''} onChangeText={(text) => setFormDetails(p => ({ ...p, account_holder_name: text }))} />
                         <Text style={styles.detailLabel}>Bank Account</Text>
-                        <TextInput style={styles.input} value={paymentDetails.account_number} onChangeText={(text) => setPaymentDetails(p => ({ ...p, account_number: text }))} />
-                        
+                        <TextInput style={styles.input} value={formDetails.account_number || ''} onChangeText={(text) => setFormDetails(p => ({ ...p, account_number: text }))} />
                         <Text style={styles.detailLabel}>IFSC Code</Text>
-                        <TextInput style={styles.input} value={paymentDetails.ifsc_code} onChangeText={(text) => setPaymentDetails(p => ({ ...p, ifsc_code: text }))} />
-
+                        <TextInput style={styles.input} value={formDetails.ifsc_code || ''} onChangeText={(text) => setFormDetails(p => ({ ...p, ifsc_code: text }))} />
                         <Text style={styles.detailLabel}>CIF Code</Text>
-                        <TextInput style={styles.input} value={paymentDetails.cif_code} onChangeText={(text) => setPaymentDetails(p => ({ ...p, cif_code: text }))} />
+                        <TextInput style={styles.input} value={formDetails.cif_code || ''} onChangeText={(text) => setFormDetails(p => ({ ...p, cif_code: text }))} />
                     </View>
-                    <Button title={isSubmitting ? "Saving..." : "Edit Details"} onPress={handleSaveChanges} disabled={isSubmitting} />
+                    <Button title={isSubmitting ? "Saving..." : "Save Changes"} onPress={handleSaveChanges} disabled={isSubmitting} />
                 </ScrollView>
             );
         }
-
-        // --- UI FOR OTHER USERS (VIEW-ONLY) ---
-        if (!paymentDetails || !paymentDetails.account_holder_name) {
-            return <Text style={styles.infoText}>Payment details are not available at the moment. Please ask the administrator to update them.</Text>;
+        if (!dbPaymentDetails || !dbPaymentDetails.account_holder_name) {
+            return <Text style={styles.infoText}>Payment details not available. Ask administrator to update.</Text>;
         }
-
         return (
             <ScrollView contentContainerStyle={styles.tabContentContainer}>
-                <Text style={styles.infoText}>Use these details to make your payment. After paying, please upload the screenshot in the "Create New Ad" tab.</Text>
+                <Text style={styles.infoText}>Use these details to pay. After paying, upload the screenshot in the "Create New Ad" tab.</Text>
                 <View style={styles.detailsCard}>
-                    {paymentDetails.qr_code_url && (
-                        <Image source={{ uri: `${API_BASE_URL}${paymentDetails.qr_code_url}` }} style={styles.qrImage} />
+                    {dbPaymentDetails.qr_code_url && <Image source={{ uri: `${API_BASE_URL}${dbPaymentDetails.qr_code_url}` }} style={styles.qrImage} />}
+                    {dbPaymentDetails.ad_amount && (
+                         <View style={styles.detailItem}>
+                            <Text style={styles.detailLabel}>Ad Amount</Text>
+                            <Text style={styles.detailValue}>₹ {dbPaymentDetails.ad_amount}</Text>
+                        </View>
                     )}
                     <View style={styles.detailItem}>
                         <Text style={styles.detailLabel}>Account Holder Name</Text>
-                        <Text style={styles.detailValue}>{paymentDetails.account_holder_name}</Text>
+                        <Text style={styles.detailValue}>{dbPaymentDetails.account_holder_name}</Text>
                     </View>
                     <View style={styles.detailItem}>
                         <Text style={styles.detailLabel}>Bank Account</Text>
-                        <Text style={styles.detailValue}>{paymentDetails.account_number}</Text>
+                        <Text style={styles.detailValue}>{dbPaymentDetails.account_number}</Text>
                     </View>
                     <View style={styles.detailItem}>
                         <Text style={styles.detailLabel}>IFSC Code</Text>
-                        <Text style={styles.detailValue}>{paymentDetails.ifsc_code}</Text>
+                        <Text style={styles.detailValue}>{dbPaymentDetails.ifsc_code}</Text>
                     </View>
                     <View style={styles.detailItem}>
                         <Text style={styles.detailLabel}>CIF Code</Text>
-                        <Text style={styles.detailValue}>{paymentDetails.cif_code}</Text>
+                        <Text style={styles.detailValue}>{dbPaymentDetails.cif_code}</Text>
                     </View>
                 </View>
             </ScrollView>
         );
     };
-
-    // --- MAIN COMPONENT RETURN ---
     return (
         <SafeAreaView style={styles.safeArea}>
             <View style={styles.tabSelectorContainer}>
@@ -239,6 +244,7 @@ const CreateAdScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     );
 };
 
+
 // --- STYLES ---
 const styles = StyleSheet.create({
     safeArea: { flex: 1, backgroundColor: '#f0f2f5' },
@@ -251,11 +257,12 @@ const styles = StyleSheet.create({
     tabContentContainer: { padding: 20, paddingTop: 10, paddingBottom: 40 },
     label: { fontSize: 16, fontWeight: '600', color: '#333', marginTop: 15, marginBottom: 10 },
     input: { borderWidth: 1, borderColor: '#ddd', padding: 12, marginBottom: 20, borderRadius: 8, backgroundColor: '#fff', fontSize: 16 },
-    toggleContainer: { flexDirection: 'row', borderWidth: 1, borderColor: '#007AFF', borderRadius: 8, overflow: 'hidden' },
-    toggleButton: { flex: 1, padding: 12, alignItems: 'center', backgroundColor: '#fff' },
-    toggleActive: { backgroundColor: '#007AFF' },
-    toggleText: { color: '#007AFF', fontWeight: 'bold' },
-    toggleTextActive: { color: '#fff', fontWeight: 'bold' },
+    // REMOVED: Unused toggle styles
+    // toggleContainer: { ... },
+    // toggleButton: { ... },
+    // toggleActive: { ... },
+    // toggleText: { ... },
+    // toggleTextActive: { ... },
     imagePicker: { height: 150, width: '100%', borderWidth: 2, borderColor: '#ccc', borderStyle: 'dashed', borderRadius: 8, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fafafa' },
     imagePickerText: { color: '#666' },
     preview: { width: '100%', height: '100%', borderRadius: 6, resizeMode: 'contain' },

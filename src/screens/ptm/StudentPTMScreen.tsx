@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, FlatList, ActivityIndicator, StyleSheet, RefreshControl, TouchableOpacity, Linking, Alert } from 'react-native';
-import MaterialIcons from 'react-native-vector-icons/MaterialIcons'; // Import MaterialIcons
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { MeetingCard, Meeting } from './MeetingCard';
 import { API_BASE_URL } from '../../../apiConfig';
 
@@ -58,7 +58,6 @@ const StudentPTMScreen = () => {
         <FlatList
             data={meetings}
             keyExtractor={(item) => item.id.toString()}
-            // ✅ MODIFIED: Pass isAdmin=false and the join handler to the card
             renderItem={({ item }) => <MeetingCard meeting={item} isAdmin={false} onJoin={handleJoinMeeting} />}
             ListHeaderComponent={
                 <View style={styles.header}>
@@ -77,6 +76,50 @@ const StudentPTMScreen = () => {
   );
 };
 
-const styles = StyleSheet.create({ /* Styles remain the same */ center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }, errorText: { color: 'red', fontSize: 16, textAlign: 'center' }, container: { flex: 1, backgroundColor: '#f0f4f7' }, header: { flexDirection: 'row', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: '#e2e8f0', backgroundColor: 'white', marginBottom: 10, }, headerIcon: { fontSize: 32, marginRight: 15, color: '#5a67d8' }, headerTitle: { fontSize: 22, fontWeight: 'bold', color: '#2d3748' }, headerSubtitle: { fontSize: 14, color: '#718096' }, emptyText: { textAlign: 'center', fontSize: 16, color: '#718096' }, });
+const styles = StyleSheet.create({
+    center: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 20
+    },
+    errorText: {
+        color: 'red',
+        fontSize: 16,
+        textAlign: 'center'
+    },
+    container: {
+        flex: 1,
+        backgroundColor: '#f0f4f7'
+    },
+    header: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 20,
+        borderBottomWidth: 1,
+        borderBottomColor: '#e2e8f0',
+        backgroundColor: 'white',
+        marginBottom: 10,
+    },
+    headerIcon: {
+        fontSize: 32,
+        marginRight: 15,
+        color: '#5a67d8'
+    },
+    headerTitle: {
+        fontSize: 22,
+        fontWeight: 'bold',
+        color: '#2d3748'
+    },
+    headerSubtitle: {
+        fontSize: 14,
+        color: '#718096'
+    },
+    emptyText: {
+        textAlign: 'center',
+        fontSize: 16,
+        color: '#718096'
+    }
+});
 
 export default StudentPTMScreen;
