@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, FlatList, StyleSheet, ActivityIndicator, TouchableOpacity, Alert, Linking } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-// ✅ IMPORT THE NEW, WORKING LIBRARY
-import { launchImageLibrary } from 'react-native-image-picker';
+import { pick, types, isCancel } from '@react-native-documents/picker';
 import { useAuth } from '../../context/AuthContext';
 import { API_BASE_URL } from '../../../apiConfig';
 
@@ -10,7 +9,7 @@ const StudentHomeworkScreen = () => {
     const { user } = useAuth();
     const [assignments, setAssignments] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
-    const [isSubmitting, setIsSubmitting] = useState<number | null>(null);
+    const [isSubmitting, setIsSubmitting] = useState(null);
 
     const fetchAssignments = useCallback(async () => {
         if (!user) return;
@@ -26,59 +25,64 @@ const StudentHomeworkScreen = () => {
                 return new Date(b.due_date).getTime() - new Date(a.due_date).getTime();
             });
             setAssignments(data);
-        } catch (e: any) { Alert.alert("Error", e.message); } 
+        } catch (e) { Alert.alert("Error", e.message); } 
         finally { setIsLoading(false); }
     }, [user]);
 
     useEffect(() => { fetchAssignments(); }, [fetchAssignments]);
 
-    // ✅ MODIFIED: This function now uses the reliable react-native-image-picker
-    const handleSubmission = async (assignmentId: number) => {
+    const handleSubmission = async (assignmentId) => {
         if (!user) return;
 
-        launchImageLibrary({
-            mediaType: 'mixed', // Allows any file type
-        }, async (response) => {
-            if (response.didCancel) {
+        try {
+            // 1. Let the user pick a file
+            const result = await pick({
+                type: [types.allFiles],
+                allowMultiSelection: false,
+            });
+
+            // ✅ FIX 1: Add a safety check to ensure a file was actually picked.
+            if (!result || result.length === 0) {
+                console.log('User closed picker without selecting a file.');
+                return; // Exit the function if no file is selected
+            }
+            const fileToUpload = result[0];
+
+            // 2. If a file is picked, proceed with the upload
+            setIsSubmitting(assignmentId);
+            const formData = new FormData();
+            formData.append('student_id', user.id.toString());
+            formData.append('submission', {
+                uri: fileToUpload.uri,
+                type: fileToUpload.type,
+                name: fileToUpload.name,
+            });
+
+            // ✅ FIX 2: Removed the manual `headers` object. This is critical.
+            // `fetch` will automatically set the correct 'multipart/form-data' header with the boundary.
+            const fetchResponse = await fetch(`${API_BASE_URL}/api/homework/submit/${assignmentId}`, {
+                method: 'POST',
+                body: formData,
+            });
+
+            const resData = await fetchResponse.json();
+            if (!fetchResponse.ok) throw new Error(resData.message || 'An unknown error occurred.');
+            
+            Alert.alert("Success", "Homework submitted!");
+            fetchAssignments(); // Refresh the list
+
+        } catch (err) {
+            if (isCancel(err)) {
+                // This will catch the user pressing the back button or cancelling the picker
                 console.log('User cancelled submission.');
-                return;
+            } else {
+                // This will catch network errors or other exceptions
+                console.error("Submission Error:", err);
+                Alert.alert("Error", err.message || "Could not submit file.");
             }
-            if (response.errorCode) {
-                Alert.alert('Error', `Could not select file: ${response.errorMessage}`);
-                return;
-            }
-            if (response.assets && response.assets.length > 0) {
-                const fileToUpload = response.assets[0];
-
-                setIsSubmitting(assignmentId);
-                const formData = new FormData();
-                formData.append('student_id', user.id.toString());
-                formData.append('submission', {
-                    uri: fileToUpload.uri,
-                    type: fileToUpload.type,
-                    name: fileToUpload.fileName,
-                });
-
-                try {
-                    const fetchResponse = await fetch(`${API_BASE_URL}/api/homework/submit/${assignmentId}`, {
-                        method: 'POST',
-                        body: formData,
-                        headers: { 'Content-Type': 'multipart/form-data' },
-                    });
-
-                    const resData = await fetchResponse.json();
-                    if (!fetchResponse.ok) throw new Error(resData.message || 'An unknown error occurred.');
-                    
-                    Alert.alert("Success", "Homework submitted!");
-                    fetchAssignments(); // Refresh the list
-                } catch (err: any) {
-                    console.error("Submission Error:", err);
-                    Alert.alert("Error", err.message || "Could not submit file.");
-                } finally {
-                    setIsSubmitting(null);
-                }
-            }
-        });
+        } finally {
+            setIsSubmitting(null);
+        }
     };
     
     if (isLoading && assignments.length === 0) {
@@ -101,8 +105,7 @@ const StudentHomeworkScreen = () => {
     );
 };
 
-// --- Sub-components (No changes needed below this line) ---
-
+// --- Sub-components (These are unchanged) ---
 const Header = () => (
     <View style={styles.header}>
         <View style={styles.iconCircle}>
@@ -115,7 +118,7 @@ const Header = () => (
     </View>
 );
 
-const AssignmentCard = ({ item, onSubmit, isSubmitting }: { item: any, onSubmit: (id: number) => void, isSubmitting: boolean }) => {
+const AssignmentCard = ({ item, onSubmit, isSubmitting }) => {
     const getStatusInfo = () => {
         const statusText = item.submission_id ? (item.status || 'Submitted') : 'Pending';
         switch (statusText) {

@@ -2101,16 +2101,36 @@ app.delete('/api/homework/:assignmentId', async (req, res) => {
 app.get('/api/homework/submissions/:assignmentId', async (req, res) => {
     const { assignmentId } = req.params;
     try {
+        // This powerful query gets all students from the assignment's class group
+        // and LEFT JOINs their submission for this specific assignment.
+        // Students who haven't submitted will have NULL for submission-related fields.
         const query = `
-            SELECT s.*, u.full_name as student_name 
-            FROM homework_submissions s
-            JOIN users u ON s.student_id = u.id
-            WHERE s.assignment_id = ? ORDER BY s.submitted_at DESC`;
-        const [submissions] = await db.query(query, [assignmentId]);
-        res.json(submissions);
+            SELECT 
+                u.id as student_id,
+                u.full_name as student_name,
+                s.id as submission_id,
+                s.submission_path,
+                s.submitted_at,
+                s.status,
+                s.grade,
+                s.remarks
+            FROM 
+                users u
+            LEFT JOIN 
+                homework_submissions s ON u.id = s.student_id AND s.assignment_id = ?
+            WHERE 
+                u.role = 'student' AND u.class_group = (
+                    SELECT class_group FROM homework_assignments WHERE id = ?
+                )
+            ORDER BY 
+                u.full_name ASC`;
+            
+        // The assignmentId is used twice in the query
+        const [results] = await db.query(query, [assignmentId, assignmentId]);
+        res.json(results);
     } catch (error) { 
-        console.error('Error fetching submissions:', error);
-        res.status(500).json({ message: 'Error fetching submissions.' }); 
+        console.error('Error fetching submissions roster:', error);
+        res.status(500).json({ message: 'Error fetching submissions roster.' }); 
     }
 });
 

@@ -5,7 +5,8 @@ import { API_BASE_URL } from '../../../apiConfig';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { Picker } from '@react-native-picker/picker';
 import { useIsFocused } from '@react-navigation/native';
-import { launchImageLibrary } from 'react-native-image-picker';
+// ✅ CHANGED: Removed image-picker and added the correct documents picker
+import { pick, types, isCancel } from '@react-native-documents/picker';
 
 // --- Main Router Component ---
 const TeacherAdminMaterialsScreen = () => {
@@ -55,7 +56,6 @@ const TeacherAdminMaterialsScreen = () => {
         ]);
     };
 
-    // ✅ MODIFIED RENDER ITEM FUNCTION
     const renderItem = ({ item }) => {
         return (
             <View style={styles.card}>
@@ -69,9 +69,7 @@ const TeacherAdminMaterialsScreen = () => {
                 <Text style={styles.cardSubtitle}>For: {item.class_group} | Subject: {item.subject}</Text>
                 <Text style={styles.cardDescription}>{item.description || 'No description provided.'}</Text>
                 
-                {/* ✅ Button Container to manage layout */}
                 <View style={styles.buttonContainer}>
-                    {/* First Button: For Downloadable File */}
                     {item.file_path && (
                         <TouchableOpacity 
                             style={styles.viewButton} 
@@ -81,8 +79,6 @@ const TeacherAdminMaterialsScreen = () => {
                             <Text style={styles.viewButtonText}>Download</Text>
                         </TouchableOpacity>
                     )}
-
-                    {/* Second Button: For External Link */}
                     {item.external_link && (
                         <TouchableOpacity 
                             style={[styles.viewButton, styles.linkButton]} 
@@ -134,15 +130,25 @@ const MaterialFormModal = ({ material, onClose, onSave }) => {
         fetchClasses();
     }, []);
 
-    const handleFilePick = () => {
-        launchImageLibrary({ mediaType: 'mixed' }, (response) => {
-            if (response.didCancel) console.log('User cancelled picker');
-            else if (response.errorCode) Alert.alert("Error", response.errorMessage);
-            else if (response.assets && response.assets.length > 0) {
-                const selectedFile = response.assets[0];
-                setFile({ uri: selectedFile.uri, type: selectedFile.type, name: selectedFile.fileName });
+    // ✅ CHANGED: Replaced image-picker logic with the working documents picker logic
+    const handleFilePick = async () => {
+        try {
+            const result = await pick({
+                type: [types.allFiles],
+                allowMultiSelection: false,
+            });
+
+            if (result && result.length > 0) {
+                setFile(result[0]); // The object structure { uri, type, name } is compatible
             }
-        });
+        } catch (err) {
+            if (isCancel(err)) {
+                console.log('User cancelled file selection.');
+            } else {
+                Alert.alert("Error", "An unknown error occurred while picking the file.");
+                console.error(err);
+            }
+        }
     };
 
     const handleSave = async () => {
@@ -155,14 +161,27 @@ const MaterialFormModal = ({ material, onClose, onSave }) => {
         formData.append('subject', subject);
         formData.append('material_type', materialType);
         formData.append('external_link', externalLink);
-        formData.append('uploaded_by', user.id);
-        if (file) formData.append('materialFile', file);
-        else if (isEditMode) formData.append('existing_file_path', material.file_path);
+        formData.append('uploaded_by', user.id.toString());
+
+        if (file) {
+            formData.append('materialFile', file);
+        } else if (isEditMode && material.file_path) {
+            // Only send existing_file_path if no new file is selected
+            formData.append('existing_file_path', material.file_path);
+        }
+        
         const url = isEditMode ? `${API_BASE_URL}/api/study-materials/${material.material_id}` : `${API_BASE_URL}/api/study-materials`;
         const method = isEditMode ? 'PUT' : 'POST';
+        
         try {
-            const response = await fetch(url, { method, body: formData, headers: {'Content-Type': 'multipart/form-data'} });
+            // ✅ CRITICAL FIX: Removed the manual `headers` object to allow fetch to work correctly.
+            const response = await fetch(url, { 
+                method, 
+                body: formData 
+            });
+            
             if (!response.ok) throw new Error((await response.json()).message || "Save failed.");
+            
             Alert.alert("Success", `Material ${isEditMode ? 'updated' : 'uploaded'} successfully.`);
             onSave();
             onClose();
@@ -175,7 +194,7 @@ const MaterialFormModal = ({ material, onClose, onSave }) => {
 
     return (
         <Modal visible={true} onRequestClose={onClose} animationType="slide">
-            <ScrollView style={styles.modalView}>
+            <ScrollView style={styles.modalView} contentContainerStyle={{ paddingBottom: 40 }}>
                 <Text style={styles.modalTitle}>{isEditMode ? 'Edit Material' : 'Add New Material'}</Text>
                 <Text style={styles.label}>Title *</Text><TextInput style={styles.input} value={title} onChangeText={setTitle} />
                 <Text style={styles.label}>Description</Text><TextInput style={[styles.input, {height: 80}]} multiline value={description} onChangeText={setDescription} />
@@ -184,8 +203,13 @@ const MaterialFormModal = ({ material, onClose, onSave }) => {
                 <View style={styles.pickerContainer}><Picker selectedValue={classGroup} onValueChange={setClassGroup}><Picker.Item label="-- Select Class --" value="" />{studentClasses.map(c => <Picker.Item key={c} label={c} value={c} />)}</Picker></View>
                 <Text style={styles.label}>Type *</Text>
                 <View style={styles.pickerContainer}><Picker selectedValue={materialType} onValueChange={setMaterialType}>{['Notes', 'Presentation', 'Video Lecture', 'Worksheet', 'Link', 'Other'].map(t => <Picker.Item key={t} label={t} value={t} />)}</Picker></View>
-                <Text style={styles.label}>External Link (e.g., for Videos)</Text><TextInput style={styles.input} value={externalLink} onChangeText={setExternalLink} />
-                <TouchableOpacity style={styles.uploadButton} onPress={handleFilePick}><MaterialIcons name="attach-file" size={20} color="#fff" /><Text style={styles.uploadButtonText} numberOfLines={1}>{file ? file.name : (material?.file_path?.split('/').pop() || 'Select File')}</Text></TouchableOpacity>
+                <Text style={styles.label}>External Link (e.g., for Videos)</Text><TextInput style={styles.input} value={externalLink} onChangeText={setExternalLink} keyboardType="url"/>
+                <TouchableOpacity style={styles.uploadButton} onPress={handleFilePick}>
+                    <MaterialIcons name="attach-file" size={20} color="#fff" />
+                    <Text style={styles.uploadButtonText} numberOfLines={1}>
+                        {file ? file.name : (material?.file_path?.split('/').pop() || 'Select File')}
+                    </Text>
+                </TouchableOpacity>
                 <View style={styles.modalActions}>
                     <TouchableOpacity style={[styles.modalBtn, styles.cancelBtn]} onPress={onClose}><Text style={styles.modalBtnText}>Cancel</Text></TouchableOpacity>
                     <TouchableOpacity style={[styles.modalBtn, styles.createBtn]} onPress={handleSave} disabled={isSaving}>{isSaving ? <ActivityIndicator color="#fff" /> : <Text style={styles.modalBtnText}>Save</Text>}</TouchableOpacity>
@@ -195,8 +219,7 @@ const MaterialFormModal = ({ material, onClose, onSave }) => {
     );
 };
 
-
-// ✅ ADDED: New styles for the link indicator and button container
+// Styles are unchanged
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#f4f6f8' },
     headerTitle: { fontSize: 24, fontWeight: 'bold', padding: 15, color: '#333' },
@@ -207,7 +230,7 @@ const styles = StyleSheet.create({
     cardSubtitle: { fontSize: 14, color: '#546e7a', marginTop: 4, marginBottom: 8 },
     cardDescription: { fontSize: 14, color: '#455a64', marginBottom: 15 },
     buttonContainer: {
-        marginTop: 'auto', // Pushes buttons to the bottom
+        marginTop: 'auto',
     },
     viewButton: {
         flexDirection: 'row',
@@ -216,10 +239,10 @@ const styles = StyleSheet.create({
         borderRadius: 8,
         justifyContent: 'center',
         alignItems: 'center',
-        marginTop: 10, // Space between buttons
+        marginTop: 10,
     },
     linkButton: {
-        backgroundColor: '#c2185b', // Pink/Magenta color for links
+        backgroundColor: '#c2185b',
     },
     viewButtonText: {
         color: '#fff',

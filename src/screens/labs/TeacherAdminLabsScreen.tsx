@@ -2,8 +2,9 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, FlatList, StyleSheet, ActivityIndicator, TouchableOpacity, Modal, TextInput, Alert, Image, ScrollView } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { launchImageLibrary, ImagePickerResponse } from 'react-native-image-picker';
-import FilePicker, { types } from 'react-native-file-picker'; // ✅ Import the NEW library
-import { LabCard, Lab } from './LabCard';
+// ✅ CHANGED: Replaced 'react-native-file-picker' with the correct, working library
+import { pick, types, isCancel } from '@react-native-documents/picker';
+import { LabCard, Lab } from './LabCard'; // Assuming LabCard is correctly defined elsewhere
 import { useAuth } from '../../context/AuthContext';
 import { API_BASE_URL } from '../../../apiConfig';
 
@@ -17,7 +18,7 @@ const TeacherAdminLabsScreen = () => {
     const initialFormState = { title: '', subject: '', lab_type: '', description: '', access_url: '' };
     const [formData, setFormData] = useState(initialFormState);
     const [selectedImage, setSelectedImage] = useState<ImagePickerResponse | null>(null);
-    const [selectedFile, setSelectedFile] = useState<any | null>(null); // ✅ State for the new library
+    const [selectedFile, setSelectedFile] = useState<any | null>(null);
 
     const fetchLabs = useCallback(async () => {
         setIsLoading(true);
@@ -39,15 +40,25 @@ const TeacherAdminLabsScreen = () => {
         });
     };
 
-    // ✅ Updated function to use react-native-file-picker
+    // ✅ CHANGED: Updated function to use @react-native-documents/picker
     const handleChooseFile = async () => {
         try {
-            const res = await FilePicker.pick({
-                type: [types.allFiles],
+            const result = await pick({
+                type: [types.allFiles], // Allows PDFs, documents, etc.
+                allowMultiSelection: false,
             });
-            setSelectedFile(res[0]); // This library returns an array
+    
+            // Safety check to ensure a file was picked
+            if (result && result.length > 0) {
+                setSelectedFile(result[0]); // It returns an array, so we take the first item
+            }
         } catch (err) {
-            console.log(err);
+            if (isCancel(err)) {
+                console.log('User cancelled file selection.');
+            } else {
+                Alert.alert('Error', 'An unknown error occurred while selecting the file.');
+                console.error(err);
+            }
         }
     };
 
@@ -65,7 +76,7 @@ const TeacherAdminLabsScreen = () => {
             setFormData(initialFormState);
         }
         setSelectedImage(null);
-        setSelectedFile(null); // ✅ Reset the new file state
+        setSelectedFile(null);
         setIsModalOpen(true);
     };
 
@@ -79,12 +90,12 @@ const TeacherAdminLabsScreen = () => {
         
         const data = new FormData();
         Object.keys(formData).forEach(key => data.append(key, formData[key]));
-        if (user) data.append('created_by', user.id);
+        if (user) data.append('created_by', user.id.toString());
 
         if (selectedImage?.assets?.[0]) {
             data.append('coverImage', { uri: selectedImage.assets[0].uri, type: selectedImage.assets[0].type, name: selectedImage.assets[0].fileName });
         }
-        // ✅ Updated logic for the new file picker object
+        
         if (selectedFile) {
             data.append('labFile', {
                 uri: selectedFile.uri,
@@ -97,9 +108,14 @@ const TeacherAdminLabsScreen = () => {
         const method = editingLab ? 'PUT' : 'POST';
 
         try {
-            const response = await fetch(url, { method, headers: { 'Content-Type': 'multipart/form-data' }, body: data });
+            // ✅ CRITICAL FIX: Removed the manual 'Content-Type' header for file uploads.
+            const response = await fetch(url, { 
+                method, 
+                body: data 
+            });
+
             const resData = await response.json();
-            if (!response.ok) throw new Error(resData.message);
+            if (!response.ok) throw new Error(resData.message || 'An unknown error occurred.');
             Alert.alert("Success", `Lab ${editingLab ? 'updated' : 'created'} successfully!`);
             setIsModalOpen(false);
             fetchLabs();
@@ -148,8 +164,8 @@ const TeacherAdminLabsScreen = () => {
                 ListEmptyComponent={<Text style={styles.emptyText}>No labs created yet. Add one below.</Text>}
             />
 
-            <Modal visible={isModalOpen} onRequestClose={() => setIsModalOpen(false)}>
-                <ScrollView style={styles.modalContainer}>
+            <Modal visible={isModalOpen} onRequestClose={() => setIsModalOpen(false)} animationType="slide">
+                <ScrollView style={styles.modalContainer} contentContainerStyle={{ paddingBottom: 40 }}>
                     <Text style={styles.modalTitle}>{editingLab ? 'Edit Digital Lab' : 'Add New Digital Lab'}</Text>
                     <TextInput style={styles.input} placeholder="Title (e.g., Virtual Chemistry Lab)" value={formData.title} onChangeText={t => setFormData({...formData, title: t})} />
                     <TextInput style={styles.input} placeholder="Subject (e.g., Science)" value={formData.subject} onChangeText={t => setFormData({...formData, subject: t})} />
@@ -183,6 +199,7 @@ const TeacherAdminLabsScreen = () => {
     );
 };
 
+// Styles are unchanged
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#e8f5e9' },
     centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },

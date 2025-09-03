@@ -42,7 +42,6 @@ const StudentMaterialsScreen = () => {
         }
     };
 
-    // ✅ MODIFIED RENDER ITEM FUNCTION
     const renderItem = ({ item }) => (
         <View style={styles.card}>
             <View style={styles.cardIconContainer}>
@@ -53,9 +52,7 @@ const StudentMaterialsScreen = () => {
             <Text style={styles.cardDate}>Added: {new Date(item.created_at).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' })}</Text>
             <Text style={styles.cardDescription} numberOfLines={4}>{item.description}</Text>
             
-            {/* Button container to manage spacing and layout */}
             <View style={styles.buttonContainer}>
-                {/* Conditionally render the Download button */}
                 {item.file_path && (
                     <TouchableOpacity 
                         style={styles.downloadButton} 
@@ -65,8 +62,6 @@ const StudentMaterialsScreen = () => {
                         <Text style={styles.downloadButtonText}>Download</Text>
                     </TouchableOpacity>
                 )}
-
-                {/* Conditionally render the Open Link button */}
                 {item.external_link && (
                     <TouchableOpacity 
                         style={[styles.downloadButton, styles.linkButton]}
@@ -104,7 +99,6 @@ const StudentMaterialsScreen = () => {
     );
 };
 
-// ✅ ADDED: New styles for the button container and link button
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#eef2f5' },
     listContentContainer: { paddingHorizontal: 8, paddingBottom: 20 },
@@ -118,7 +112,6 @@ const styles = StyleSheet.create({
     cardDate: { fontSize: 12, color: '#78909c', marginBottom: 12 },
     cardDescription: { fontSize: 13, color: '#455a64', lineHeight: 18, flexGrow: 1, marginBottom: 15 },
     buttonContainer: {
-        // This container allows multiple buttons to stack vertically at the bottom
     },
     downloadButton: {
         flexDirection: 'row',
@@ -127,10 +120,10 @@ const styles = StyleSheet.create({
         borderRadius: 8,
         justifyContent: 'center',
         alignItems: 'center',
-        marginTop: 5, // A little space between buttons
+        marginTop: 5,
     },
     linkButton: {
-        backgroundColor: '#c2185b', // Different color for links
+        backgroundColor: '#c2185b',
     },
     downloadButtonText: {
         color: '#fff',
