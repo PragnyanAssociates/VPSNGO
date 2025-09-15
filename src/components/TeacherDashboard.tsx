@@ -1,7 +1,7 @@
 // 📂 File: TeacherDashboard.js (CORRECTED & FINAL)
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, SafeAreaView, Dimensions, Image, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, SafeAreaView, Dimensions, Image, Platform, TextInput } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
@@ -9,8 +9,7 @@ import { useAuth } from '../context/AuthContext';
 import { API_BASE_URL } from '../../apiConfig';
 
 // --- Component Imports ---
-import NotificationsScreen from '../screens/NotificationsScreen'; // 👈 IMPORT THE NEW SCREEN
-// import TeacherNotifications, { initialNotificationsData } from './TeacherNotifications';
+import NotificationsScreen from '../screens/NotificationsScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import AcademicCalendar from './AcademicCalendar';
 import TimetableScreen from '../screens/TimetableScreen';
@@ -32,14 +31,13 @@ import AboutUs from './AboutUs';
 import ChatAIScreen from '../screens/chatai/ChatAIScreen';
 import FoodScreen from '../screens/food/FoodScreen';
 import GroupChatScreen from '../screens/chat/GroupChatScreen';
+import GalleryScreen from '../screens/gallery/GalleryScreen';
+import OnlineClassScreen from '../screens/Online_Class/OnlineClassScreen';
 
-
-
-// --- Type Definitions (No Changes) ---
+// --- Type Definitions ---
 interface ProfileData { fullName: string; class_group: string; profile_image_url?: string; role: string; }
-interface TimetableSlot { class_group: string; day_of_week: string; period_number: number; subject_name?: string; teacher_id?: number; teacher_name?: string; }
 
-// --- Constants & Colors (No Changes) ---
+// --- Constants & Colors ---
 const { width: windowWidth } = Dimensions.get('window');
 const CARD_GAP = 12;
 const CONTENT_HORIZONTAL_PADDING = 15;
@@ -56,10 +54,11 @@ const DANGER_COLOR = '#E53935';
 // --- Main Component ---
 const TeacherDashboard = ({ navigation }) => {
   const [activeTab, setActiveTab] = useState('home');
+  const [searchQuery, setSearchQuery] = useState(''); // ★ 1. STATE FOR SEARCH INPUT
   const { user, token, logout } = useAuth();
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
-  const isFocused = useIsFocused(); // ★★★ 2. USE THE HOOK ★★★
+  const isFocused = useIsFocused();
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -69,10 +68,10 @@ const TeacherDashboard = ({ navigation }) => {
         if (response.ok) setProfile(await response.json());
       } catch (error) { console.error("Dashboard: Error fetching profile:", error); }
     };
-    if (isFocused) { // Only fetch when screen is focused
+    if (isFocused) {
         fetchProfile();
     }
-  }, [user?.id, isFocused]); // Add isFocused to dependency array
+  }, [user?.id, isFocused]);
 
   const capitalize = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : '');
   const profileImageSource = profile?.profile_image_url ? { uri: `${API_BASE_URL}${profile.profile_image_url}` } : require('../assets/profile.png');
@@ -92,18 +91,15 @@ const TeacherDashboard = ({ navigation }) => {
     }
   }, [user, token]);
 
-  // ★★★ 3. MODIFY useEffect TO USE isFocused ★★★
   useEffect(() => {
     if (isFocused) {
-      console.log("StudentDashboard is focused, fetching notification count...");
       fetchUnreadCount();
     }
   }, [isFocused, fetchUnreadCount]);
 
-  // const [unreadNotificationsCount, setUnreadNotificationsCount] = useState( initialNotificationsData.filter(n => !n.read).length );
   const handleLogout = () => { Alert.alert("Logout", "Are you sure you want to log out?", [ { text: "Cancel", style: "cancel" }, { text: "Logout", onPress: logout, style: "destructive" } ]); };
 
-  // --- FIX #1: Change the Gallery item to navigate to the 'Gallery' navigator ---
+  // ★ 2. UPDATED ICONS AND ORDER TO MATCH SCREENSHOT
   const allQuickAccessItems = [
     { id: 'qa-ads-create', title: 'Create Ad', imageSource: 'https://cdn-icons-png.flaticon.com/128/4944/4944482.png', navigateTo: 'CreateAdScreen' },
     { id: 'qa2', title: 'Timetable', imageSource: 'https://cdn-icons-png.flaticon.com/128/1254/1254275.png', navigateToTab: 'Timetable' },
@@ -113,7 +109,8 @@ const TeacherDashboard = ({ navigation }) => {
     { id: 'qa5', title: 'Exams', imageSource: 'https://cdn-icons-png.flaticon.com/128/207/207190.png', navigateToTab: 'TeacherAdminExamsScreen' },
     { id: 'qa6', title: 'Reports', imageSource: 'https://cdn-icons-png.flaticon.com/128/9913/9913576.png', navigateToTab: 'TeacherAdminResultsScreen' },
     { id: 'qa15', title: 'Study materials', imageSource: 'https://cdn-icons-png.flaticon.com/128/3273/3273259.png', navigateToTab: 'TeacherAdminMaterialsScreen' },
-    { id: 'qa14', title: 'Home Work', imageSource: 'https://cdn-icons-png.flaticon.com/128/11647/11647336.png', navigateToTab: 'TeacherAdminHomeworkScreen' }, 
+    { id: 'qa14', title: 'Home Work', imageSource: 'https://cdn-icons-png.flaticon.com/128/11647/11647336.png', navigateToTab: 'TeacherAdminHomeworkScreen' },
+    { id: 'qa27', title: 'Online Class', imageSource: 'https://cdn-icons-png.flaticon.com/128/3214/3214781.png', navigateToTab: 'OnlineClassScreen' }, 
     { id: 'qa8', title: 'Digital Labs', imageSource: 'https://cdn-icons-png.flaticon.com/128/9562/9562280.png', navigateToTab: 'TeacherAdminLabsScreen' },
     { id: 'qa9', title: 'Sports', imageSource: 'https://cdn-icons-png.flaticon.com/128/3429/3429456.png', navigateToTab: 'AdminSportsScreen' },
     { id: 'qa10', title: 'Health Info', imageSource: 'https://cdn-icons-png.flaticon.com/128/3004/3004458.png', navigateToTab: 'TeacherHealthAdminScreen' },
@@ -121,14 +118,27 @@ const TeacherDashboard = ({ navigation }) => {
     { id: 'qa11', title: 'PTM', imageSource: 'https://cdn-icons-png.flaticon.com/128/17588/17588666.png', navigateToTab: 'TeacherAdminPTMScreen' },
     { id: 'qa17', title: 'Transport', imageSource: 'https://cdn-icons-png.flaticon.com/128/2945/2945694.png', navigateToTab: 'TransportScreen' },
     { id: 'qa16', title: 'Help Desk', imageSource: 'https://cdn-icons-png.flaticon.com/128/4961/4961736.png', navigateToTab: 'UserHelpDeskScreen' },
-    // This now uses real navigation to the 'Gallery' navigator.
     { id: 'qa18', title: 'Gallery', imageSource: 'https://cdn-icons-png.flaticon.com/128/8418/8418513.png', navigateTo: 'Gallery' },
     { id: 'qa21', title: 'About Us', imageSource: 'https://cdn-icons-png.flaticon.com/128/3815/3815523.png', navigateToTab: 'AboutUs' },
     { id: 'qa20', title: 'Chat AI', imageSource: 'https://cdn-icons-png.flaticon.com/128/6028/6028616.png', navigateToTab: 'ChatAI' },
     { id: 'qa25', title: 'Food', imageSource: 'https://cdn-icons-png.flaticon.com/128/2276/2276931.png', navigateToTab: 'FoodScreen' },
     { id: 'qa26', title: 'Group Chat', imageSource: 'https://cdn-icons-png.flaticon.com/128/745/745205.png', navigateToTab: 'GroupChatScreen' },
-
   ];
+
+  const [filteredItems, setFilteredItems] = useState(allQuickAccessItems); // ★ 3. STATE FOR FILTERED ITEMS
+
+  // ★ 4. EFFECT TO FILTER ITEMS BASED ON SEARCH QUERY
+  useEffect(() => {
+    if (searchQuery.trim() === '') {
+      setFilteredItems(allQuickAccessItems);
+    } else {
+      const lowercasedQuery = searchQuery.toLowerCase();
+      const filtered = allQuickAccessItems.filter(item =>
+        item.title.toLowerCase().includes(lowercasedQuery)
+      );
+      setFilteredItems(filtered);
+    }
+  }, [searchQuery]);
 
   const renderContent = () => {
     const handleBack = () => setActiveTab('home');
@@ -136,43 +146,55 @@ const TeacherDashboard = ({ navigation }) => {
     switch (activeTab) {
       case 'home':
         return ( 
-            <ScrollView>
-                <View style={styles.dashboardGrid}>
-                    {allQuickAccessItems.map(item => ( 
-                        <DashboardSectionCard 
-                            key={item.id} 
-                            title={item.title} 
-                            imageSource={item.imageSource} 
-                            // --- FIX #2: Update the onPress logic to handle 'navigateTo' ---
-                            onPress={() => {
-                                if (item.navigateTo) {
-                                    navigation.navigate(item.navigateTo);
-                                } else if (item.navigateToTab) {
-                                    setActiveTab(item.navigateToTab);
-                                } else {
-                                    Alert.alert(item.title, `Coming soon!`);
-                                }
-                            }} 
-                        /> 
-                    ))}
-                </View>
-            </ScrollView> 
+            <>
+              {/* ★ 5. SEARCH BAR UI */}
+              <View style={styles.searchContainer}>
+                <MaterialIcons name="search" size={22} color={TEXT_COLOR_MEDIUM} style={styles.searchIcon} />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Search modules..."
+                  placeholderTextColor={TEXT_COLOR_MEDIUM}
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  clearButtonMode="while-editing"
+                />
+              </View>
+              <ScrollView contentContainerStyle={styles.contentScrollViewContainer}>
+                  <View style={styles.dashboardGrid}>
+                      {/* ★ 6. RENDER FILTERED ITEMS */}
+                      {filteredItems.map(item => ( 
+                          <DashboardSectionCard 
+                              key={item.id} 
+                              title={item.title} 
+                              imageSource={item.imageSource} 
+                              onPress={() => {
+                                  if (item.navigateTo) {
+                                      navigation.navigate(item.navigateTo);
+                                  } else if (item.navigateToTab) {
+                                      setActiveTab(item.navigateToTab);
+                                  } else {
+                                      Alert.alert(item.title, `Coming soon!`);
+                                  }
+                              }} 
+                          /> 
+                      ))}
+                  </View>
+                  {/* ★ 7. SHOW MESSAGE IF NO RESULTS FOUND */}
+                  {filteredItems.length === 0 && (
+                    <View style={styles.noResultsContainer}>
+                        <Text style={styles.noResultsText}>No modules found for "{searchQuery}"</Text>
+                    </View>
+                  )}
+              </ScrollView>
+            </>
         );
-
       
-      // All other cases remain the same
-      case 'allNotifications':
-        return (
-          <>
-            <ContentScreenHeader title="Notifications" />
-            <NotificationsScreen onUnreadCountChange={setUnreadNotificationsCount} />
-          </>
-        );
+      case 'allNotifications': return ( <><ContentScreenHeader title="Notifications" /><NotificationsScreen onUnreadCountChange={setUnreadNotificationsCount} /></> );
       case 'calendar': return <AcademicCalendar />;
       case 'profile': return <ProfileScreen onBackPress={() => setActiveTab('home')} />;
       case 'TeacherHealthAdminScreen': return ( <><ContentScreenHeader title="Health Information" /><TeacherHealthAdminScreen /></> );
       case 'AdminEventsScreen': return ( <><ContentScreenHeader title="Events" /><AdminEventsScreen /></> );
-      case 'TeacherAdminHomeworkScreen': return ( <><ContentScreenHeader title="Home Work" /><TeacherAdminHomeworkScreen /></> );
+      case 'TeacherAdminHomeworkScreen': return ( <><ContentScreenHeader title="Homework" /><TeacherAdminHomeworkScreen /></> );
       case 'UserHelpDeskScreen': return ( <><ContentScreenHeader title="Help Desk" /><UserHelpDeskScreen /></> );
       case 'Timetable': return ( <><ContentScreenHeader title="My Timetable" /><TimetableScreen /></> );
       case 'AdminSportsScreen': return ( <><ContentScreenHeader title="Sports" /><AdminSportsScreen /></> );
@@ -182,20 +204,16 @@ const TeacherDashboard = ({ navigation }) => {
       case 'TeacherAdminMaterialsScreen': return ( <><ContentScreenHeader title="Study Materials" /><TeacherAdminMaterialsScreen /></> );
       case 'TeacherSyllabusScreen': return ( <><ContentScreenHeader title="Syllabus" /><TeacherSyllabusScreen /></> );
       case 'TransportScreen': return ( <><ContentScreenHeader title="Transport" /><TransportScreen /></> );
-      
-      // --- FIX #3: REMOVE the internal rendering case for GalleryScreen ---
-      // case 'GalleryScreen': return ( <> <ContentScreenHeader title="Gallery" onBack={handleBack} /> <GalleryScreen /> </> );
-      
       case 'TeacherAdminPTMScreen': return ( <><ContentScreenHeader title="Meetings" /><TeacherAdminPTMScreen navigation={navigation} /></> );
       case 'TeacherAdminResultsScreen': return ( <><ContentScreenHeader title="Reports" /><TeacherAdminResultsScreen navigation={navigation} /></> );
       case 'Attendance': return ( <><ContentScreenHeader title="Attendance Report" /><AttendanceScreen /></> );
-      case 'AboutUs': return ( <><ContentScreenHeader title="About Us" onBack={handleBack} /><AboutUs /></> );
+      case 'AboutUs': return ( <><ContentScreenHeader title="About Us" /><AboutUs /></> );
       case 'ChatAI': return ( <><ContentScreenHeader title="AI Assistant" /><ChatAIScreen /></> );
-      case 'FoodScreen': return ( <><ContentScreenHeader title="Food" onBack={handleBack} /><FoodScreen /></> );
+      case 'FoodScreen': return ( <><ContentScreenHeader title="Food" /><FoodScreen /></> );
       case 'GroupChatScreen': return ( <><ContentScreenHeader title="Group Chat" /><GroupChatScreen /></> );
-      
-      default:
-        return ( <><ContentScreenHeader title={capitalize(activeTab)} /><View style={styles.fallbackContent}><Text style={styles.fallbackText}>Content not available yet.</Text></View></> );
+      case 'Gallery': return ( <><ContentScreenHeader title="Gallery" /><GalleryScreen /></> );
+      case 'OnlineClassScreen': return ( <><ContentScreenHeader title="Online Class" /><OnlineClassScreen /></> );
+      default: return ( <><ContentScreenHeader title={capitalize(activeTab)} /><View style={styles.fallbackContent}><Text style={styles.fallbackText}>Content not available yet.</Text></View></> );
     }
   };
 
@@ -216,7 +234,9 @@ const TeacherDashboard = ({ navigation }) => {
           </View>
         </View>
       )}
-      {renderContent()}
+      <View style={styles.mainContent}>
+        {renderContent()}
+      </View>
       <View style={styles.bottomNav}>
         <BottomNavItem icon="home" label="Home" isActive={activeTab === 'home'} onPress={() => setActiveTab('home')} />
         <BottomNavItem icon="calendar" label="Calendar" isActive={activeTab === 'calendar'} onPress={() => setActiveTab('calendar')} />
@@ -227,31 +247,13 @@ const TeacherDashboard = ({ navigation }) => {
 };
 
 // --- UI Helper Components ---
-const DashboardSectionCard = ({ title, imageSource, onPress }: { title: string, imageSource: string, onPress: () => void }) => (
-  <TouchableOpacity style={styles.dashboardCard} onPress={onPress}>
-    <View style={styles.cardIconContainer}><Image source={{ uri: imageSource }} style={styles.cardImage} /></View>
-    <Text style={styles.cardTitle}>{title}</Text>
-  </TouchableOpacity>
-);
-
-const ContentScreenHeader = ({ title, onBack }: { title: string, onBack: () => void }) => (
-    <View style={styles.contentHeader}>
-      <TouchableOpacity onPress={onBack} style={styles.backButtonGlobal}><MaterialIcons name="arrow-back" size={24} color={PRIMARY_COLOR} /></TouchableOpacity>
-      <Text style={styles.contentHeaderTitle}>{title}</Text>
-      <View style={{ width: 30 }} />
-    </View>
-);
-
-const BottomNavItem = ({ icon, label, isActive, onPress }: { icon: string; label: string; isActive: boolean; onPress: () => void }) => (
-  <TouchableOpacity style={styles.navItem} onPress={onPress}>
-    <Icon name={icon} size={isActive ? 24 : 22} color={isActive ? PRIMARY_COLOR : TEXT_COLOR_MEDIUM} />
-    <Text style={[styles.navText, isActive && styles.navTextActive]}>{label}</Text>
-  </TouchableOpacity>
-);
+const DashboardSectionCard = ({ title, imageSource, onPress }: { title: string, imageSource: string, onPress: () => void }) => ( <TouchableOpacity style={styles.dashboardCard} onPress={onPress}> <View style={styles.cardIconContainer}><Image source={{ uri: imageSource }} style={styles.cardImage} /></View> <Text style={styles.cardTitle}>{title}</Text> </TouchableOpacity> );
+const BottomNavItem = ({ icon, label, isActive, onPress }: { icon: string; label: string; isActive: boolean; onPress: () => void }) => ( <TouchableOpacity style={styles.navItem} onPress={onPress}> <Icon name={icon} size={isActive ? 24 : 22} color={isActive ? PRIMARY_COLOR : TEXT_COLOR_MEDIUM} /> <Text style={[styles.navText, isActive && styles.navTextActive]}>{label}</Text> </TouchableOpacity> );
 
 // --- Styles ---
 const styles = StyleSheet.create({
     safeArea: { flex: 1, backgroundColor: TERTIARY_COLOR },
+    mainContent: { flex: 1 },
     topBar: { backgroundColor: SECONDARY_COLOR, paddingHorizontal: 15, paddingVertical: Platform.OS === 'ios' ? 12 : 15, borderBottomLeftRadius: 20, borderBottomRightRadius: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', shadowColor: '#455A64', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 3, elevation: 3, borderBottomWidth: 1, borderBottomColor: BORDER_COLOR, },
     profileContainer: { flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 10 },
     profileImage: { width: 45, height: 45, borderRadius: 22.5, borderWidth: 2, borderColor: PRIMARY_COLOR, backgroundColor: '#e0e0e0' },
@@ -265,7 +267,14 @@ const styles = StyleSheet.create({
     contentHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 15, paddingVertical: 12, backgroundColor: SECONDARY_COLOR, borderBottomWidth: 1, borderBottomColor: BORDER_COLOR, },
     backButtonGlobal: { padding: 5 },
     contentHeaderTitle: { fontSize: 20, fontWeight: 'bold', color: PRIMARY_COLOR, textAlign: 'center', flex: 1, },
-    dashboardGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', padding: CONTENT_HORIZONTAL_PADDING, paddingTop: 15 },
+    // ★ 8. NEW STYLES FOR SEARCH BAR
+    searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: WHITE, borderRadius: 12, marginHorizontal: CONTENT_HORIZONTAL_PADDING, marginTop: 15, marginBottom: 5, borderColor: BORDER_COLOR, borderWidth: 1, elevation: 2 },
+    searchIcon: { marginLeft: 15 },
+    searchInput: { flex: 1, height: 48, paddingLeft: 10, fontSize: 16, color: TEXT_COLOR_DARK },
+    noResultsContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', marginTop: 50, paddingHorizontal: 20 },
+    noResultsText: { fontSize: 16, color: TEXT_COLOR_MEDIUM, textAlign: 'center' },
+    contentScrollViewContainer: { paddingHorizontal: CONTENT_HORIZONTAL_PADDING, paddingTop: 10, paddingBottom: 20, flexGrow: 1, },
+    dashboardGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
     dashboardCard: { width: (windowWidth - (CONTENT_HORIZONTAL_PADDING * 2) - (CARD_GAP * 2)) / 3, borderRadius: 10, paddingVertical: 15, marginBottom: CARD_GAP, alignItems: 'center', justifyContent: 'center', height: 115, backgroundColor: WHITE, shadowColor: '#455A64', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 3, elevation: 3, borderWidth: 1, borderColor: BORDER_COLOR, },
     cardIconContainer: { width: 45, height: 45, justifyContent: 'center', alignItems: 'center', marginBottom: 8 },
     cardImage: { width: 38, height: 38, resizeMode: 'contain' },

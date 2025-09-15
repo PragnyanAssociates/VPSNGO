@@ -58,6 +58,7 @@ import AdminSuggestionsScreen from './src/screens/suggestions/AdminSuggestionsSc
 import AdminPaymentScreen from './src/screens/payments/AdminPaymentScreen';
 import KitchenScreen from './src/screens/kitchen/KitchenScreen';
 import FoodScreen from './src/screens/food/FoodScreen';
+import AlumniScreen from './src/screens/Alumni/AlumniScreen';
 
 // Teacher-Specific Screens
 // import TeacherNotifications from './src/components/TeacherNotifications';
@@ -94,6 +95,7 @@ import StudentExamScreen from './src/screens/exams_Schedule/StudentExamScreen';
 import StudentMaterialsScreen from './src/screens/study-materials/StudentMaterialsScreen';
 import ReportDetailScreen from './src/screens/results/ReportDetailScreen';
 import ChatAIScreen from './src/screens/chatai/ChatAIScreen';
+import OnlineClassScreen from './src/screens/Online_Class/OnlineClassScreen';
 
 // Donor-Specific Screens
 // import DonorNotifications from './src/components/DonorNotifications';
@@ -245,6 +247,8 @@ const AuthenticatedStack = () => {
       <Stack.Screen name="KitchenScreen" component={KitchenScreen} />
       <Stack.Screen name="FoodScreen" component={FoodScreen} />
       <Stack.Screen name="GroupChatScreen" component={GroupChatScreen} />
+      <Stack.Screen name="OnlineClassScreen" component={OnlineClassScreen} />
+      <Stack.Screen name="AlumniScreen" component={AlumniScreen} />
 
       {/* ADD THE GALLERY NAVIGATOR AS A SINGLE SCREEN IN THE MAIN STACK */}
       <Stack.Screen 

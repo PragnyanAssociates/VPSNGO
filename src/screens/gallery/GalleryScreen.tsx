@@ -1,5 +1,3 @@
-// 📂 File: src/screens/gallery/GalleryScreen.tsx (FULLY MODIFIED FOR TRASH ICON)
-
 import React, { useState, useEffect, FC, useCallback } from 'react';
 import {
     View, Text, StyleSheet, FlatList, Image, Dimensions,
@@ -12,7 +10,7 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import axios from 'axios';
 import { launchImageLibrary, Asset } from 'react-native-image-picker';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
-import Icon from 'react-native-vector-icons/Ionicons'; // <-- IMPORT ICON LIBRARY
+import Icon from 'react-native-vector-icons/Ionicons';
 import { useAuth } from '../../context/AuthContext'; 
 import { API_BASE_URL } from '../../../apiConfig'; 
 
@@ -34,12 +32,14 @@ type AlbumSection = {
 
 type RootStackParamList = {
     AlbumDetail: { title: string; items: GalleryItemType[] };
+    // Add other screens here
 };
 type GalleryScreenNavigationProp = StackNavigationProp<RootStackParamList>;
 
 const { width } = Dimensions.get('window');
 
-// --- AlbumCover Component (UPDATED with Trash Icon) ---
+
+// --- AlbumCover Component (UPDATED: Download button removed) ---
 const AlbumCover: FC<{ 
     section: AlbumSection, 
     onPress: () => void,
@@ -61,20 +61,22 @@ const AlbumCover: FC<{
                 <Text style={styles.albumCount}>{section.items.length} items</Text>
             </View>
             
-            {/* --- DELETE ALBUM ICON BUTTON --- */}
-            {isAdmin && (
-                <TouchableOpacity 
-                    style={styles.deleteAlbumButton} 
-                    onPress={onDelete}
-                    onPressIn={(e) => e.stopPropagation()} 
-                >
-                    <Icon name="trash" size={20} color="white" />
-                </TouchableOpacity>
-            )}
+            <View style={styles.iconContainer}>
+                {isAdmin && (
+                    <TouchableOpacity 
+                        style={[styles.iconButton, styles.deleteButton]} 
+                        onPress={(e) => { e.stopPropagation(); onDelete(); }}
+                    >
+                        <Icon name="trash" size={20} color="white" />
+                    </TouchableOpacity>
+                )}
+                {/* Download button has been removed from here */}
+            </View>
         </TouchableOpacity>
     );
 };
 
+// --- Main GalleryScreen Component ---
 const GalleryScreen: FC = () => {
     const { user } = useAuth(); 
     const navigation = useNavigation<GalleryScreenNavigationProp>();
@@ -100,11 +102,10 @@ const GalleryScreen: FC = () => {
     const groupDataByTitle = (data: GalleryItemType[]): AlbumSection[] => {
         if (!data) return [];
         const grouped = data.reduce((acc, item) => {
-            const key = item.title;
-            if (!acc[key]) {
-                acc[key] = { title: item.title, date: item.event_date, items: [] };
+            if (!acc[item.title]) {
+                acc[item.title] = { title: item.title, date: item.event_date, items: [] };
             }
-            acc[key].items.push(item);
+            acc[item.title].items.push(item);
             return acc;
         }, {} as Record<string, AlbumSection>);
         return Object.values(grouped).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -128,11 +129,7 @@ const GalleryScreen: FC = () => {
         }
     }, []);
 
-    useFocusEffect(
-        useCallback(() => {
-            fetchData();
-        }, [fetchData])
-    );
+    useFocusEffect(useCallback(() => { fetchData(); }, [fetchData]));
 
     const handleAlbumPress = (section: AlbumSection) => {
         navigation.navigate('AlbumDetail', { title: section.title, items: section.items });
@@ -141,7 +138,7 @@ const GalleryScreen: FC = () => {
     const handleDeleteAlbum = (albumTitle: string) => {
         Alert.alert(
             "Delete Album",
-            `Are you sure you want to permanently delete the "${albumTitle}" album and all its contents? This cannot be undone.`,
+            `Are you sure you want to permanently delete the "${albumTitle}" album? This cannot be undone.`,
             [
                 { text: "Cancel", style: "cancel" },
                 {
@@ -149,9 +146,7 @@ const GalleryScreen: FC = () => {
                     style: "destructive",
                     onPress: async () => {
                         try {
-                            await axios.delete(`${API_BASE_URL}/api/gallery/album`, {
-                                data: { title: albumTitle, role: user?.role }
-                            });
+                            await axios.delete(`${API_BASE_URL}/api/gallery/album`, { data: { title: albumTitle, role: user?.role } });
                             Alert.alert("Success", `Album "${albumTitle}" has been deleted.`);
                             fetchData();
                         } catch (error) {
@@ -205,7 +200,6 @@ const GalleryScreen: FC = () => {
             <FlatList
                 data={photoAlbums}
                 keyExtractor={(item) => item.title}
-                numColumns={1}
                 renderItem={({ item }) => (
                     <AlbumCover 
                         section={item} 
@@ -224,7 +218,6 @@ const GalleryScreen: FC = () => {
             <FlatList
                 data={videoAlbums}
                 keyExtractor={(item) => item.title}
-                numColumns={1}
                 renderItem={({ item }) => (
                      <AlbumCover 
                         section={item} 
@@ -255,7 +248,7 @@ const GalleryScreen: FC = () => {
             {isAdmin && ( <TouchableOpacity style={styles.fab} onPress={handleOpenUploadModal}><Text style={styles.fabText}>+</Text></TouchableOpacity> )}
             
             <Modal visible={isUploadModalVisible} transparent={true} animationType="slide" onRequestClose={() => setUploadModalVisible(false)}>
-                <View style={styles.modalContainer}>
+                 <View style={styles.modalContainer}>
                     <View style={styles.modalView}>
                         <Text style={styles.modalTitle}>Create New Album</Text>
                         <TextInput style={styles.input} placeholder="Album Title" value={title} onChangeText={setTitle} />
@@ -270,133 +263,31 @@ const GalleryScreen: FC = () => {
     );
 };
 
+// --- Styles ---
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#f4f4f4' },
     listContainer: { padding: 12 },
     emptyText: { textAlign: 'center', marginTop: 50, color: 'gray' },
-    albumContainer: { 
-        width: '100%', 
-        marginBottom: 16, 
-        borderRadius: 12, 
-        backgroundColor: '#fff', 
-        elevation: 4, 
-        shadowColor: '#000', 
-        shadowOffset: { width: 0, height: 2 }, 
-        shadowOpacity: 0.1, 
-        shadowRadius: 4 
-    },
-    albumImage: { 
-        width: '100%', 
-        height: 180, 
-        borderTopLeftRadius: 12, 
-        borderTopRightRadius: 12 
-    },
-    albumInfo: { 
-        padding: 16
-    },
-    albumTitle: { 
-        fontSize: 18, 
-        fontWeight: 'bold', 
-        color: '#333' 
-    },
-    albumDate: { 
-        fontSize: 13, 
-        color: '#666', 
-        marginTop: 2 
-    },
-    albumCount: { 
-        fontSize: 13, 
-        color: '#666', 
-        marginTop: 4 
-    },
-    deleteAlbumButton: {
-        position: 'absolute',
-        top: 10,
-        right: 10,
-        backgroundColor: '#d32f2f', // A strong red color
-        width: 36,
-        height: 36,
-        borderRadius: 18, // Perfect circle
-        justifyContent: 'center',
-        alignItems: 'center',
-        zIndex: 1,
-        elevation: 3,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.3,
-        shadowRadius: 2,
-    },
-    fab: { 
-        position: 'absolute', 
-        right: 25, 
-        bottom: 25, 
-        width: 60, 
-        height: 60, 
-        borderRadius: 30, 
-        backgroundColor: '#6200EE', 
-        justifyContent: 'center', 
-        alignItems: 'center', 
-        elevation: 8 
-    },
-    fabText: { 
-        fontSize: 30, 
-        color: 'white', 
-        lineHeight: 32 
-    },
-    modalContainer: { 
-        flex: 1, 
-        justifyContent: 'center', 
-        alignItems: 'center', 
-        backgroundColor: 'rgba(0,0,0,0.5)' 
-    },
-    modalView: { 
-        width: '90%', 
-        backgroundColor: 'white', 
-        borderRadius: 20, 
-        padding: 25, 
-        alignItems: 'center', 
-        elevation: 5 
-    },
-    modalTitle: { 
-        fontSize: 22, 
-        fontWeight: 'bold', 
-        marginBottom: 20 
-    },
-    input: { 
-        width: '100%', 
-        height: 50, 
-        borderColor: '#ccc', 
-        borderWidth: 1, 
-        borderRadius: 8, 
-        marginBottom: 15, 
-        paddingHorizontal: 15 
-    },
-    datePickerButton: { 
-        width: '100%', 
-        height: 50, 
-        justifyContent: 'center', 
-        alignItems: 'center', 
-        borderColor: '#ccc', 
-        borderWidth: 1, 
-        borderRadius: 8, 
-        marginBottom: 15 
-    },
-    selectButton: { 
-        width: '100%', 
-        marginBottom: 20 
-    },
-    fileName: { 
-        fontSize: 12, 
-        color: 'gray', 
-        textAlign: 'center', 
-        marginTop: 5 
-    },
-    modalActions: { 
-        flexDirection: 'row', 
-        justifyContent: 'flex-end', 
-        width: '100%', 
-        marginTop: 20 
-    },
+    albumContainer: { width: '100%', marginBottom: 16, borderRadius: 12, backgroundColor: '#fff', elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4 },
+    albumImage: { width: '100%', height: 180, borderTopLeftRadius: 12, borderTopRightRadius: 12 },
+    albumInfo: { padding: 16 },
+    albumTitle: { fontSize: 18, fontWeight: 'bold', color: '#333' },
+    albumDate: { fontSize: 13, color: '#666', marginTop: 2 },
+    albumCount: { fontSize: 13, color: '#666', marginTop: 4 },
+    iconContainer: { position: 'absolute', top: 10, right: 10, flexDirection: 'row', alignItems: 'center', zIndex: 1 },
+    iconButton: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center', marginLeft: 10, elevation: 3, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.3, shadowRadius: 2 },
+    downloadButton: { backgroundColor: '#0288d1' },
+    deleteButton: { backgroundColor: '#d32f2f' },
+    fab: { position: 'absolute', right: 25, bottom: 25, width: 60, height: 60, borderRadius: 30, backgroundColor: '#6200EE', justifyContent: 'center', alignItems: 'center', elevation: 8 },
+    fabText: { fontSize: 30, color: 'white', lineHeight: 32 },
+    modalContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)' },
+    modalView: { width: '90%', backgroundColor: 'white', borderRadius: 20, padding: 25, alignItems: 'center', elevation: 5 },
+    modalTitle: { fontSize: 22, fontWeight: 'bold', marginBottom: 20 },
+    input: { width: '100%', height: 50, borderColor: '#ccc', borderWidth: 1, borderRadius: 8, marginBottom: 15, paddingHorizontal: 15 },
+    datePickerButton: { width: '100%', height: 50, justifyContent: 'center', alignItems: 'center', borderColor: '#ccc', borderWidth: 1, borderRadius: 8, marginBottom: 15 },
+    selectButton: { width: '100%', marginBottom: 20 },
+    fileName: { fontSize: 12, color: 'gray', textAlign: 'center', marginTop: 5 },
+    modalActions: { flexDirection: 'row', justifyContent: 'flex-end', width: '100%', marginTop: 20 },
 });
 
 export default GalleryScreen;

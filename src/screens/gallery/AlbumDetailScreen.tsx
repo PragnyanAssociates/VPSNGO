@@ -1,15 +1,15 @@
-// 📂 File: src/screens/gallery/AlbumDetailScreen.tsx (FULLY MODIFIED FOR TRASH ICON)
-
 import React, { useState, useEffect, FC } from 'react';
 import {
     View, Text, StyleSheet, FlatList, Image, Dimensions,
-    TouchableOpacity, Modal, SafeAreaView, Alert, ActivityIndicator
+    TouchableOpacity, Modal, SafeAreaView, Alert, ActivityIndicator,
+    PermissionsAndroid, Platform
 } from 'react-native';
 import { RouteProp, useRoute, useNavigation } from '@react-navigation/native';
 import Video from 'react-native-video';
 import { launchImageLibrary, Asset } from 'react-native-image-picker';
 import axios from 'axios';
-import Icon from 'react-native-vector-icons/Ionicons'; // <-- IMPORT ICON LIBRARY
+import Icon from 'react-native-vector-icons/Ionicons'; // <-- CORRECTED IMPORT PATH
+import RNFetchBlob from 'rn-fetch-blob';
 import { API_BASE_URL } from '../../../apiConfig';
 import { useAuth } from '../../context/AuthContext';
 
@@ -34,6 +34,86 @@ const ITEM_MARGIN = 4;
 const NUM_COLUMNS = 3;
 const imageSize = (width - (ITEM_MARGIN * (NUM_COLUMNS + 1))) / NUM_COLUMNS;
 
+
+// --- Reusable Download Logic (with Improved Permissions) ---
+const handleDownloadItem = async (item: GalleryItemType) => {
+    if (!item) return;
+
+    const url = `${API_BASE_URL}/${item.file_path}`;
+    const fileName = item.file_path.split('/').pop() || `gallery-item-${Date.now()}`;
+
+    if (Platform.OS === 'android') {
+        try {
+            // Check Android version to request the correct permission
+            const permission = Platform.Version >= 33 
+                ? item.file_type === 'video' 
+                    ? PermissionsAndroid.PERMISSIONS.READ_MEDIA_VIDEO 
+                    : PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES
+                : PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE;
+
+            const granted = await PermissionsAndroid.request(permission, {
+                title: 'Storage Permission Required',
+                message: 'App needs access to your storage to download this file.',
+                buttonPositive: 'OK',
+            });
+
+            if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+                Alert.alert('Permission Denied', 'Storage permission is required to download files.');
+                return;
+            }
+        } catch (err) {
+            console.warn(err);
+            return;
+        }
+    }
+    
+    downloadFile(url, fileName);
+};
+
+const downloadFile = (url: string, fileName: string) => {
+    const { dirs } = RNFetchBlob.fs;
+    const fileExt = fileName.split('.').pop()?.toLowerCase();
+    let downloadPath = '';
+
+    if (Platform.OS === 'ios') {
+        downloadPath = dirs.DocumentDir + `/${fileName}`;
+    } else {
+        const pathDir = (fileExt === 'mp4' || fileExt === 'mov' || fileExt === 'mkv') ? dirs.MovieDir : dirs.PictureDir;
+        downloadPath = `${pathDir}/${fileName}`;
+    }
+
+    Alert.alert('Starting Download', `Downloading "${fileName}"...`);
+
+    RNFetchBlob.config({
+        path: downloadPath,
+        fileCache: true,
+        addAndroidDownloads: {
+            useDownloadManager: true,
+            notification: true,
+            path: downloadPath,
+            description: 'Downloading media file.',
+            title: fileName,
+        },
+    })
+    .fetch('GET', url)
+    .then((res) => {
+        if (Platform.OS === 'ios') {
+            RNFetchBlob.ios.saveToCameraRoll(res.path()).then(() => {
+                Alert.alert('Success', `"${fileName}" saved to Photos.`);
+                RNFetchBlob.fs.unlink(res.path());
+            }).catch(() => Alert.alert('Save Error', 'Could not save to Photos.'));
+        } else {
+            Alert.alert('Success', `"${fileName}" saved to your device.`);
+            RNFetchBlob.fs.scanFile(res.path());
+        }
+    })
+    .catch((error) => {
+        console.error(error);
+        Alert.alert('Download Failed', 'An error occurred while downloading.');
+    });
+};
+
+// --- Main Component ---
 const AlbumDetailScreen: FC = () => {
     const route = useRoute<AlbumDetailScreenRouteProp>();
     const navigation = useNavigation();
@@ -98,9 +178,11 @@ const AlbumDetailScreen: FC = () => {
                 Alert.alert("Error", "ImagePicker Error: " + response.errorMessage);
                 return;
             }
+            setIsSubmitting(true);
             for (const asset of response.assets) {
                 await uploadItem(asset);
             }
+            setIsSubmitting(false);
         });
     };
 
@@ -109,7 +191,7 @@ const AlbumDetailScreen: FC = () => {
             Alert.alert('Upload Error', 'Cannot add to this album because its details are missing.');
             return;
         }
-        setIsSubmitting(true);
+        
         const formData = new FormData();
         formData.append('title', route.params.title);
         formData.append('event_date', albumItems[0].event_date.split('T')[0]);
@@ -137,8 +219,6 @@ const AlbumDetailScreen: FC = () => {
 
         } catch (error) {
             Alert.alert('Upload Error', 'An error occurred while uploading a file.');
-        } finally {
-            setIsSubmitting(false);
         }
     };
     
@@ -149,7 +229,7 @@ const AlbumDetailScreen: FC = () => {
 
     const renderGridItem = ({ item }: { item: GalleryItemType }) => (
         <TouchableOpacity onPress={() => handleItemPress(item)}>
-            <View>
+            <View style={styles.gridItemContainer}>
                 {item.file_type === 'photo' ? (
                     <Image 
                         source={{ uri: `${API_BASE_URL}/${item.file_path}` }} 
@@ -157,11 +237,11 @@ const AlbumDetailScreen: FC = () => {
                     />
                 ) : (
                     <View style={[styles.image, styles.videoPlaceholder]}>
-                        <Text style={styles.playIcon}>▶️</Text>
+                        <Icon name="play" size={30} color="white" />
                     </View>
                 )}
 
-                {/* --- DELETE ICON FOR SINGLE ITEM --- */}
+                {/* --- ICON BUTTONS CONTAINER --- */}
                 {isAdmin && (
                     <TouchableOpacity 
                         style={styles.deleteItemButton} 
@@ -170,6 +250,13 @@ const AlbumDetailScreen: FC = () => {
                         <Icon name="trash" size={14} color="white" />
                     </TouchableOpacity>
                 )}
+                 <TouchableOpacity 
+                    style={styles.downloadItemButton} 
+                    onPress={() => handleDownloadItem(item)}
+                >
+                    <Icon name="cloud-download" size={16} color="white" />
+                </TouchableOpacity>
+
             </View>
         </TouchableOpacity>
     );
@@ -230,33 +317,44 @@ const AlbumDetailScreen: FC = () => {
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#f4f4f4' },
     listContainer: { padding: ITEM_MARGIN / 2 },
-    image: { 
+    gridItemContainer: {
         width: imageSize, 
         height: imageSize, 
-        margin: ITEM_MARGIN / 2, 
+        margin: ITEM_MARGIN / 2,
+    },
+    image: { 
+        width: '100%', 
+        height: '100%', 
         borderRadius: 4,
-        backgroundColor: '#e0e0e0'
+        backgroundColor: '#333'
     },
     videoPlaceholder: { 
         justifyContent: 'center', 
         alignItems: 'center' 
     },
-    playIcon: { 
-        fontSize: 30, 
-        color: 'white' 
-    },
     deleteItemButton: {
         position: 'absolute',
-        top: 6,
-        right: 6,
-        backgroundColor: '#d32f2f', // Solid red color
-        width: 24,
-        height: 24,
-        borderRadius: 12,
+        top: 5,
+        right: 5,
+        backgroundColor: 'rgba(211, 47, 47, 0.8)',
+        width: 26,
+        height: 26,
+        borderRadius: 13,
         justifyContent: 'center',
         alignItems: 'center',
         zIndex: 1,
-        elevation: 2,
+    },
+    downloadItemButton: {
+        position: 'absolute',
+        bottom: 5,
+        right: 5,
+        backgroundColor: 'rgba(2, 136, 209, 0.8)',
+        width: 28,
+        height: 28,
+        borderRadius: 14,
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 1,
     },
     modalContainer: { 
         flex: 1, 
@@ -295,10 +393,6 @@ const styles = StyleSheet.create({
         justifyContent: 'center', 
         alignItems: 'center', 
         elevation: 8, 
-        shadowColor: '#000', 
-        shadowOffset: { width: 0, height: 2 }, 
-        shadowOpacity: 0.2, 
-        shadowRadius: 4 
     },
     fabText: { 
         fontSize: 30, 

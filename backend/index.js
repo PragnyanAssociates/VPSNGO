@@ -3799,11 +3799,8 @@ app.get('/api/transport/routes', async (req, res) => {
 
 
 // ==========================================================
-// --- GALLERY API ROUTES (WITHOUT MIDDLEWARE AUTH) ---
+// --- GALLERY API ROUTES ---
 // ==========================================================
-
-// 📂 File: server.js (ADD THIS NEW ROUTE)
-// Make sure you have 'fs' imported at the top of your file: const fs = require('fs');
 
 // DELETE: Delete an entire album by its title
 app.delete('/api/gallery/album', async (req, res) => {
@@ -3874,8 +3871,6 @@ app.get('/api/gallery', async (req, res) => {
     }
 });
 
-// 📂 File: server.js (UPDATED UPLOAD ROUTE)
-
 // POST: Upload a new gallery item
 app.post('/api/gallery/upload', galleryUpload.single('media'), async (req, res) => {
     const { title, event_date, role, adminId } = req.body;
@@ -3901,8 +3896,7 @@ app.post('/api/gallery/upload', galleryUpload.single('media'), async (req, res) 
         const [result] = await connection.query(query, [title, event_date, file_path, file_type, adminId]);
         const newGalleryItemId = result.insertId;
 
-        // --- Notification Logic (Your existing code) ---
-        // (No changes needed here)
+        // --- Notification Logic ---
         const [usersToNotify] = await connection.query("SELECT id FROM users WHERE role IN ('student', 'teacher', 'donor') AND id != ?", [adminId]);
         if (usersToNotify.length > 0) {
             const [[admin]] = await connection.query("SELECT full_name FROM users WHERE id = ?", [adminId]);
@@ -3923,11 +3917,10 @@ app.post('/api/gallery/upload', galleryUpload.single('media'), async (req, res) 
 
         await connection.commit();
         
-        // ★★★ IMPORTANT: Return the new item's ID and path ★★★
         res.status(201).json({ 
             message: "Media uploaded and users notified successfully!", 
             insertId: newGalleryItemId,
-            filePath: file_path // Send the path back to the client
+            filePath: file_path
         });
 
     } catch (error) {
@@ -3945,7 +3938,6 @@ app.put('/api/gallery/:id', async (req, res) => {
     const { id } = req.params;
     const { title, event_date, role } = req.body;
 
-    // SECURITY CHECK: Basic role check from request body
     if (role !== 'admin') {
         return res.status(403).json({ message: "Forbidden: Requires Admin Role." });
     }
@@ -3971,9 +3963,8 @@ app.put('/api/gallery/:id', async (req, res) => {
 // DELETE: Delete a gallery item (Checks for role='admin' in body)
 app.delete('/api/gallery/:id', async (req, res) => {
     const { id } = req.params;
-    const { role } = req.body; // Expect role in the body for DELETE requests
+    const { role } = req.body;
 
-    // SECURITY CHECK: Basic role check from request body
     if (role !== 'admin') {
         return res.status(403).json({ message: "Forbidden: Requires Admin Role." });
     }
@@ -4015,6 +4006,33 @@ app.delete('/api/gallery/:id', async (req, res) => {
 // --- CHAT-AI API ROUTES ---
 // ==============================
 
+// This setup defines how to handle audio file uploads for the Chat AI.
+// It MUST come before the routes that use 'uploadAudio'.
+
+// 1. Define the directory where chat audio files will be stored
+const audioUploadDir = 'uploads/audio';
+
+// 2. Create the directory if it doesn't exist
+if (!fs.existsSync(audioUploadDir)) {
+    fs.mkdirSync(audioUploadDir, { recursive: true });
+}
+
+// 3. Configure how audio files are stored
+const audioStorage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        cb(null, audioUploadDir); // Save files in the 'uploads/audio' folder
+    },
+    filename: (req, file, cb) => {
+        // Create a unique filename like 'audio-1678886400000.mp4'
+        cb(null, `audio-${Date.now()}${path.extname(file.originalname)}`);
+    }
+});
+
+// 4. Create the multer instance that the route will use.
+// This is the 'uploadAudio' that was previously undefined.
+const uploadAudio = multer({ storage: audioStorage });
+
+
 // Get chat history for a specific user
 app.get('/api/chat/history/:userId', async (req, res) => {
   const { userId } = req.params;
@@ -4030,7 +4048,7 @@ app.get('/api/chat/history/:userId', async (req, res) => {
   }
 });
 
-// Post a user message and get AI response (TEXT ONLY)
+// Post a user message and get AI response (TEXT/IMAGE)
 app.post('/api/chat/message', async (req, res) => {
   const { userId, message, type } = req.body;
 
@@ -4050,7 +4068,7 @@ app.post('/api/chat/message', async (req, res) => {
     );
 
     if (messageType !== 'text') {
-      // Don't get AI reply for non-text messages
+      // Don't get AI reply for non-text messages like images
       await connection.commit();
       res.status(200).json({ reply: null });
       return;
@@ -4090,7 +4108,28 @@ app.post('/api/chat/message', async (req, res) => {
   }
 });
 
-// Optional: Add /api/chat/message/image and /audio routes to accept uploads and store file URLs in DB.
+// Route for uploading and saving VOICE MESSAGES
+app.post('/api/chat/voice-message', uploadAudio.single('audio'), async (req, res) => {
+    const { userId } = req.body;
+    if (!req.file || !userId) {
+        return res.status(400).json({ message: 'User ID and audio file are required.' });
+    }
+
+    // The path to save in the database, normalized to use forward slashes
+    const audioUrl = `/${audioUploadDir}/${req.file.filename}`.replace(/\\/g, "/");
+
+    try {
+        const query = 'INSERT INTO chat_messages (user_id, role, content, type) VALUES (?, ?, ?, ?)';
+        await db.query(query, [userId, 'user', audioUrl, 'audio']);
+        
+        // We don't generate an AI reply for voice messages.
+        res.status(200).json({ message: 'Audio message saved.', audioUrl });
+
+    } catch (error) {
+        console.error("POST /api/chat/voice-message Error:", error);
+        res.status(500).json({ message: 'Failed to save audio message.' });
+    }
+});
 
 
 
@@ -5406,6 +5445,339 @@ app.put('/api/notifications/:notificationId/read', verifyToken, async (req, res)
         res.status(500).json({ message: 'Failed to update notification.' });
     }
 });
+
+
+
+// ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
+// ★★★ START: ONLINE CLASS MODULE API ROUTES (CORRECTED & FINAL) ★★★
+// ★★★ Logic now mirrors the PTM API pattern exactly ★★★
+// ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
+
+// GET all online classes. No middleware, fetches all entries like the PTM route.
+app.get('/api/online-classes', async (req, res) => {
+    try {
+        const query = 'SELECT * FROM online_classes ORDER BY class_datetime DESC';
+        const [classes] = await db.query(query);
+        res.status(200).json(classes);
+    } catch (error) {
+        console.error("GET /api/online-classes Error:", error);
+        res.status(500).json({ message: 'Error fetching online classes.' });
+    }
+});
+
+app.get('/api/student-classes', async (req, res) => {
+    try {
+        // This query specifically targets users with the 'student' role.
+        const query = "SELECT DISTINCT class_group FROM users WHERE role = 'student' AND class_group IS NOT NULL AND class_group != '' ORDER BY class_group ASC";
+        const [results] = await db.query(query);
+        const classes = results.map(item => item.class_group);
+        res.status(200).json(classes);
+    } catch (error) {
+        console.error("GET /api/student-classes Error:", error);
+        res.status(500).json({ message: 'Could not fetch the list of student classes.' });
+    }
+});
+
+// POST a new online class. Corrected to match PTM logic and fix date format.
+app.post('/api/online-classes', async (req, res) => {
+    const { title, class_group, subject, teacher_id, class_datetime, meet_link, description, created_by } = req.body;
+    
+    if (!title || !class_group || !subject || !teacher_id || !class_datetime || !meet_link) {
+        return res.status(400).json({ message: 'All required fields must be filled.' });
+    }
+
+    // ★★★★★★★★★★★★★★★★★★★★ START OF FIX ★★★★★★★★★★★★★★★★★★★★
+    // 1. Convert the incoming ISO date string into a JavaScript Date object.
+    const jsDate = new Date(class_datetime);
+
+    // 2. Format the JavaScript Date into the 'YYYY-MM-DD HH:MI:SS' format that MySQL understands.
+    const formattedMysqlDatetime = jsDate.toISOString().slice(0, 19).replace('T', ' ');
+    // ★★★★★★★★★★★★★★★★★★★★ END OF FIX ★★★★★★★★★★★★★★★★★★★★
+
+
+    const connection = await db.getConnection();
+    try {
+        await connection.beginTransaction();
+
+        const [[teacher]] = await connection.query('SELECT full_name FROM users WHERE id = ?', [teacher_id]);
+        if (!teacher) {
+            await connection.rollback();
+            return res.status(404).json({ message: 'Selected teacher not found.' });
+        }
+
+        const query = `INSERT INTO online_classes (title, class_group, subject, teacher_id, teacher_name, class_datetime, meet_link, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
+        
+        // 3. Use the newly formatted date in the query.
+        await connection.query(query, [title, class_group, subject, teacher_id, teacher.full_name, formattedMysqlDatetime, meet_link, description]);
+
+        // --- Notification Logic ---
+        const [students] = await connection.query("SELECT id FROM users WHERE role = 'student' AND class_group = ?", [class_group]);
+        const studentIds = students.map(s => s.id);
+        const recipientIds = [...new Set([parseInt(teacher_id, 10), ...studentIds])];
+
+        if (recipientIds.length > 0) {
+            let senderName = "School Administration";
+            if (created_by) {
+                const [[creator]] = await connection.query("SELECT full_name FROM users WHERE id = ?", [created_by]);
+                if (creator) senderName = creator.full_name;
+            }
+
+            const notificationTitle = `New Online Class: ${subject}`;
+            const eventDate = new Date(class_datetime).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
+            const notificationMessage = `A class on "${title}" with ${teacher.full_name} is scheduled for ${eventDate}.`;
+
+            await createBulkNotifications(connection, recipientIds, senderName, notificationTitle, notificationMessage, '/online-class');
+        }
+
+        await connection.commit();
+        res.status(201).json({ message: 'Online class scheduled and users notified successfully!' });
+
+    } catch (error) {
+        await connection.rollback();
+        console.error("POST /api/online-classes Error:", error);
+        res.status(500).json({ message: 'Failed to schedule the class.' });
+    } finally {
+        connection.release();
+    }
+});
+
+// PUT (update) an existing class. Mirrors the limited update logic of the PTM route.
+app.put('/api/online-classes/:id', async (req, res) => {
+    const { id } = req.params;
+    // Core details are NOT updated. Only supplementary info.
+    const { title, meet_link, description } = req.body;
+
+    try {
+        const query = `UPDATE online_classes SET title = ?, meet_link = ?, description = ? WHERE id = ?`;
+        const [result] = await db.query(query, [title, meet_link, description || null, id]);
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: 'Class not found.' });
+        }
+        res.status(200).json({ message: 'Class updated successfully!' });
+    } catch (error) {
+        console.error(`PUT /api/online-classes/${id} Error:`, error);
+        res.status(500).json({ message: 'Failed to update class.' });
+    }
+});
+
+
+// DELETE a class. No middleware, consistent with the PTM route.
+app.delete('/api/online-classes/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const query = 'DELETE FROM online_classes WHERE id = ?';
+        const [result] = await db.query(query, [id]);
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: 'Class not found.' });
+        }
+        res.status(200).json({ message: 'Class deleted successfully.' });
+    } catch (error) {
+        console.error(`DELETE /api/online-classes/${id} Error:`, error);
+        res.status(500).json({ message: 'Failed to delete class.' });
+    }
+});
+// ==========================================================
+// --- DYNAMIC FORM DATA API ROUTES ---
+// ==========================================================
+
+// ★★★ NEW ROUTE 1: GET SUBJECTS FOR A SPECIFIC CLASS ★★★
+app.get('/api/subjects-for-class/:classGroup', async (req, res) => {
+    const { classGroup } = req.params;
+    try {
+        // This query finds all unique subjects assigned to a class in the timetable.
+        const query = "SELECT DISTINCT subject_name FROM timetables WHERE class_group = ? ORDER BY subject_name ASC";
+        const [results] = await db.query(query, [classGroup]);
+        const subjects = results.map(item => item.subject_name);
+        res.status(200).json(subjects);
+    } catch (error) {
+        console.error("GET /api/subjects-for-class Error:", error);
+        res.status(500).json({ message: 'Could not fetch subjects for the selected class.' });
+    }
+});
+
+// ★★★ NEW ROUTE 2: GET TEACHERS FOR A SPECIFIC CLASS ★★★
+app.get('/api/teachers-for-class/:classGroup', async (req, res) => {
+    const { classGroup } = req.params;
+    try {
+        // This query finds all unique teachers assigned to a class in the timetable.
+        const query = `
+            SELECT DISTINCT u.id, u.full_name 
+            FROM users u
+            JOIN timetables t ON u.id = t.teacher_id
+            WHERE t.class_group = ? AND u.role = 'teacher'
+            ORDER BY u.full_name ASC
+        `;
+        const [teachers] = await db.query(query, [classGroup]);
+        res.status(200).json(teachers);
+    } catch (error) {
+        console.error("GET /api/teachers-for-class Error:", error);
+        res.status(500).json({ message: 'Could not fetch teachers for the selected class.' });
+    }
+});
+
+
+
+// ==========================================================
+// --- ALUMNI RECORDS API ROUTES (WITH IMAGE UPLOAD) ---
+// ==========================================================
+
+
+
+// Add a dedicated multer storage config for alumni photos
+const alumniStorage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const uploadPath = 'uploads/';
+        // Ensure the directory exists
+        if (!fs.existsSync(uploadPath)) {
+            fs.mkdirSync(uploadPath, { recursive: true });
+        }
+        cb(null, uploadPath);
+    },
+    filename: (req, file, cb) => {
+        cb(null, `alumni-pic-${Date.now()}${path.extname(file.originalname)}`);
+    }
+});
+const alumniUpload = multer({ storage: alumniStorage });
+
+// GET all alumni records
+app.get('/api/alumni', async (req, res) => {
+    try {
+        const query = "SELECT * FROM alumni_records ORDER BY alumni_name ASC";
+        const [records] = await db.query(query);
+        res.status(200).json(records);
+    } catch (error) {
+        console.error("GET /api/alumni Error:", error);
+        res.status(500).json({ message: "Failed to fetch alumni records." });
+    }
+});
+
+// POST a new alumni record (now handles file upload)
+app.post('/api/alumni', alumniUpload.single('profile_pic'), async (req, res) => {
+    const fields = req.body;
+    const profile_pic_url = req.file ? `/uploads/${req.file.filename}` : null;
+
+    if (!fields.admission_no || !fields.alumni_name) {
+        return res.status(400).json({ message: "Admission Number and Alumni Name are required." });
+    }
+
+    const query = `
+        INSERT INTO alumni_records (
+            admission_no, alumni_name, profile_pic_url, dob, pen_no, phone_no, aadhar_no, parent_name, 
+            parent_phone, address, school_joined_date, school_joined_grade, 
+            school_outgoing_date, school_outgoing_grade, tc_issued_date, tc_number, present_status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `;
+    const params = [
+        fields.admission_no, fields.alumni_name, profile_pic_url, fields.dob || null, fields.pen_no || null, 
+        fields.phone_no || null, fields.aadhar_no || null, fields.parent_name || null, fields.parent_phone || null, 
+        fields.address || null, fields.school_joined_date || null, fields.school_joined_grade || null, 
+        fields.school_outgoing_date || null, fields.school_outgoing_grade || null, fields.tc_issued_date || null, 
+        fields.tc_number || null, fields.present_status || null
+    ];
+
+    try {
+        await db.query(query, params);
+        res.status(201).json({ message: "Alumni record created successfully." });
+    } catch (error) {
+        console.error("POST /api/alumni Error:", error);
+        if (error.code === 'ER_DUP_ENTRY') {
+            return res.status(409).json({ message: `An alumni record with Admission No '${fields.admission_no}' already exists.` });
+        }
+        res.status(500).json({ message: "Failed to create alumni record." });
+    }
+});
+
+// PUT (update) an existing alumni record (now handles file upload)
+app.put('/api/alumni/:id', alumniUpload.single('profile_pic'), async (req, res) => {
+    const { id } = req.params;
+    const fields = req.body;
+    
+    // Dynamically build the query to avoid updating profile_pic_url to NULL if not provided
+    let setClauses = [];
+    let params = [];
+    
+    const updatableFields = [
+        'admission_no', 'alumni_name', 'dob', 'pen_no', 'phone_no', 'aadhar_no', 
+        'parent_name', 'parent_phone', 'address', 'school_joined_date', 
+        'school_joined_grade', 'school_outgoing_date', 'school_outgoing_grade', 
+        'tc_issued_date', 'tc_number', 'present_status'
+    ];
+
+    updatableFields.forEach(field => {
+        if (fields[field] !== undefined) {
+            setClauses.push(`${field} = ?`);
+            params.push(fields[field] || null);
+        }
+    });
+
+    if (req.file) {
+        setClauses.push('profile_pic_url = ?');
+        params.push(`/uploads/${req.file.filename}`);
+    }
+
+    if (setClauses.length === 0) {
+        return res.status(400).json({ message: "No fields to update." });
+    }
+
+    const query = `UPDATE alumni_records SET ${setClauses.join(', ')} WHERE id = ?`;
+    params.push(id);
+    
+    try {
+        const [result] = await db.query(query, params);
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: "Alumni record not found." });
+        }
+        res.status(200).json({ message: "Alumni record updated successfully." });
+    } catch (error) {
+        console.error(`PUT /api/alumni/${id} Error:`, error);
+        if (error.code === 'ER_DUP_ENTRY') {
+            return res.status(409).json({ message: `An alumni record with Admission No '${fields.admission_no}' already exists.` });
+        }
+        res.status(500).json({ message: "Failed to update alumni record." });
+    }
+});
+
+// DELETE an alumni record (now also deletes the image file)
+app.delete('/api/alumni/:id', async (req, res) => {
+    const { id } = req.params;
+    const connection = await db.getConnection();
+    try {
+        await connection.beginTransaction();
+
+        // First, get the record to find the image path
+        const [[record]] = await connection.query("SELECT profile_pic_url FROM alumni_records WHERE id = ?", [id]);
+
+        // Then, delete the record from the database
+        const [result] = await connection.query("DELETE FROM alumni_records WHERE id = ?", [id]);
+        if (result.affectedRows === 0) {
+            await connection.rollback();
+            return res.status(404).json({ message: "Alumni record not found." });
+        }
+
+        // If an image path exists, delete the file from the server
+        if (record && record.profile_pic_url) {
+            // Construct absolute path
+            const filePath = path.join(__dirname, '..', record.profile_pic_url); // Adjust '..' if necessary based on your folder structure
+            if (fs.existsSync(filePath)) {
+                fs.unlink(filePath, (err) => {
+                    if (err) console.error("Failed to delete alumni image file:", err);
+                });
+            }
+        }
+        
+        await connection.commit();
+        res.status(200).json({ message: "Alumni record deleted successfully." });
+    } catch (error) {
+        await connection.rollback();
+        console.error(`DELETE /api/alumni/${id} Error:`, error);
+        res.status(500).json({ message: "Failed to delete alumni record." });
+    } finally {
+        connection.release();
+    }
+});
+
 
 
 // By using "server.listen", you enable both your API routes and the real-time chat.

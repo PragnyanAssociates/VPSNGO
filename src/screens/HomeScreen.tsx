@@ -16,7 +16,8 @@ export default function HomeScreen() {
     { id: 2, name: "Admin",     icon: "https://cdn-icons-png.flaticon.com/512/17003/17003310.png", type: 'login',    target: 'admin' },
     { id: 3, name: "Student",   icon: "https://cdn-icons-png.flaticon.com/128/2784/2784403.png", type: 'login',    target: 'student' },
     { id: 4, name: "Teacher",   icon: "https://cdn-icons-png.freepik.com/256/14416/14416005.png?semt=ais_hybrid", type: 'login',    target: 'teacher' },
-    { id: 6, name: "Donor",     icon: "https://cdn-icons-png.flaticon.com/128/10880/10880476.png", type: 'login',    target: 'donor' },
+    // { id: 6, name: "Donor",     icon: "https://cdn-icons-png.flaticon.com/128/10880/10880476.png", type: 'login',    target: 'donor' },
+    { id: 5, name: "Driver",     icon: "https://cdn-icons-png.flaticon.com/128/2798/2798177.png", type: 'login',    target: 'Driver' },
     
   ];
 
