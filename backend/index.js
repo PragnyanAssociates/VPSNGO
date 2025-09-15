@@ -5780,6 +5780,146 @@ app.delete('/api/alumni/:id', async (req, res) => {
 
 
 
+// ==========================================================
+// --- PRE-ADMISSIONS API ROUTES ---
+// ==========================================================
+
+// Multer storage config for pre-admission photos
+const preAdmissionsStorage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const uploadPath = 'uploads/preadmissions/'; // Use a dedicated subfolder
+        if (!fs.existsSync(uploadPath)) {
+            fs.mkdirSync(uploadPath, { recursive: true });
+        }
+        cb(null, uploadPath);
+    },
+    filename: (req, file, cb) => {
+        cb(null, `preadmission-photo-${Date.now()}${path.extname(file.originalname)}`);
+    }
+});
+const preAdmissionsUpload = multer({ storage: preAdmissionsStorage });
+
+// GET all pre-admission records
+app.get('/api/preadmissions', async (req, res) => {
+    try {
+        const query = "SELECT * FROM pre_admissions ORDER BY submission_date DESC";
+        const [records] = await db.query(query);
+        res.status(200).json(records);
+    } catch (error) {
+        console.error("GET /api/preadmissions Error:", error);
+        res.status(500).json({ message: "Failed to fetch pre-admission records." });
+    }
+});
+
+// POST a new pre-admission record
+app.post('/api/preadmissions', preAdmissionsUpload.single('photo'), async (req, res) => {
+    const fields = req.body;
+    const photo_url = req.file ? `/uploads/preadmissions/${req.file.filename}` : null;
+
+    if (!fields.admission_no || !fields.student_name || !fields.joining_grade) {
+        return res.status(400).json({ message: "Admission No, Student Name, and Joining Grade are required." });
+    }
+
+    const query = `
+        INSERT INTO pre_admissions (
+            admission_no, student_name, photo_url, dob, pen_no, phone_no, aadhar_no, 
+            parent_name, parent_phone, previous_institute, previous_grade, 
+            joining_grade, address, status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `;
+    const params = [
+        fields.admission_no, fields.student_name, photo_url, fields.dob || null, fields.pen_no || null, 
+        fields.phone_no || null, fields.aadhar_no || null, fields.parent_name || null, 
+        fields.parent_phone || null, fields.previous_institute || null, fields.previous_grade || null,
+        fields.joining_grade, fields.address || null, fields.status || 'Pending'
+    ];
+
+    try {
+        await db.query(query, params);
+        res.status(201).json({ message: "Pre-admission record created successfully." });
+    } catch (error) {
+        console.error("POST /api/preadmissions Error:", error);
+        if (error.code === 'ER_DUP_ENTRY') {
+            return res.status(409).json({ message: `A record with Admission No '${fields.admission_no}' already exists.` });
+        }
+        res.status(500).json({ message: "Failed to create pre-admission record." });
+    }
+});
+
+// PUT (update) an existing pre-admission record
+app.put('/api/preadmissions/:id', preAdmissionsUpload.single('photo'), async (req, res) => {
+    const { id } = req.params;
+    const fields = req.body;
+    
+    let setClauses = [];
+    let params = [];
+    
+    const updatableFields = [
+        'admission_no', 'student_name', 'dob', 'pen_no', 'phone_no', 'aadhar_no', 
+        'parent_name', 'parent_phone', 'previous_institute', 'previous_grade', 
+        'joining_grade', 'address', 'status'
+    ];
+
+    updatableFields.forEach(field => {
+        if (fields[field] !== undefined) {
+            setClauses.push(`${field} = ?`);
+            params.push(fields[field] || null);
+        }
+    });
+
+    if (req.file) {
+        setClauses.push('photo_url = ?');
+        params.push(`/uploads/preadmissions/${req.file.filename}`);
+    }
+
+    if (setClauses.length === 0) {
+        return res.status(400).json({ message: "No fields to update." });
+    }
+
+    const query = `UPDATE pre_admissions SET ${setClauses.join(', ')} WHERE id = ?`;
+    params.push(id);
+    
+    try {
+        const [result] = await db.query(query, params);
+        if (result.affectedRows === 0) return res.status(404).json({ message: "Record not found." });
+        res.status(200).json({ message: "Pre-admission record updated successfully." });
+    } catch (error) {
+        console.error(`PUT /api/preadmissions/${id} Error:`, error);
+        res.status(500).json({ message: "Failed to update record." });
+    }
+});
+
+// DELETE a pre-admission record
+app.delete('/api/preadmissions/:id', async (req, res) => {
+    const { id } = req.params;
+    
+    try {
+        // First, get the record to find the image path
+        const [[record]] = await db.query("SELECT photo_url FROM pre_admissions WHERE id = ?", [id]);
+        
+        // Delete the record from the database
+        const [result] = await db.query("DELETE FROM pre_admissions WHERE id = ?", [id]);
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: "Record not found." });
+        }
+
+        // If an image path exists, delete the file from the server
+        if (record && record.photo_url) {
+            fs.unlink(path.join(__dirname, '..', record.photo_url), (err) => {
+                if (err) console.error("Failed to delete pre-admission photo:", err);
+            });
+        }
+        
+        res.status(200).json({ message: "Pre-admission record deleted successfully." });
+    } catch (error) {
+        console.error(`DELETE /api/preadmissions/${id} Error:`, error);
+        res.status(500).json({ message: "Failed to delete record." });
+    }
+});
+
+
+
+
 // By using "server.listen", you enable both your API routes and the real-time chat.
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`✅ Server is running on port ${PORT} and is now accessible on your network.`);

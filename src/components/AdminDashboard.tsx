@@ -39,6 +39,7 @@ import FoodScreen from '../screens/food/FoodScreen';
 import GroupChatScreen from '../screens/chat/GroupChatScreen';
 import OnlineClassScreen from '../screens/Online_Class/OnlineClassScreen';
 import AlumniScreen from '../screens/Alumni/AlumniScreen';
+import PreAdmissionsScreen from '../screens/Pre-Admissions/PreAdmissionsScreen';
 
 interface ProfileData {
   full_name: string;
@@ -108,7 +109,7 @@ const AdminDashboard = ({ navigation }) => {
 
   // ★ 2. UPDATED ICONS TO MATCH THE PROVIDED IMAGE
   const allQuickAccessItems = [
-    { id: 'qa1', title: 'Pre-Admissions', imageSource: 'https://cdn-icons-png.flaticon.com/128/16495/16495874.png', navigateToTab: '' },
+    { id: 'qa1', title: 'Pre-Admissions', imageSource: 'https://cdn-icons-png.flaticon.com/128/16495/16495874.png', navigateToTab: 'PreAdmissionsScreen' },
     { id: 'qa2', title: 'Alumni', imageSource: 'https://cdn-icons-png.flaticon.com/128/2641/2641333.png', navigateToTab: 'AlumniScreen' },
     { id: 'qa-ads-manage', title: 'Ads Management', imageSource: 'https://cdn-icons-png.flaticon.com/128/19006/19006038.png', navigateToTab: 'AdminAdDashboardScreen' },
     { id: 'qa-ads-create', title: 'Create Ad', imageSource: 'https://cdn-icons-png.flaticon.com/128/4944/4944482.png', navigateToTab: 'CreateAdScreen' },
@@ -241,6 +242,7 @@ const AdminDashboard = ({ navigation }) => {
       case 'AlumniScreen': return ( <><ContentScreenHeader title="Alumni" onBack={handleBack} /><AlumniScreen /></> );
       case 'GroupChatScreen': return ( <><ContentScreenHeader title="Group Chat" onBack={handleBack} /><GroupChatScreen /></> );
       case 'OnlineClassScreen': return ( <><ContentScreenHeader title="Online Class" onBack={handleBack} /><OnlineClassScreen /></> );
+      case 'PreAdmissionsScreen': return ( <><ContentScreenHeader title="Pre-Admissions" onBack={handleBack} /><PreAdmissionsScreen /></> );
       
       
       default: return ( <View style={styles.fallbackContent}><Text style={styles.fallbackText}>Content for '{activeTab}' is not available.</Text><TouchableOpacity onPress={handleBack}><Text style={styles.fallbackLink}>Go to Home</Text></TouchableOpacity></View> );
