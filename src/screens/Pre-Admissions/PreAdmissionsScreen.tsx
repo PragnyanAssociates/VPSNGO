@@ -35,10 +35,14 @@ interface PreAdmissionRecord {
 }
 
 // --- HELPER FUNCTIONS ---
-const formatDate = (dateString?: string): string => {
+const formatDate = (dateString?: string, includeTime = false): string => {
   if (!dateString) return 'N/A';
   const date = new Date(dateString);
   const options: Intl.DateTimeFormatOptions = { day: '2-digit', month: '2-digit', year: 'numeric' };
+  if (includeTime) {
+      options.hour = '2-digit';
+      options.minute = '2-digit';
+  }
   return date.toLocaleDateString('en-GB', options);
 };
 
@@ -199,11 +203,45 @@ const PreAdmissionsScreen: React.FC = () => {
             />
 
             <TouchableOpacity style={styles.fab} onPress={() => handleOpenModal()}><MaterialIcons name="add" size={24} color="#fff" /></TouchableOpacity>
-
+            
             <Modal visible={modalVisible} animationType="slide" onRequestClose={() => setModalVisible(false)}>
-                <ScrollView style={styles.modalContainer}>
+                {/* ★★★★★★★★★★★★★★★★★★★★ FIX: RESTORED MODAL CONTENT HERE ★★★★★★★★★★★★★★★★★★★★ */}
+                <ScrollView style={styles.modalContainer} contentContainerStyle={{paddingBottom: 50}}>
                     <Text style={styles.modalTitle}>{isEditing ? 'Edit Application' : 'New Application'}</Text>
-                    {/* ... (Modal content is the same as before) ... */}
+                    
+                    <View style={styles.imagePickerContainer}>
+                        <Image source={selectedImage?.uri ? { uri: selectedImage.uri } : (formData.photo_url ? { uri: `${API_BASE_URL}${formData.photo_url}` } : require('../../assets/profile.png'))} style={styles.profileImage} />
+                        <TouchableOpacity style={styles.imagePickerButton} onPress={handleChoosePhoto}><FontAwesome name="camera" size={16} color="#fff" /><Text style={styles.imagePickerButtonText}>Choose Photo</Text></TouchableOpacity>
+                    </View>
+                    
+                    <Text style={styles.label}>Admission No*</Text><TextInput style={styles.input} value={formData.admission_no || ''} onChangeText={t => setFormData(p => ({...p, admission_no: t}))} />
+                    <Text style={styles.label}>Student Name*</Text><TextInput style={styles.input} value={formData.student_name || ''} onChangeText={t => setFormData(p => ({...p, student_name: t}))} />
+                    <Text style={styles.label}>Date of Birth</Text><TouchableOpacity onPress={() => setPickerTarget('dob')} style={styles.input}><Text style={styles.dateText}>{formData.dob ? formatDate(formData.dob) : 'Select Date'}</Text></TouchableOpacity>
+                    <Text style={styles.label}>Phone No</Text><TextInput style={styles.input} value={formData.phone_no || ''} onChangeText={t => setFormData(p => ({...p, phone_no: t}))} keyboardType="phone-pad" />
+                    <Text style={styles.label}>Parent Name</Text><TextInput style={styles.input} value={formData.parent_name || ''} onChangeText={t => setFormData(p => ({...p, parent_name: t}))} />
+                    <Text style={styles.label}>Parent No</Text><TextInput style={styles.input} value={formData.parent_phone || ''} onChangeText={t => setFormData(p => ({...p, parent_phone: t}))} keyboardType="phone-pad" />
+                    <Text style={styles.label}>Joining Grade*</Text><TextInput style={styles.input} value={formData.joining_grade || ''} onChangeText={t => setFormData(p => ({...p, joining_grade: t}))} />
+                    <Text style={styles.label}>Previous Institute</Text><TextInput style={styles.input} value={formData.previous_institute || ''} onChangeText={t => setFormData(p => ({...p, previous_institute: t}))} />
+                    <Text style={styles.label}>Previous Grade</Text><TextInput style={styles.input} value={formData.previous_grade || ''} onChangeText={t => setFormData(p => ({...p, previous_grade: t}))} />
+                    <Text style={styles.label}>Address</Text><TextInput style={[styles.input, styles.textArea]} value={formData.address || ''} onChangeText={t => setFormData(p => ({...p, address: t}))} multiline />
+                    <Text style={styles.label}>Pen No</Text><TextInput style={styles.input} value={formData.pen_no || ''} onChangeText={t => setFormData(p => ({...p, pen_no: t}))} />
+                    <Text style={styles.label}>Aadhar No</Text><TextInput style={styles.input} value={formData.aadhar_no || ''} onChangeText={t => setFormData(p => ({...p, aadhar_no: t}))} keyboardType="numeric" />
+
+                    <Text style={styles.label}>Application Status</Text>
+                    <View style={styles.statusSelector}>
+                        {(['Pending', 'Approved', 'Rejected'] as Status[]).map(status => (
+                            <TouchableOpacity key={status} onPress={() => setFormData(p => ({...p, status}))} style={[styles.statusButton, formData.status === status && styles.selectedStatusButton]}>
+                                <Text style={[styles.statusButtonText, formData.status === status && styles.selectedStatusButtonText]}>{status}</Text>
+                            </TouchableOpacity>
+                        ))}
+                    </View>
+
+                    {pickerTarget && <DateTimePicker value={date} mode="date" display="default" onChange={onDateChange} />}
+                    
+                    <View style={styles.modalActions}>
+                        <TouchableOpacity style={[styles.modalButton, styles.cancelButton]} onPress={() => setModalVisible(false)}><Text style={styles.modalButtonText}>Cancel</Text></TouchableOpacity>
+                        <TouchableOpacity style={[styles.modalButton, styles.saveButton]} onPress={handleSave}><Text style={styles.modalButtonText}>Save</Text></TouchableOpacity>
+                    </View>
                 </ScrollView>
             </Modal>
         </View>
@@ -281,7 +319,6 @@ const styles = StyleSheet.create({
     emptyContainer: { alignItems: 'center', justifyContent: 'center', marginTop: '30%', opacity: 0.6 },
     emptyText: { fontSize: 18, fontWeight: '600', color: '#78909C', marginTop: 16 },
     emptySubText: { fontSize: 14, color: '#78909C', marginTop: 4 },
-    // Modal Styles are unchanged and correct, thus omitted for brevity but should be kept in your file
     modalContainer: { flex: 1, backgroundColor: '#f9f9f9', paddingTop: 30, paddingHorizontal: 20 },
     modalTitle: { fontSize: 24, fontWeight: 'bold', marginBottom: 25, textAlign: 'center', color: '#212121' },
     label: { fontSize: 16, color: '#555', marginBottom: 8, marginTop: 12, fontWeight: '600' },
