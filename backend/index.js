@@ -14,7 +14,7 @@ const { sendPasswordResetCode } = require('./mailer');
 const fs = require('fs'); // Import the file system module at the top of your file
 const { Client } = require("@googlemaps/google-maps-services-js");
 const googleMapsClient = new Client({});
-const { OpenAI } = require('openai');
+// const { OpenAI } = require('openai');
 
 // ★★★ NEW IMPORTS FOR REAL-TIME CHAT ★★★
 const http = require('http');
@@ -22,15 +22,15 @@ const { Server } = require("socket.io");
 // ★★★ END NEW IMPORTS ★★★
 
 // Initialize the OpenAI client with your API key from the .env file
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-});
+// const openai = new OpenAI({
+//     apiKey: process.env.OPENAI_API_KEY,
+// });
 
 
 
 const app = express();
 
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
 
 app.use(cors());
 app.use(express.json());
@@ -58,15 +58,12 @@ const galleryStorage = multer.diskStorage({
 const galleryUpload = multer({ storage: galleryStorage });
 
 const db = mysql.createPool({
-    host: process.env.DB_HOST,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME || 'school_db',
+    uri: process.env.DATABASE_URL, // Use the single Railway variable
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0
-    
 });
+
 
 
 // ==========================================================
@@ -4009,127 +4006,127 @@ app.delete('/api/gallery/:id', async (req, res) => {
 // This setup defines how to handle audio file uploads for the Chat AI.
 // It MUST come before the routes that use 'uploadAudio'.
 
-// 1. Define the directory where chat audio files will be stored
-const audioUploadDir = 'uploads/audio';
+// // 1. Define the directory where chat audio files will be stored
+// const audioUploadDir = 'uploads/audio';
 
-// 2. Create the directory if it doesn't exist
-if (!fs.existsSync(audioUploadDir)) {
-    fs.mkdirSync(audioUploadDir, { recursive: true });
-}
+// // 2. Create the directory if it doesn't exist
+// if (!fs.existsSync(audioUploadDir)) {
+//     fs.mkdirSync(audioUploadDir, { recursive: true });
+// }
 
-// 3. Configure how audio files are stored
-const audioStorage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, audioUploadDir); // Save files in the 'uploads/audio' folder
-    },
-    filename: (req, file, cb) => {
-        // Create a unique filename like 'audio-1678886400000.mp4'
-        cb(null, `audio-${Date.now()}${path.extname(file.originalname)}`);
-    }
-});
+// // 3. Configure how audio files are stored
+// const audioStorage = multer.diskStorage({
+//     destination: (req, file, cb) => {
+//         cb(null, audioUploadDir); // Save files in the 'uploads/audio' folder
+//     },
+//     filename: (req, file, cb) => {
+//         // Create a unique filename like 'audio-1678886400000.mp4'
+//         cb(null, `audio-${Date.now()}${path.extname(file.originalname)}`);
+//     }
+// });
 
-// 4. Create the multer instance that the route will use.
-// This is the 'uploadAudio' that was previously undefined.
-const uploadAudio = multer({ storage: audioStorage });
+// // 4. Create the multer instance that the route will use.
+// // This is the 'uploadAudio' that was previously undefined.
+// const uploadAudio = multer({ storage: audioStorage });
 
 
-// Get chat history for a specific user
-app.get('/api/chat/history/:userId', async (req, res) => {
-  const { userId } = req.params;
-  if (!userId) return res.status(400).json({ message: 'User ID is required.' });
+// // Get chat history for a specific user
+// app.get('/api/chat/history/:userId', async (req, res) => {
+//   const { userId } = req.params;
+//   if (!userId) return res.status(400).json({ message: 'User ID is required.' });
 
-  try {
-    const query = "SELECT id, role, content, type, created_at FROM chat_messages WHERE user_id = ? ORDER BY created_at ASC";
-    const [messages] = await db.query(query, [userId]);
-    res.status(200).json(messages);
-  } catch (error) {
-    console.error("GET /api/chat/history Error:", error);
-    res.status(500).json({ message: "Error fetching chat history." });
-  }
-});
+//   try {
+//     const query = "SELECT id, role, content, type, created_at FROM chat_messages WHERE user_id = ? ORDER BY created_at ASC";
+//     const [messages] = await db.query(query, [userId]);
+//     res.status(200).json(messages);
+//   } catch (error) {
+//     console.error("GET /api/chat/history Error:", error);
+//     res.status(500).json({ message: "Error fetching chat history." });
+//   }
+// });
 
-// Post a user message and get AI response (TEXT/IMAGE)
-app.post('/api/chat/message', async (req, res) => {
-  const { userId, message, type } = req.body;
+// // Post a user message and get AI response (TEXT/IMAGE)
+// app.post('/api/chat/message', async (req, res) => {
+//   const { userId, message, type } = req.body;
 
-  if (!userId || !message || typeof message !== 'string') {
-    return res.status(400).json({ message: "userId and message are required." });
-  }
+//   if (!userId || !message || typeof message !== 'string') {
+//     return res.status(400).json({ message: "userId and message are required." });
+//   }
 
-  const messageType = type || 'text';
+//   const messageType = type || 'text';
 
-  const connection = await db.getConnection();
-  try {
-    await connection.beginTransaction();
+//   const connection = await db.getConnection();
+//   try {
+//     await connection.beginTransaction();
 
-    await connection.query(
-      'INSERT INTO chat_messages (user_id, role, content, type) VALUES (?, ?, ?, ?)',
-      [userId, 'user', message, messageType]
-    );
+//     await connection.query(
+//       'INSERT INTO chat_messages (user_id, role, content, type) VALUES (?, ?, ?, ?)',
+//       [userId, 'user', message, messageType]
+//     );
 
-    if (messageType !== 'text') {
-      // Don't get AI reply for non-text messages like images
-      await connection.commit();
-      res.status(200).json({ reply: null });
-      return;
-    }
+//     if (messageType !== 'text') {
+//       // Don't get AI reply for non-text messages like images
+//       await connection.commit();
+//       res.status(200).json({ reply: null });
+//       return;
+//     }
 
-    const [history] = await connection.query(
-      "SELECT role, content FROM chat_messages WHERE user_id = ? ORDER BY created_at DESC LIMIT 10",
-      [userId]
-    );
+//     const [history] = await connection.query(
+//       "SELECT role, content FROM chat_messages WHERE user_id = ? ORDER BY created_at DESC LIMIT 10",
+//       [userId]
+//     );
 
-    const messages = history.reverse().map(m => ({
-      role: m.role === 'ai' ? 'assistant' : 'user',
-      content: m.content,
-    }));
-    messages.push({ role: 'user', content: message });
+//     const messages = history.reverse().map(m => ({
+//       role: m.role === 'ai' ? 'assistant' : 'user',
+//       content: m.content,
+//     }));
+//     messages.push({ role: 'user', content: message });
 
-    const completion = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
-      messages: messages,
-    });
+//     const completion = await openai.chat.completions.create({
+//       model: "gpt-3.5-turbo",
+//       messages: messages,
+//     });
 
-    const aiReply = completion.choices[0].message.content;
+//     const aiReply = completion.choices[0].message.content;
 
-    await connection.query(
-      'INSERT INTO chat_messages (user_id, role, content, type) VALUES (?, ?, ?, ?)',
-      [userId, 'ai', aiReply, 'text']
-    );
+//     await connection.query(
+//       'INSERT INTO chat_messages (user_id, role, content, type) VALUES (?, ?, ?, ?)',
+//       [userId, 'ai', aiReply, 'text']
+//     );
 
-    await connection.commit();
-    res.status(200).json({ reply: aiReply });
-  } catch (error) {
-    await connection.rollback();
-    console.error("POST /api/chat/message Error:", error);
-    res.status(500).json({ message: "An error occurred." });
-  } finally {
-    connection.release();
-  }
-});
+//     await connection.commit();
+//     res.status(200).json({ reply: aiReply });
+//   } catch (error) {
+//     await connection.rollback();
+//     console.error("POST /api/chat/message Error:", error);
+//     res.status(500).json({ message: "An error occurred." });
+//   } finally {
+//     connection.release();
+//   }
+// });
 
-// Route for uploading and saving VOICE MESSAGES
-app.post('/api/chat/voice-message', uploadAudio.single('audio'), async (req, res) => {
-    const { userId } = req.body;
-    if (!req.file || !userId) {
-        return res.status(400).json({ message: 'User ID and audio file are required.' });
-    }
+// // Route for uploading and saving VOICE MESSAGES
+// app.post('/api/chat/voice-message', uploadAudio.single('audio'), async (req, res) => {
+//     const { userId } = req.body;
+//     if (!req.file || !userId) {
+//         return res.status(400).json({ message: 'User ID and audio file are required.' });
+//     }
 
-    // The path to save in the database, normalized to use forward slashes
-    const audioUrl = `/${audioUploadDir}/${req.file.filename}`.replace(/\\/g, "/");
+//     // The path to save in the database, normalized to use forward slashes
+//     const audioUrl = `/${audioUploadDir}/${req.file.filename}`.replace(/\\/g, "/");
 
-    try {
-        const query = 'INSERT INTO chat_messages (user_id, role, content, type) VALUES (?, ?, ?, ?)';
-        await db.query(query, [userId, 'user', audioUrl, 'audio']);
+//     try {
+//         const query = 'INSERT INTO chat_messages (user_id, role, content, type) VALUES (?, ?, ?, ?)';
+//         await db.query(query, [userId, 'user', audioUrl, 'audio']);
         
-        // We don't generate an AI reply for voice messages.
-        res.status(200).json({ message: 'Audio message saved.', audioUrl });
+//         // We don't generate an AI reply for voice messages.
+//         res.status(200).json({ message: 'Audio message saved.', audioUrl });
 
-    } catch (error) {
-        console.error("POST /api/chat/voice-message Error:", error);
-        res.status(500).json({ message: 'Failed to save audio message.' });
-    }
-});
+//     } catch (error) {
+//         console.error("POST /api/chat/voice-message Error:", error);
+//         res.status(500).json({ message: 'Failed to save audio message.' });
+//     }
+// });
 
 
 
