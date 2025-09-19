@@ -1,66 +1,78 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
+// Make sure ImageBackground is imported
+import { View, Text, TouchableOpacity, StyleSheet, Image, ImageBackground } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import Icon from 'react-native-vector-icons/AntDesign';
 
 const WelcomePage = () => {
   const navigation = useNavigation();
 
   const handleGetStarted = () => {
-    // Navigate to another screen, e.g., HomeScreen
     navigation.navigate('HomeScreen');
   };
 
   return (
-    <View style={styles.container}>
-      {/* <Image
-        source={{ uri: 'https://cdn-icons-png.flaticon.com/512/8074/8074788.png' }} // Replace with your image URL
-        style={styles.icon}
-      /> */}
-      <Image
-                source={require("../assets/vspngo-logo.png")}
-                style={styles.logo}
-                resizeMode="contain"
-              />
-      <Text style={styles.title}>Welcome</Text>
-      <TouchableOpacity style={styles.button} onPress={handleGetStarted}>
-        <Text style={styles.buttonText}>Get Started</Text>
-      </TouchableOpacity>
-    </View>
+    // Use require() for local images
+    <ImageBackground
+      source={require('../assets/school-background.jpg')} // <-- KEY CHANGE HERE
+      style={styles.backgroundImage}
+      resizeMode="cover"
+    >
+      <View style={styles.container}>
+        <Image
+          source={require("../assets/pragnyan-logo.png")}
+          style={styles.logo}
+          resizeMode="contain"
+        />
+        <TouchableOpacity style={styles.button} onPress={handleGetStarted}>
+          <View style={styles.buttonContent}>
+            <Text style={styles.buttonText}>Get Started</Text>
+            <Icon name="arrowright" size={22} color="#FFFFFF" style={styles.icon} />
+          </View>
+        </TouchableOpacity>
+      </View>
+    </ImageBackground>
   );
 };
 
 const styles = StyleSheet.create({
+  backgroundImage: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+  },
   container: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    // backgroundColor: '#F5FCFF',
-    backgroundColor: '#e0f2f7',
+    // backgroundColor: 'rgba(255, 255, 255, 0.85)', 
     paddingHorizontal: 20,
   },
-  icon: {
-    width: 150,
-    height: 150,
-    marginBottom: 30,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 40,
-    textAlign: 'center',
-    marginTop: 15
+  logo: {
+    width: 250,
+    height: 250,
+    marginBottom: 10,
   },
   button: {
     backgroundColor: '#007BFF',
     paddingVertical: 12,
     paddingHorizontal: 30,
     borderRadius: 25,
-    elevation: 3,
+    elevation: 5,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  buttonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   buttonText: {
     color: '#FFFFFF',
     fontSize: 18,
     fontWeight: 'bold',
+  },
+  icon: {
+    marginLeft: 10,
   },
 });
 
