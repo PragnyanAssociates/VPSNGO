@@ -1,41 +1,28 @@
+// 📂 File: src/screens/results/TeacherAdminResultsScreen.tsx (MODIFIED & CORRECTED)
+
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert, ScrollView, TextInput, Modal } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert, ScrollView, TextInput } from 'react-native';
+// ★★★ 1. IMPORT apiClient AND REMOVE API_BASE_URL ★★★
+import apiClient from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
-import { API_BASE_URL } from '../../../apiConfig';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { Picker } from '@react-native-picker/picker';
 import { useIsFocused } from '@react-navigation/native';
 
-// --- Main Router Component for Teacher/Admin ---
 const TeacherAdminResultsScreen = ({ navigation }) => {
     const [activeTab, setActiveTab] = useState('History');
     const [navigationState, setNavigationState] = useState({ student: null, reportToEdit: null });
-
-    const navigateToForm = (student, report = null) => {
-        setNavigationState({ student: student, reportToEdit: report });
-        setActiveTab('Create');
-    };
-
+    const navigateToForm = (student, report = null) => { setNavigationState({ student, reportToEdit: report }); setActiveTab('Create'); };
     return (
         <View style={styles.container}>
             <Text style={styles.mainHeaderTitle}>Manage Progress Reports</Text>
-            <View style={styles.tabContainer}>
-                <TouchableOpacity 
-                    style={[styles.tabButton, activeTab === 'History' && styles.activeTab]}
-                    onPress={() => setActiveTab('History')}
-                ><Text style={[styles.tabText, activeTab === 'History' && styles.activeTabText]}>History</Text></TouchableOpacity>
-                <TouchableOpacity 
-                    style={[styles.tabButton, activeTab === 'Create' && styles.activeTab]}
-                    onPress={() => setActiveTab('Create')}
-                ><Text style={[styles.tabText, activeTab === 'Create' && styles.activeTabText]}>Create / Edit</Text></TouchableOpacity>
-            </View>
+            <View style={styles.tabContainer}><TouchableOpacity style={[styles.tabButton, activeTab === 'History' && styles.activeTab]} onPress={() => setActiveTab('History')}><Text style={[styles.tabText, activeTab === 'History' && styles.activeTabText]}>History</Text></TouchableOpacity><TouchableOpacity style={[styles.tabButton, activeTab === 'Create' && styles.activeTab]} onPress={() => setActiveTab('Create')}><Text style={[styles.tabText, activeTab === 'Create' && styles.activeTabText]}>Create / Edit</Text></TouchableOpacity></View>
             {activeTab === 'History' && <HistoryView onNavigateToCreate={navigateToForm} onNavigateToEdit={navigateToForm} navigation={navigation} />}
             {activeTab === 'Create' && <ReportForm studentForForm={navigationState.student} reportToEdit={navigationState.reportToEdit} onFinish={() => setActiveTab('History')} />}
         </View>
     );
 };
 
-// --- Sub-Component 1: History View ---
 const HistoryView = ({ onNavigateToCreate, onNavigateToEdit, navigation }) => {
     const [classes, setClasses] = useState([]);
     const [students, setStudents] = useState([]);
@@ -46,28 +33,24 @@ const HistoryView = ({ onNavigateToCreate, onNavigateToEdit, navigation }) => {
     const isFocused = useIsFocused();
 
     useEffect(() => {
-        const fetchClasses = async () => { try { const res = await fetch(`${API_BASE_URL}/api/student-classes`); setClasses(await res.json()); } catch(e) { console.error(e) }};
+        // ★★★ 2. USE apiClient FOR ALL FETCH CALLS ★★★
+        const fetchClasses = async () => { try { const res = await apiClient.get('/student-classes'); setClasses(res.data); } catch(e) { console.error(e) }};
         fetchClasses();
     }, []);
 
     const handleClassChange = async (classGroup) => {
-        setSelectedClass(classGroup);
-        setSelectedStudent(null);
-        setReports([]);
-        setStudents([]);
-        if (classGroup) { try { const res = await fetch(`${API_BASE_URL}/api/reports/class/${classGroup}/students`); if(res.ok) setStudents(await res.json()); } catch (e) { console.error(e); } }
+        setSelectedClass(classGroup); setSelectedStudent(null); setReports([]); setStudents([]);
+        if (classGroup) { try { const res = await apiClient.get(`/reports/class/${classGroup}/students`); setStudents(res.data); } catch (e) { console.error(e); } }
     };
 
     const handleStudentChange = async (studentId) => {
         if (!studentId) { setSelectedStudent(null); setReports([]); return; }
         const studentObj = students.find(s => s.id === studentId);
-        setSelectedStudent(studentObj);
-        setIsLoading(true);
+        setSelectedStudent(studentObj); setIsLoading(true);
         try {
-            const response = await fetch(`${API_BASE_URL}/api/reports/student/${studentId}`);
-            if (!response.ok) throw new Error("Failed to fetch reports.");
-            setReports(await response.json());
-        } catch(e: any) { Alert.alert("Error", e.message); }
+            const response = await apiClient.get(`/reports/student/${studentId}`);
+            setReports(response.data);
+        } catch(e: any) { Alert.alert("Error", e.response?.data?.message || "Failed to fetch reports."); }
         finally { setIsLoading(false); }
     };
     
@@ -81,36 +64,24 @@ const HistoryView = ({ onNavigateToCreate, onNavigateToEdit, navigation }) => {
             { text: "Cancel" },
             { text: "Delete", style: "destructive", onPress: async () => {
                 try {
-                    const res = await fetch(`${API_BASE_URL}/api/reports/${reportId}`, { method: 'DELETE' });
-                    if (!res.ok) throw new Error("Could not delete.");
+                    await apiClient.delete(`/reports/${reportId}`);
                     setReports(prev => prev.filter(r => r.report_id !== reportId));
                     Alert.alert("Success", "Report deleted.");
-                } catch(e: any) { Alert.alert("Error", e.message); }
+                } catch(e: any) { Alert.alert("Error", e.response?.data?.message || "Could not delete."); }
             }}
         ]);
     };
 
     return (
         <View style={styles.flexContainer}>
-            <View style={styles.pickerRow}>
-                <View style={styles.pickerWrapper}><Picker selectedValue={selectedClass} onValueChange={handleClassChange}>{ [ <Picker.Item label="Select Class..." value="" key="class-placeholder" />, ...classes.map(c => <Picker.Item key={c} label={c} value={c} />) ] }</Picker></View>
-                <View style={styles.pickerWrapper}><Picker selectedValue={selectedStudent?.id} onValueChange={handleStudentChange} enabled={students.length > 0}>{ [ <Picker.Item label="Select Student..." value="" key="student-placeholder" />, ...students.map(s => <Picker.Item key={s.id} label={s.full_name} value={s.id} />) ] }</Picker></View>
-            </View>
+            <View style={styles.pickerRow}><View style={styles.pickerWrapper}><Picker selectedValue={selectedClass} onValueChange={handleClassChange}>{ [ <Picker.Item label="Select Class..." value="" key="class-placeholder" />, ...classes.map(c => <Picker.Item key={c} label={c} value={c} />) ] }</Picker></View><View style={styles.pickerWrapper}><Picker selectedValue={selectedStudent?.id} onValueChange={handleStudentChange} enabled={students.length > 0}>{ [ <Picker.Item label="Select Student..." value="" key="student-placeholder" />, ...students.map(s => <Picker.Item key={s.id} label={s.full_name} value={s.id} />) ] }</Picker></View></View>
             {selectedStudent ? (
                 <FlatList
                     data={reports}
                     keyExtractor={(item) => item.report_id.toString()}
                     ListHeaderComponent={<Text style={styles.listHeader}>{`Report History for ${selectedStudent.full_name}`}</Text>}
                     renderItem={({ item }) => (
-                        <View style={styles.card}>
-                            <Text style={styles.cardTitle}>{item.report_title}</Text>
-                            <Text style={styles.cardSubtitle}>Issued: {new Date(item.issue_date).toLocaleDateString()}</Text>
-                            <View style={styles.cardActions}>
-                                <TouchableOpacity style={styles.actionButton} onPress={() => navigation.navigate('ReportDetailScreen', { reportId: item.report_id })}><MaterialIcons name="visibility" size={18} color="#0288d1" /><Text style={styles.actionText}>View</Text></TouchableOpacity>
-                                <TouchableOpacity style={styles.actionButton} onPress={() => onNavigateToEdit(selectedStudent, item)}><MaterialIcons name="edit" size={18} color="#fbc02d" /><Text style={styles.actionText}>Edit</Text></TouchableOpacity>
-                                <TouchableOpacity style={styles.actionButton} onPress={() => handleDelete(item.report_id)}><MaterialIcons name="delete" size={18} color="#d32f2f" /><Text style={styles.actionText}>Delete</Text></TouchableOpacity>
-                            </View>
-                        </View>
+                        <View style={styles.card}><Text style={styles.cardTitle}>{item.report_title}</Text><Text style={styles.cardSubtitle}>Issued: {new Date(item.issue_date).toLocaleDateString()}</Text><View style={styles.cardActions}><TouchableOpacity style={styles.actionButton} onPress={() => navigation.navigate('ReportDetailScreen', { reportId: item.report_id })}><MaterialIcons name="visibility" size={18} color="#0288d1" /><Text style={styles.actionText}>View</Text></TouchableOpacity><TouchableOpacity style={styles.actionButton} onPress={() => onNavigateToEdit(selectedStudent, item)}><MaterialIcons name="edit" size={18} color="#fbc02d" /><Text style={styles.actionText}>Edit</Text></TouchableOpacity><TouchableOpacity style={styles.actionButton} onPress={() => handleDelete(item.report_id)}><MaterialIcons name="delete" size={18} color="#d32f2f" /><Text style={styles.actionText}>Delete</Text></TouchableOpacity></View></View>
                     )}
                     ListFooterComponent={<TouchableOpacity style={styles.addButton} onPress={() => onNavigateToCreate(selectedStudent)}><MaterialIcons name="add" size={24} color="#fff" /><Text style={styles.addButtonText}>Create New Report</Text></TouchableOpacity>}
                     ListEmptyComponent={!isLoading ? <Text style={styles.emptyText}>No reports found for this student.</Text> : null}
@@ -122,7 +93,6 @@ const HistoryView = ({ onNavigateToCreate, onNavigateToEdit, navigation }) => {
     );
 };
 
-// --- Sub-Component 2: Create/Edit Report Form ---
 const ReportForm = ({ studentForForm, reportToEdit, onFinish }) => {
     const { user } = useAuth();
     const isEditMode = !!reportToEdit;
@@ -139,20 +109,19 @@ const ReportForm = ({ studentForForm, reportToEdit, onFinish }) => {
         const fetchInitialData = async () => {
             setIsLoading(true);
             try {
-                const classRes = await fetch(`${API_BASE_URL}/api/student-classes`);
-                const classData = await classRes.json();
-                setClasses(classData);
+                const classRes = await apiClient.get('/student-classes');
+                setClasses(classRes.data);
                 let initialClass = '';
                 if (isEditMode && reportToEdit) { initialClass = reportToEdit.class_group; }
                 else if (studentForForm) { initialClass = studentForForm.class_group; }
                 if (initialClass) {
                     setSelectedClass(initialClass);
-                    const studentRes = await fetch(`${API_BASE_URL}/api/reports/class/${initialClass}/students`);
-                    setStudents(await studentRes.json());
+                    const studentRes = await apiClient.get(`/reports/class/${initialClass}/students`);
+                    setStudents(studentRes.data);
                     if (isEditMode && reportToEdit) {
                         setSelectedStudentId(reportToEdit.student_id);
-                        const detailsRes = await fetch(`${API_BASE_URL}/api/reports/${reportToEdit.report_id}/details`);
-                        const { reportDetails: details, subjects } = await detailsRes.json();
+                        const detailsRes = await apiClient.get(`/reports/${reportToEdit.report_id}/details`);
+                        const { reportDetails: details, subjects } = detailsRes.data;
                         setReportDetails({
                             report_title: details.report_title, issue_date: details.issue_date.split('T')[0],
                             overall_grade: details.overall_grade || '', teacher_comments: details.teacher_comments || '',
@@ -170,7 +139,7 @@ const ReportForm = ({ studentForForm, reportToEdit, onFinish }) => {
         fetchInitialData();
     }, []);
 
-    const handleClassChange = async (classGroup) => { setSelectedClass(classGroup); setSelectedStudentId(''); if (classGroup) { const res = await fetch(`${API_BASE_URL}/api/reports/class/${classGroup}/students`); setStudents(await res.json()); } else { setStudents([]); }};
+    const handleClassChange = async (classGroup) => { setSelectedClass(classGroup); setSelectedStudentId(''); if (classGroup) { const res = await apiClient.get(`/reports/class/${classGroup}/students`); setStudents(res.data); } else { setStudents([]); }};
     const handleAddSubject = () => setSubjectsData([...subjectsData, { id: Date.now(), subject_code: '', subject_name: '', credit: '', grade: '', grade_point: '', credit_point: '' }]);
     const handleRemoveSubject = (id) => setSubjectsData(subjectsData.filter(s => s.id !== id));
     const handleSubjectChange = (id, field, value) => setSubjectsData(subjectsData.map(s => s.id === id ? { ...s, [field]: value } : s));
@@ -178,14 +147,15 @@ const ReportForm = ({ studentForForm, reportToEdit, onFinish }) => {
         if (!selectedStudentId) return Alert.alert("Error", "Please select a student.");
         setIsSaving(true);
         const payload = { reportDetails: {...reportDetails, student_id: selectedStudentId, class_group: selectedClass}, subjectsData, uploaded_by: user.id };
-        const url = isEditMode ? `${API_BASE_URL}/api/reports/${reportToEdit.report_id}` : `${API_BASE_URL}/api/reports`;
-        const method = isEditMode ? 'PUT' : 'POST';
         try {
-            const response = await fetch(url, { method, headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
-            if (!response.ok) throw new Error((await response.json()).message || "Failed to save.");
+            if (isEditMode) {
+                await apiClient.put(`/reports/${reportToEdit.report_id}`, payload);
+            } else {
+                await apiClient.post('/reports', payload);
+            }
             Alert.alert("Success", `Report ${isEditMode ? 'updated' : 'created'}!`);
             onFinish();
-        } catch(e: any) { Alert.alert("Error", e.message); }
+        } catch(e: any) { Alert.alert("Error", e.response?.data?.message || "Failed to save."); }
         finally { setIsSaving(false); }
     };
     
@@ -202,9 +172,5 @@ const ReportForm = ({ studentForForm, reportToEdit, onFinish }) => {
     )
 };
 
-// --- Styles ---
-const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#f0f4f8' }, flexContainer: { flex: 1 }, centered: { flex: 1, justifyContent: 'center', alignItems: 'center' }, mainHeaderTitle: { fontSize: 22, fontWeight: 'bold', color: '#333', paddingHorizontal: 20, paddingTop: 20, paddingBottom: 10, textAlign: 'center' }, tabContainer: { flexDirection: 'row', marginHorizontal: 20, backgroundColor: '#e0e0e0', borderRadius: 8, padding: 4, marginBottom: 10 }, tabButton: { flex: 1, paddingVertical: 10, borderRadius: 6, alignItems: 'center' }, activeTab: { backgroundColor: '#fff', elevation: 2, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4 }, tabText: { fontWeight: 'bold', color: '#666' }, activeTabText: { color: '#007bff' }, pickerRow: { flexDirection: 'row', paddingHorizontal: 15, gap: 10, marginTop: 10, marginBottom: 10 }, pickerWrapper: { flex: 1, borderWidth: 1, borderColor: '#ccc', borderRadius: 8, backgroundColor: '#fff' }, listHeader: { fontSize: 18, fontWeight: '600', color: '#444', padding: 15, paddingTop: 10, paddingBottom: 5 }, card: { backgroundColor: '#fff', borderRadius: 8, marginHorizontal: 15, marginVertical: 8, padding: 15, elevation: 2 }, cardTitle: { fontSize: 18, fontWeight: 'bold', color: '#37474f' }, cardSubtitle: { fontSize: 14, color: '#546e7a', marginTop: 2, marginBottom: 10 }, cardActions: { flexDirection: 'row', justifyContent: 'flex-start', borderTopWidth: 1, borderColor: '#eee', paddingTop: 10, marginTop: 10, gap: 20 }, actionButton: { flexDirection: 'row', alignItems: 'center' }, actionText: { marginLeft: 5, color: '#333', fontWeight: '500' }, addButton: { flexDirection: 'row', backgroundColor: '#28a745', padding: 15, margin: 15, borderRadius: 10, justifyContent: 'center', alignItems: 'center' }, addButtonText: { color: '#fff', fontSize: 16, fontWeight: 'bold', marginLeft: 10 }, emptyText: { textAlign: 'center', marginTop: 50, fontSize: 16, color: '#777' }, formSection: { backgroundColor: '#fff', borderRadius: 8, marginHorizontal: 15, marginVertical: 8, padding: 15 }, label: { fontSize: 16, fontWeight: '500', color: '#444', marginBottom: 5 }, input: { borderWidth: 1, borderColor: '#ccc', padding: 10, borderRadius: 5, marginBottom: 15 }, sectionHeader: { fontSize: 18, fontWeight: 'bold', marginBottom: 10 }, subjectRow: { marginBottom: 10, padding: 10, borderWidth: 1, borderColor: '#eee', borderRadius: 5 }, subjectInput: { borderWidth: 1, borderColor: '#ddd', padding: 8, borderRadius: 5, marginBottom: 5 }, addSubjectBtn: { backgroundColor: '#e8eaf6', padding: 10, borderRadius: 5, alignItems: 'center', marginTop: 10 }, removeBtn: { alignSelf: 'flex-end', padding: 5}, removeBtnText: { color: 'red' }, saveButton: { backgroundColor: '#28a745', padding: 15, margin: 15, borderRadius: 8, alignItems: 'center' }, saveButtonText: { color: '#fff', fontWeight: 'bold', fontSize: 16 }, backButton: { flexDirection: 'row', alignItems: 'center', padding: 15, alignSelf: 'flex-start' }, backButtonText: { marginLeft: 5, fontSize: 18, color: '#333', fontWeight: '500' },
-});
-
+const styles = StyleSheet.create({ container: { flex: 1, backgroundColor: '#f0f4f8' }, flexContainer: { flex: 1 }, centered: { flex: 1, justifyContent: 'center', alignItems: 'center' }, mainHeaderTitle: { fontSize: 22, fontWeight: 'bold', color: '#333', paddingHorizontal: 20, paddingTop: 20, paddingBottom: 10, textAlign: 'center' }, tabContainer: { flexDirection: 'row', marginHorizontal: 20, backgroundColor: '#e0e0e0', borderRadius: 8, padding: 4, marginBottom: 10 }, tabButton: { flex: 1, paddingVertical: 10, borderRadius: 6, alignItems: 'center' }, activeTab: { backgroundColor: '#fff', elevation: 2, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4 }, tabText: { fontWeight: 'bold', color: '#666' }, activeTabText: { color: '#007bff' }, pickerRow: { flexDirection: 'row', paddingHorizontal: 15, gap: 10, marginTop: 10, marginBottom: 10 }, pickerWrapper: { flex: 1, borderWidth: 1, borderColor: '#ccc', borderRadius: 8, backgroundColor: '#fff' }, listHeader: { fontSize: 18, fontWeight: '600', color: '#444', padding: 15, paddingTop: 10, paddingBottom: 5 }, card: { backgroundColor: '#fff', borderRadius: 8, marginHorizontal: 15, marginVertical: 8, padding: 15, elevation: 2 }, cardTitle: { fontSize: 18, fontWeight: 'bold', color: '#37474f' }, cardSubtitle: { fontSize: 14, color: '#546e7a', marginTop: 2, marginBottom: 10 }, cardActions: { flexDirection: 'row', justifyContent: 'flex-start', borderTopWidth: 1, borderColor: '#eee', paddingTop: 10, marginTop: 10, gap: 20 }, actionButton: { flexDirection: 'row', alignItems: 'center' }, actionText: { marginLeft: 5, color: '#333', fontWeight: '500' }, addButton: { flexDirection: 'row', backgroundColor: '#28a745', padding: 15, margin: 15, borderRadius: 10, justifyContent: 'center', alignItems: 'center' }, addButtonText: { color: '#fff', fontSize: 16, fontWeight: 'bold', marginLeft: 10 }, emptyText: { textAlign: 'center', marginTop: 50, fontSize: 16, color: '#777' }, formSection: { backgroundColor: '#fff', borderRadius: 8, marginHorizontal: 15, marginVertical: 8, padding: 15 }, label: { fontSize: 16, fontWeight: '500', color: '#444', marginBottom: 5 }, input: { borderWidth: 1, borderColor: '#ccc', padding: 10, borderRadius: 5, marginBottom: 15 }, sectionHeader: { fontSize: 18, fontWeight: 'bold', marginBottom: 10 }, subjectRow: { marginBottom: 10, padding: 10, borderWidth: 1, borderColor: '#eee', borderRadius: 5 }, subjectInput: { borderWidth: 1, borderColor: '#ddd', padding: 8, borderRadius: 5, marginBottom: 5 }, addSubjectBtn: { backgroundColor: '#e8eaf6', padding: 10, borderRadius: 5, alignItems: 'center', marginTop: 10 }, removeBtn: { alignSelf: 'flex-end', padding: 5}, removeBtnText: { color: 'red' }, saveButton: { backgroundColor: '#28a745', padding: 15, margin: 15, borderRadius: 8, alignItems: 'center' }, saveButtonText: { color: '#fff', fontWeight: 'bold', fontSize: 16 }, backButton: { flexDirection: 'row', alignItems: 'center', padding: 15, alignSelf: 'flex-start' }, backButtonText: { marginLeft: 5, fontSize: 18, color: '#333', fontWeight: '500' }});
 export default TeacherAdminResultsScreen;

@@ -1,8 +1,11 @@
+// 📂 File: src/screens/labs/StudentLabsScreen.tsx (MODIFIED & CORRECTED)
+
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, FlatList, StyleSheet, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, Text, FlatList, StyleSheet, ActivityIndicator, RefreshControl, Alert } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { LabCard, Lab } from './LabCard';
-import { API_BASE_URL } from '../../../apiConfig';
+// ★★★ 1. IMPORT apiClient AND REMOVE API_BASE_URL ★★★
+import apiClient from '../../api/client';
 
 const StudentLabsScreen = () => {
     const [labs, setLabs] = useState<Lab[]>([]);
@@ -13,14 +16,11 @@ const StudentLabsScreen = () => {
     const fetchLabs = useCallback(async () => {
         try {
             setError(null);
-            const response = await fetch(`${API_BASE_URL}/api/labs`);
-            if (!response.ok) {
-                throw new Error('Failed to fetch Digital Labs.');
-            }
-            const data = await response.json();
-            setLabs(data);
+            // ★★★ 2. USE apiClient ★★★
+            const response = await apiClient.get('/labs');
+            setLabs(response.data);
         } catch (e: any) {
-            setError(e.message);
+            setError(e.response?.data?.message || 'Failed to fetch Digital Labs.');
         } finally {
             setIsLoading(false);
             setIsRefreshing(false);
@@ -71,19 +71,12 @@ const StudentLabsScreen = () => {
     );
 };
 
+// Styles remain unchanged
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#e8f5e9' },
     centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
     errorText: { color: 'red', fontSize: 16 },
-    // ✅ CORRECTED HEADER STYLE
-    header: {
-        padding: 20,
-        backgroundColor: '#fff',
-        borderBottomWidth: 1,
-        borderBottomColor: '#ddd',
-        flexDirection: 'row', // Lay out items side-by-side
-        alignItems: 'center', // Vertically center the icon and text block
-    },
+    header: { padding: 20, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#ddd', flexDirection: 'row', alignItems: 'center' },
     headerTextContainer: { marginLeft: 15 },
     headerTitle: { fontSize: 24, fontWeight: 'bold', color: '#004d40' },
     headerSubtitle: { fontSize: 15, color: '#37474f', marginTop: 4 },

@@ -1,35 +1,23 @@
+// 📂 File: src/screens/exams/TeacherAdminExamsScreen.tsx (MODIFIED & CORRECTED)
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert, ScrollView, TextInput, Modal } from 'react-native';
+// ★★★ 1. IMPORT apiClient AND REMOVE API_BASE_URL ★★★
+import apiClient from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
-import { API_BASE_URL } from '../../../apiConfig';
-import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';0
 import { Picker } from '@react-native-picker/picker';
 import { useIsFocused } from '@react-navigation/native';
 
 // --- Main Router Component ---
-const TeacherAdminExamsScreen = ({ navigation }) => {
+const TeacherAdminExamsScreen = () => {
     const [view, setView] = useState('list');
     const [selectedExam, setSelectedExam] = useState(null);
 
-    const backToList = () => {
-        setSelectedExam(null);
-        setView('list');
-    };
-
-    const handleCreateNew = () => {
-        setSelectedExam(null);
-        setView('create');
-    };
-    
-    const handleEdit = (exam) => {
-        setSelectedExam(exam);
-        setView('create');
-    };
-
-    const handleViewSubmissions = (exam) => {
-        setSelectedExam(exam);
-        setView('submissions');
-    };
+    const backToList = () => { setSelectedExam(null); setView('list'); };
+    const handleCreateNew = () => { setSelectedExam(null); setView('create'); };
+    const handleEdit = (exam) => { setSelectedExam(exam); setView('create'); };
+    const handleViewSubmissions = (exam) => { setSelectedExam(exam); setView('submissions'); };
 
     if (view === 'list') {
         return <ExamList onCreateNew={handleCreateNew} onEdit={handleEdit} onViewSubmissions={handleViewSubmissions} />;
@@ -54,10 +42,10 @@ const ExamList = ({ onCreateNew, onEdit, onViewSubmissions }) => {
         if (!user?.id) return;
         setIsLoading(true);
         try {
-            const response = await fetch(`${API_BASE_URL}/api/exams/teacher/${user.id}`);
-            if (!response.ok) throw new Error(`Failed to fetch exams.`);
-            setExams(await response.json());
-        } catch (e: any) { Alert.alert('Error', e.message); }
+            // ★★★ 2. USE apiClient ★★★
+            const response = await apiClient.get(`/exams/teacher/${user.id}`);
+            setExams(response.data);
+        } catch (e: any) { Alert.alert('Error', e.response?.data?.message || 'Failed to fetch exams.'); }
         finally { setIsLoading(false); }
     }, [user?.id]);
 
@@ -75,11 +63,11 @@ const ExamList = ({ onCreateNew, onEdit, onViewSubmissions }) => {
                 onPress: async () => {
                     setIsLoading(true);
                     try {
-                        const response = await fetch(`${API_BASE_URL}/api/exams/${exam.exam_id}`, { method: 'DELETE' });
-                        if (!response.ok) throw new Error('Failed to delete.');
+                        // ★★★ 3. USE apiClient ★★★
+                        await apiClient.delete(`/exams/${exam.exam_id}`);
                         setExams(prevExams => prevExams.filter(e => e.exam_id !== exam.exam_id));
                         Alert.alert("Success", "Exam deleted.");
-                    } catch (e: any) { Alert.alert("Error", e.message); }
+                    } catch (e: any) { Alert.alert("Error", e.response?.data?.message || 'Failed to delete.'); }
                     finally { setIsLoading(false); }
                 }
             }
@@ -125,47 +113,59 @@ const CreateOrEditExamView = ({ examToEdit, onFinish }) => {
     const [isLoading, setIsLoading] = useState(isEditMode);
     const [isSaving, setIsSaving] = useState(false);
     const [studentClasses, setStudentClasses] = useState([]);
+    
     useEffect(() => {
-        const fetchClasses = async () => { try { const response = await fetch(`${API_BASE_URL}/api/student-classes`); if (response.ok) setStudentClasses(await response.json()); } catch (e) { console.error("Error fetching classes", e); } };
-        fetchClasses();
-        if (isEditMode) {
-            const fetchExamDetails = async () => {
-                try {
-                    const response = await fetch(`${API_BASE_URL}/api/exams/${examToEdit.exam_id}`);
-                    if (!response.ok) throw new Error("Failed to load exam data.");
-                    const data = await response.json();
+        const bootstrapData = async () => {
+            try {
+                // ★★★ 4. USE apiClient FOR ALL CALLS ★★★
+                const classesRes = await apiClient.get('/student-classes');
+                setStudentClasses(classesRes.data);
+
+                if (isEditMode) {
+                    const examRes = await apiClient.get(`/exams/${examToEdit.exam_id}`);
+                    const data = examRes.data;
                     setExamDetails({ title: data.title, description: data.description || '', class_group: data.class_group, time_limit_mins: String(data.time_limit_mins || '0') });
                     setQuestions(data.questions.map(q => ({ ...q, id: q.question_id })));
-                } catch (e: any) { Alert.alert("Error", e.message); onFinish(); } finally { setIsLoading(false); }
-            };
-            fetchExamDetails();
-        }
-    }, []);
+                }
+            } catch (e: any) { 
+                Alert.alert("Error", e.response?.data?.message || "Failed to load data.");
+                if(isEditMode) onFinish();
+            } finally { 
+                setIsLoading(false); 
+            }
+        };
+        bootstrapData();
+    }, [isEditMode, examToEdit, onFinish]);
+
     const addQuestion = () => setQuestions([...questions, { id: Date.now(), question_text: '', question_type: 'multiple_choice', options: { A: '', B: '', C: '', D: '' }, correct_answer: '', marks: '1' }]);
     const handleQuestionChange = (id, field, value) => setQuestions(questions.map(q => (q.id === id ? { ...q, [field]: value } : q)));
     const handleOptionChange = (id, optionKey, value) => setQuestions(questions.map(q => (q.id === id ? { ...q, options: { ...q.options, [optionKey]: value } } : q)));
     const handleRemoveQuestion = (id) => setQuestions(questions.filter(q => q.id !== id));
+    
     const handleSave = async () => {
         if (!user?.id) return Alert.alert("Session Error", "Could not identify user.");
         if (!examDetails.title || !examDetails.class_group || questions.length === 0) return Alert.alert('Validation Error', 'Title, Class Group, and at least one question are required.');
         setIsSaving(true);
-        const url = isEditMode ? `${API_BASE_URL}/api/exams/${examToEdit.exam_id}` : `${API_BASE_URL}/api/exams`;
-        const method = isEditMode ? 'PUT' : 'POST';
         const payload = { ...examDetails, questions, teacher_id: user.id };
         try {
-            const response = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-            if (!response.ok) throw new Error((await response.json()).message || "Failed to save.");
+            if (isEditMode) {
+                await apiClient.put(`/exams/${examToEdit.exam_id}`, payload);
+            } else {
+                await apiClient.post('/exams', payload);
+            }
             Alert.alert('Success', `Exam ${isEditMode ? 'updated' : 'created'}!`);
             onFinish();
-        } catch (e: any) { Alert.alert('Error', e.message); } finally { setIsSaving(false); }
+        } catch (e: any) { Alert.alert('Error', e.response?.data?.message || "Failed to save."); } 
+        finally { setIsSaving(false); }
     };
+
     if (isLoading) return <View style={styles.centered}><ActivityIndicator size="large" /><Text>Loading Exam Data...</Text></View>
     return ( <ScrollView style={styles.containerDark}><TouchableOpacity onPress={onFinish} style={styles.backButton}><MaterialIcons name="arrow-back" size={24} color="#333" /><Text style={styles.backButtonText}>Back to Exam List</Text></TouchableOpacity><Text style={styles.headerTitle}>{isEditMode ? 'Edit Exam' : 'Create New Exam'}</Text><View style={styles.formSection}><Text style={styles.label}>Exam Title *</Text><TextInput style={styles.input} value={examDetails.title} onChangeText={t => setExamDetails({ ...examDetails, title: t })} /><Text style={styles.label}>Class *</Text><View style={styles.pickerContainer}><Picker selectedValue={examDetails.class_group} onValueChange={v => setExamDetails({ ...examDetails, class_group: v })}><Picker.Item label="-- Select a Class --" value="" />{studentClasses.map(c => <Picker.Item key={c} label={c} value={c} />)}</Picker></View><Text style={styles.label}>Time Limit (minutes)</Text><TextInput style={styles.input} keyboardType="number-pad" value={examDetails.time_limit_mins} onChangeText={t => setExamDetails({ ...examDetails, time_limit_mins: t })} /></View><View style={styles.formSection}><Text style={styles.headerTitleSecondary}>Questions</Text>{questions.map((q, index) => (<View key={q.id} style={styles.questionEditor}><View style={styles.cardHeader}><Text style={styles.questionEditorTitle}>Question {index + 1}</Text><TouchableOpacity onPress={() => handleRemoveQuestion(q.id)}><MaterialIcons name="close" size={22} color="#dc3545" /></TouchableOpacity></View><TextInput style={styles.input} multiline value={q.question_text} onChangeText={t => handleQuestionChange(q.id, 'question_text', t)} />{Object.keys(q.options).map(key => (<TextInput key={key} style={styles.input} placeholder={`Option ${key}`} value={q.options[key]} onChangeText={t => handleOptionChange(q.id, key, t)} />))}<Text style={styles.label}>Correct Answer</Text><View style={styles.pickerContainer}><Picker selectedValue={q.correct_answer} onValueChange={v => handleQuestionChange(q.id, 'correct_answer', v)}><Picker.Item label="-- Select correct option --" value="" />{Object.keys(q.options).map(key => q.options[key] && <Picker.Item key={key} label={`Option ${key}`} value={key} />)}</Picker></View><Text style={styles.label}>Marks</Text><TextInput style={styles.input} keyboardType="number-pad" value={String(q.marks)} onChangeText={t => handleQuestionChange(q.id, 'marks', t)} /></View>))}<TouchableOpacity style={styles.addQuestionBtn} onPress={addQuestion}><Text style={styles.addQuestionBtnText}>+ Add Another Question</Text></TouchableOpacity></View><TouchableOpacity style={styles.saveButton} onPress={handleSave} disabled={isSaving}>{isSaving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveButtonText}>{isEditMode ? 'Save Changes' : 'Save and Publish Exam'}</Text>}</TouchableOpacity></ScrollView> );
 };
 
-// --- View 3: Submissions View (FINAL FIX) ---
+// --- View 3: Submissions View ---
 const SubmissionsView = ({ exam, onBack }) => {
-    const { user } = useAuth(); // We still need the user for grading
+    const { user } = useAuth();
     const [submissions, setSubmissions] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
     const [gradingSubmission, setGradingSubmission] = useState(null);
@@ -173,20 +173,15 @@ const SubmissionsView = ({ exam, onBack }) => {
     const [gradedAnswers, setGradedAnswers] = useState({});
     const [isSubmittingGrade, setIsSubmittingGrade] = useState(false);
 
-    // ✅ FIXED: Stabilized the fetch function and removed the infinite loop
     const fetchSubmissions = useCallback(async () => {
         setIsLoading(true);
         try {
-            // ✅ REMOVED: No 'Authorization' header needed, as per backend change
-            const response = await fetch(`${API_BASE_URL}/api/exams/${exam.exam_id}/submissions`);
-            if (!response.ok) throw new Error('Failed to fetch submissions.');
-            setSubmissions(await response.json());
-        } catch (e: any) {
-            Alert.alert('Error', e.message);
-        } finally {
-            setIsLoading(false); // This will now always run
-        }
-    }, [exam.exam_id]); // Stable dependency
+            // ★★★ 5. USE apiClient ★★★
+            const response = await apiClient.get(`/exams/${exam.exam_id}/submissions`);
+            setSubmissions(response.data);
+        } catch (e: any) { Alert.alert('Error', e.response?.data?.message || 'Failed to fetch submissions.'); } 
+        finally { setIsLoading(false); }
+    }, [exam.exam_id]);
 
     useEffect(() => {
         fetchSubmissions();
@@ -196,18 +191,13 @@ const SubmissionsView = ({ exam, onBack }) => {
         setIsLoading(true);
         setGradingSubmission(submission);
         try {
-            const response = await fetch(`${API_BASE_URL}/api/submissions/${submission.attempt_id}`);
-            if (!response.ok) throw new Error('Could not fetch submission details.');
-            const details = await response.json();
+            const response = await apiClient.get(`/submissions/${submission.attempt_id}`);
+            const details = response.data;
             setSubmissionDetails(details);
             const initialGrades = details.reduce((acc, item) => ({ ...acc, [item.question_id]: item.marks_awarded || '' }), {});
             setGradedAnswers(initialGrades);
-        } catch (e: any) {
-            Alert.alert('Error', e.message);
-            setGradingSubmission(null);
-        } finally {
-            setIsLoading(false);
-        }
+        } catch (e: any) { Alert.alert('Error', e.response?.data?.message || 'Could not fetch submission details.'); setGradingSubmission(null); } 
+        finally { setIsLoading(false); }
     };
 
     const handleGradeChange = (questionId, marks) => setGradedAnswers(prev => ({ ...prev, [questionId]: marks }));
@@ -217,21 +207,16 @@ const SubmissionsView = ({ exam, onBack }) => {
         setIsSubmittingGrade(true);
         const answersPayload = Object.entries(gradedAnswers).map(([qid, marks]) => ({ question_id: qid, marks_awarded: marks || 0 }));
         try {
-            // ✅ FIXED: Pass teacher_id in the body for authorization check on the backend
-            const response = await fetch(`${API_BASE_URL}/api/submissions/${gradingSubmission.attempt_id}/grade`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ gradedAnswers: answersPayload, teacher_feedback: '', teacher_id: user.id })
+            await apiClient.post(`/submissions/${gradingSubmission.attempt_id}/grade`, {
+                gradedAnswers: answersPayload, 
+                teacher_feedback: '', 
+                teacher_id: user.id
             });
-            if (!response.ok) throw new Error((await response.json()).message || "Failed to submit grade.");
             Alert.alert('Success', 'Grades submitted successfully!');
             setGradingSubmission(null);
-            fetchSubmissions(); // Refresh the list
-        } catch (e: any) {
-            Alert.alert('Error', e.message);
-        } finally {
-            setIsSubmittingGrade(false);
-        }
+            fetchSubmissions();
+        } catch (e: any) { Alert.alert('Error', e.response?.data?.message || "Failed to submit grade."); } 
+        finally { setIsSubmittingGrade(false); }
     };
     
     return (
@@ -276,7 +261,7 @@ const SubmissionsView = ({ exam, onBack }) => {
 };
 
 
-// --- Styles ---
+// Styles remain the same
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#f4f6f8' },
     containerDark: { flex: 1, backgroundColor: '#eceff1' },

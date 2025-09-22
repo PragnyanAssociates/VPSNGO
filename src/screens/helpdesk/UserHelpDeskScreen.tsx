@@ -1,30 +1,21 @@
-// 📂 File: src/screens/helpdesk/UserHelpDeskScreen.tsx (CORRECTED)
+// 📂 File: src/screens/helpdesk/UserHelpDeskScreen.tsx (MODIFIED & CORRECTED)
 
-import React, { useState, useEffect, useCallback } from 'react'; // <--- FIX: Added useState and useEffect here
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, ActivityIndicator, TextInput, ScrollView } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
-import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, TextInput, ScrollView } from 'react-native';
+// ★★★ 1. IMPORT apiClient AND REMOVE API_BASE_URL ★★★
+import apiClient from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
-import { API_BASE_URL } from '../../../apiConfig';
-import { HistoryView, TicketDetailsView } from './AdminHelpDeskScreen'; // Import shared components
+import { HistoryView, TicketDetailsView } from './AdminHelpDeskScreen'; // Shared components are fine
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 
 const BLUE_THEME = { primary: '#1976D2', secondary: '#E3F2FD', textDark: '#212121', textLight: '#757575', open: '#FFB300', solved: '#43A047' };
 
 const UserHelpDeskScreen = () => {
-    const [view, setView] = useState('main'); // 'main', 'history', 'details'
+    const [view, setView] = useState('main');
     const [selectedTicketId, setSelectedTicketId] = useState(null);
-
     const handleViewHistory = () => setView('history');
     const handleViewDetails = (ticketId) => { setSelectedTicketId(ticketId); setView('details'); };
-    const handleBack = () => {
-        // When going back from details, go to history, otherwise go to main.
-        if (view === 'details') {
-            setView('history');
-            setSelectedTicketId(null);
-        } else {
-            setView('main');
-        }
-    };
+    const handleBack = () => { if (view === 'details') { setView('history'); setSelectedTicketId(null); } else { setView('main'); } };
     const handleBackToMain = () => setView('main');
 
     return (
@@ -45,21 +36,18 @@ const MainHelpView = ({ onViewHistory }) => {
     const { user } = useAuth();
 
     useEffect(() => {
-        fetch(`${API_BASE_URL}/api/helpdesk/faqs`).then(res => res.json()).then(setFaqs);
+        // ★★★ 2. USE apiClient ★★★
+        apiClient.get('/helpdesk/faqs').then(res => setFaqs(res.data));
     }, []);
 
     const handleSubmit = async () => {
         if (!subject.trim() || !description.trim()) { return Alert.alert("Missing Info", "Please provide both a subject and a description."); }
         setSubmitting(true);
         try {
-            const response = await fetch(`${API_BASE_URL}/api/helpdesk/submit`, {
-                method: 'POST', headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ userId: user.id, subject, description })
-            });
-            const data = await response.json();
-            Alert.alert(response.ok ? "Success" : "Error", data.message);
-            if (response.ok) { setSubject(''); setDescription(''); }
-        } catch (e) { Alert.alert("Error", "Could not submit query."); }
+            const response = await apiClient.post('/helpdesk/submit', { userId: user.id, subject, description });
+            Alert.alert("Success", response.data.message);
+            setSubject(''); setDescription('');
+        } catch (e: any) { Alert.alert("Error", e.response?.data?.message || "Could not submit query."); }
         finally { setSubmitting(false); }
     };
     
@@ -69,12 +57,10 @@ const MainHelpView = ({ onViewHistory }) => {
                 <MaterialCommunityIcons name="chat-question" size={24} color="#fff" />
                 <View style={{ marginLeft: 15 }}><Text style={styles.bannerTitle}>Help Desk & Support</Text><Text style={styles.bannerSubtitle}>Find answers or submit your queries.</Text></View>
             </View>
-            
             <TouchableOpacity style={styles.historyButton} onPress={onViewHistory}>
                 <Text style={styles.historyButtonText}>View My Submitted Queries</Text>
                 <MaterialCommunityIcons name="arrow-right" size={20} color={BLUE_THEME.primary} />
             </TouchableOpacity>
-
             <Text style={styles.sectionTitle}>Frequently Asked Questions (FAQs)</Text>
             {faqs.map(faq => (
                 <View key={faq.id}>
@@ -85,7 +71,6 @@ const MainHelpView = ({ onViewHistory }) => {
                     {expandedFaq === faq.id && <Text style={styles.faqAnswer}>{faq.answer}</Text>}
                 </View>
             ))}
-
             <Text style={styles.sectionTitle}>Submit a Query</Text>
             <TextInput placeholder="Subject (e.g., Issue with assignment)" style={styles.input} value={subject} onChangeText={setSubject} />
             <TextInput placeholder="Describe your issue in detail..." style={[styles.input, {height: 120, textAlignVertical: 'top'}]} multiline value={description} onChangeText={setDescription} />
@@ -96,6 +81,7 @@ const MainHelpView = ({ onViewHistory }) => {
     );
 };
 
+// Styles remain unchanged
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#f4f6f8' },
     mainContainer: { paddingBottom: 40 },

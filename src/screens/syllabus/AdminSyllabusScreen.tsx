@@ -1,9 +1,10 @@
-// 📂 File: screens/syllabus/AdminSyllabusScreen.js (FINAL & CORRECTED)
+// 📂 File: screens/syllabus/AdminSyllabusScreen.js (MODIFIED & CORRECTED)
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert, ScrollView, TextInput } from 'react-native';
-import { useAuth } from '../../context/AuthContext';
-import { API_BASE_URL } from '../../../apiConfig';
+// ★★★ 1. IMPORT apiClient AND REMOVE useAuth & API_BASE_URL (where possible) ★★★
+import apiClient from '../../api/client';
+import { useAuth } from '../../context/AuthContext'; // Still needed for creator_id
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { Picker } from '@react-native-picker/picker';
 import { useIsFocused } from '@react-navigation/native';
@@ -35,10 +36,10 @@ const SyllabusHistoryList = ({ onEdit, onCreate, onViewProgress }) => {
     const fetchSyllabusHistory = useCallback(async () => {
         setIsLoading(true);
         try {
-            const response = await fetch(`${API_BASE_URL}/api/syllabus/all`);
-            if (!response.ok) throw new Error("Failed to load syllabus history.");
-            setSyllabuses(await response.json());
-        } catch (error) { Alert.alert("Error", error.message); }
+            // ★★★ 2. USE apiClient ★★★
+            const response = await apiClient.get('/syllabus/all');
+            setSyllabuses(response.data);
+        } catch (error) { Alert.alert("Error", error.response?.data?.message || "Failed to load syllabus history."); }
         finally { setIsLoading(false); }
     }, []);
 
@@ -99,62 +100,54 @@ const CreateOrEditSyllabus = ({ initialSyllabus, onFinish }) => {
         const bootstrapForm = async () => {
             setIsLoading(true);
             try {
-                // Fetch all available classes for the dropdown
-                const classRes = await fetch(`${API_BASE_URL}/api/student-classes`);
-                if (classRes.ok) setAllClasses(await classRes.json());
+                // ★★★ 3. USE apiClient FOR ALL FETCH CALLS ★★★
+                const classRes = await apiClient.get('/student-classes');
+                setAllClasses(classRes.data);
 
-                // If in edit mode, populate the form with existing data
                 if (isEditMode) {
                     await handleClassChange(initialSyllabus.class_group, true);
                     await handleSubjectChange(initialSyllabus.subject_name, initialSyllabus.class_group, true);
                     
-                    const syllabusDetailsRes = await fetch(`${API_BASE_URL}/api/syllabus/teacher/${initialSyllabus.class_group}/${initialSyllabus.subject_name}`);
-                    if (syllabusDetailsRes.ok) {
-                        const syllabusData = await syllabusDetailsRes.json();
-                        const formattedLessons = syllabusData.lessons.map(l => ({ lessonName: l.lesson_name, dueDate: l.due_date.split('T')[0] }));
-                        setLessons(formattedLessons.length > 0 ? formattedLessons : [{ lessonName: '', dueDate: '' }]);
-                    }
+                    const syllabusDetailsRes = await apiClient.get(`/syllabus/teacher/${initialSyllabus.class_group}/${initialSyllabus.subject_name}`);
+                    const syllabusData = syllabusDetailsRes.data;
+                    const formattedLessons = syllabusData.lessons.map(l => ({ lessonName: l.lesson_name, dueDate: l.due_date.split('T')[0] }));
+                    setLessons(formattedLessons.length > 0 ? formattedLessons : [{ lessonName: '', dueDate: '' }]);
                 }
             } catch (e) { console.error("Error bootstrapping form:", e); Alert.alert("Error", "Could not load initial form data."); } 
             finally { setIsLoading(false); }
         };
         bootstrapForm();
-    }, []); // Run only once on mount
+    }, []);
 
     const handleClassChange = async (classGroup, isInitialLoad = false) => {
         if (!isInitialLoad) {
-            setSelectedSubject('');
-            setAvailableSubjects([]);
-            setSelectedTeacherId('');
-            setAvailableTeachers([]);
+            setSelectedSubject(''); setAvailableSubjects([]);
+            setSelectedTeacherId(''); setAvailableTeachers([]);
         }
         setSelectedClass(classGroup);
         if (!classGroup) return;
 
         setIsSubjectsLoading(true);
         try {
-            const subjectRes = await fetch(`${API_BASE_URL}/api/subjects-for-class/${classGroup}`);
-            if (subjectRes.ok) setAvailableSubjects(await subjectRes.json());
+            const subjectRes = await apiClient.get(`/subjects-for-class/${classGroup}`);
+            setAvailableSubjects(subjectRes.data);
         } catch (error) { console.error("Error fetching subjects:", error); } 
         finally { setIsSubjectsLoading(false); }
     };
 
     const handleSubjectChange = async (subjectName, classGroup = selectedClass, isInitialLoad = false) => {
         if (!isInitialLoad) {
-            setSelectedTeacherId('');
-            setAvailableTeachers([]);
+            setSelectedTeacherId(''); setAvailableTeachers([]);
         }
         setSelectedSubject(subjectName);
         if (!subjectName || !classGroup) return;
         
         setIsTeachersLoading(true);
         try {
-            const teacherRes = await fetch(`${API_BASE_URL}/api/syllabus/teachers/${classGroup}/${subjectName}`);
-            if (teacherRes.ok) {
-                const teachers = await teacherRes.json();
-                setAvailableTeachers(teachers);
-                if (teachers.length === 1 && !isEditMode) setSelectedTeacherId(teachers[0].id);
-            }
+            const teacherRes = await apiClient.get(`/syllabus/teachers/${classGroup}/${subjectName}`);
+            const teachers = teacherRes.data;
+            setAvailableTeachers(teachers);
+            if (teachers.length === 1 && !isEditMode) setSelectedTeacherId(teachers[0].id);
         } catch (error) { console.error("Error fetching teachers:", error); } 
         finally { setIsTeachersLoading(false); }
     };
@@ -174,37 +167,24 @@ const CreateOrEditSyllabus = ({ initialSyllabus, onFinish }) => {
         try {
             let response;
             if (isEditMode) {
-                const url = `${API_BASE_URL}/api/syllabus/${initialSyllabus.id}`;
-                response = await fetch(url, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        lessons: validLessons,
-                        creator_id: selectedTeacherId,
-                    }),
+                response = await apiClient.put(`/syllabus/${initialSyllabus.id}`, {
+                    lessons: validLessons,
+                    creator_id: selectedTeacherId,
                 });
             } else {
-                const url = `${API_BASE_URL}/api/syllabus/create`;
-                response = await fetch(url, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        class_group: selectedClass,
-                        subject_name: selectedSubject,
-                        lessons: validLessons,
-                        creator_id: selectedTeacherId,
-                    }),
+                response = await apiClient.post('/syllabus/create', {
+                    class_group: selectedClass,
+                    subject_name: selectedSubject,
+                    lessons: validLessons,
+                    creator_id: selectedTeacherId,
                 });
             }
 
-            const result = await response.json();
-            if (!response.ok) throw new Error(result.message || "Failed to save syllabus.");
-            
-            Alert.alert("Success", result.message);
+            Alert.alert("Success", response.data.message);
             onFinish();
 
         } catch (error) {
-            Alert.alert("Error", error.message);
+            Alert.alert("Error", error.response?.data?.message || "Failed to save syllabus.");
         } finally {
             setIsSaving(false);
         }
@@ -271,7 +251,6 @@ const CreateOrEditSyllabus = ({ initialSyllabus, onFinish }) => {
     );
 };
 
-// ✅ THIS IS THE CORRECTED VIEW FOR ADMINS
 const AdminProgressView = ({ syllabus, onBack }) => {
     const [auditLog, setAuditLog] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -289,13 +268,11 @@ const AdminProgressView = ({ syllabus, onBack }) => {
             if (!syllabus?.id) return;
             setIsLoading(true);
             try {
-                // Fetching from the admin-specific backend endpoint
-                const response = await fetch(`${API_BASE_URL}/api/syllabus/class-progress/${syllabus.id}`);
-                if (!response.ok) throw new Error("Could not load class progress.");
-                const data = await response.json();
-                setAuditLog(data);
+                // ★★★ 4. USE apiClient ★★★
+                const response = await apiClient.get(`/syllabus/class-progress/${syllabus.id}`);
+                setAuditLog(response.data);
             } catch (error) {
-                Alert.alert("Error", error.message);
+                Alert.alert("Error", error.response?.data?.message || "Could not load class progress.");
             } finally {
                 setIsLoading(false);
             }
@@ -313,7 +290,6 @@ const AdminProgressView = ({ syllabus, onBack }) => {
                         <MaterialIcons name="event" size={16} color="#6b7280" />
                         <Text style={styles.lessonAuditText}>Due: {new Date(lesson.due_date).toLocaleDateString()}</Text>
                     </View>
-                    {/* ✅ THIS ROW NOW SHOWS THE TEACHER WHO UPDATED THE STATUS */}
                     <View style={styles.lessonAuditRow}>
                         <MaterialIcons name="person" size={16} color="#6b7280" />
                         <Text style={styles.lessonAuditText}>Updated by: <Text style={styles.updaterName}>{lesson.updater_name}</Text></Text>
@@ -348,6 +324,7 @@ const AdminProgressView = ({ syllabus, onBack }) => {
     );
 };
 
+// Styles remain the same
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#f0f4f7' },
     containerDark: { flex: 1, backgroundColor: '#e8eaf6', padding: 5,},
@@ -378,8 +355,6 @@ const styles = StyleSheet.create({
     addLessonBtn: { backgroundColor: '#e0e6ff', padding: 12, borderRadius: 8, alignItems: 'center', marginVertical: 10 },
     addLessonBtnText: { color: '#3f51b5', fontWeight: 'bold' },
     saveButton: { flexDirection: 'row', backgroundColor: '#43a047', padding: 15, margin: 15, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
-
-    // Styles for AdminProgressView
     progressHeaderTitle: { fontSize: 22, fontWeight: 'bold', textAlign: 'center', paddingHorizontal: 15, marginBottom: 10, color: '#1f2937' },
     lessonAuditCard: { backgroundColor: '#fff', marginHorizontal: 15, marginVertical: 8, borderRadius: 12, elevation: 2, overflow: 'hidden' },
     lessonAuditTitle: { fontSize: 18, fontWeight: '600', color: '#111827', paddingHorizontal: 15, paddingTop: 15 },

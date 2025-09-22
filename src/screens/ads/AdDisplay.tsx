@@ -1,7 +1,9 @@
+// 📂 File: src/screens/ads/AdDisplay.tsx (FINAL & VERIFIED)
+
 import React, { useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import apiClient from '../../api/client';
-import TopNotchAd, { Ad } from './TopNotchAd';
+import TopNotchAd, { Ad } from '../../screens/ads/TopNotchAd'; // Corrected path if needed
 
 const AdDisplay: React.FC = () => {
   const [currentAd, setCurrentAd] = useState<Ad | null>(null);
@@ -9,7 +11,7 @@ const AdDisplay: React.FC = () => {
   useEffect(() => {
     const fetchAndCycleAd = async () => {
       try {
-        const { data: approvedAds } = await apiClient.get<Ad[]>('/api/ads/display');
+        const { data: approvedAds } = await apiClient.get<Ad[]>('/ads/display');
         
         if (approvedAds.length === 0) return;
 
@@ -28,8 +30,7 @@ const AdDisplay: React.FC = () => {
 
   if (!currentAd) return null;
   
-  // Since the API now only returns 'top_notch' ads, this check is for safety.
-  // All other ad types will be ignored.
+  // Only render ads of type 'top_notch'
   if (currentAd.ad_type === 'top_notch') {
     return <TopNotchAd ad={currentAd} />;
   }

@@ -1,9 +1,10 @@
-// 📂 File: screens/syllabus/StudentSyllabusScreen.js (FINAL & CORRECTED)
+// 📂 File: screens/syllabus/StudentSyllabusScreen.js (MODIFIED & CORRECTED)
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, FlatList } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, FlatList, Alert } from 'react-native';
+// ★★★ 1. IMPORT apiClient AND REMOVE API_BASE_URL ★★★
+import apiClient from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
-import { API_BASE_URL } from '../../../apiConfig';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { useIsFocused } from '@react-navigation/native';
 import * as Progress from 'react-native-progress';
@@ -18,7 +19,6 @@ const StudentSyllabusNavigator = () => (
     </Stack.Navigator>
 );
 
-// This is the main dashboard screen for the student
 const StudentSyllabusDashboardScreen = ({ navigation }) => {
     const { user } = useAuth();
     const [summary, setSummary] = useState({ Done: 0, Missed: 0, Pending: 0, Total: 0 });
@@ -30,11 +30,10 @@ const StudentSyllabusDashboardScreen = ({ navigation }) => {
         if (!user?.id) return;
         setIsLoading(true);
         try {
-            const response = await fetch(`${API_BASE_URL}/api/syllabus/student/overview/${user.id}`);
-            if (!response.ok) throw new Error("Failed to fetch progress.");
-            const { totalStats, subjectStats } = await response.json();
+            // ★★★ 2. USE apiClient ★★★
+            const response = await apiClient.get(`/syllabus/student/overview/${user.id}`);
+            const { totalStats, subjectStats } = response.data;
 
-            // Process the overall summary (Completed, Missed, Pending)
             const totalSummary = { Done: 0, Missed: 0, Pending: 0, Total: 0 };
             totalStats.forEach(item => {
                 if (item.status === 'Completed') totalSummary.Done = item.count;
@@ -44,7 +43,6 @@ const StudentSyllabusDashboardScreen = ({ navigation }) => {
             });
             setSummary(totalSummary);
 
-            // Process the breakdown by subject
             const subjectMap = new Map();
             subjectStats.forEach(stat => {
                 if (!subjectMap.has(stat.syllabus_id)) {
@@ -58,7 +56,7 @@ const StudentSyllabusDashboardScreen = ({ navigation }) => {
             });
             setSubjects(Array.from(subjectMap.values()));
         } catch (error) { 
-            Alert.alert("Error", error.message);
+            Alert.alert("Error", error.response?.data?.message || "Failed to fetch progress.");
         } finally { 
             setIsLoading(false); 
         }
@@ -120,7 +118,6 @@ const StudentSyllabusDashboardScreen = ({ navigation }) => {
     );
 };
 
-// This screen shows the detailed lesson list for a single subject
 const StudentLessonListScreen = ({ route, navigation }) => {
     const { syllabusId, subjectName } = route.params;
     const { user } = useAuth();
@@ -131,10 +128,10 @@ const StudentLessonListScreen = ({ route, navigation }) => {
         const fetchLessons = async () => {
             setIsLoading(true);
             try {
-                const response = await fetch(`${API_BASE_URL}/api/syllabus/student/subject-details/${syllabusId}/${user.id}`);
-                if (!response.ok) throw new Error("Failed to load lesson details.");
-                setSyllabusDetails(await response.json());
-            } catch (error) { Alert.alert("Error", error.message); }
+                // ★★★ 3. USE apiClient ★★★
+                const response = await apiClient.get(`/syllabus/student/subject-details/${syllabusId}/${user.id}`);
+                setSyllabusDetails(response.data);
+            } catch (error) { Alert.alert("Error", error.response?.data?.message || "Failed to load lesson details."); }
             finally { setIsLoading(false); }
         };
         fetchLessons();
@@ -187,6 +184,7 @@ const SummaryItem = ({ icon, label, count, color, small = false }) => (
     </View>
 );
 
+// Styles remain the same
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#f4f7fa' },
     header: { paddingVertical: 20, paddingTop: 50, backgroundColor: '#3b82f6', alignItems: 'center' },

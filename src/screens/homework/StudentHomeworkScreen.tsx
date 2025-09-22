@@ -1,9 +1,13 @@
+// 📂 File: src/screens/homework/StudentHomeworkScreen.tsx (MODIFIED & CORRECTED)
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, FlatList, StyleSheet, ActivityIndicator, TouchableOpacity, Alert, Linking } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { pick, types, isCancel } from '@react-native-documents/picker';
 import { useAuth } from '../../context/AuthContext';
-import { API_BASE_URL } from '../../../apiConfig';
+// ★★★ 1. IMPORT apiClient AND SERVER_URL, REMOVE API_BASE_URL ★★★
+import apiClient from '../../api/client';
+import { SERVER_URL } from '../../../apiConfig';
 
 const StudentHomeworkScreen = () => {
     const { user } = useAuth();
@@ -15,9 +19,9 @@ const StudentHomeworkScreen = () => {
         if (!user) return;
         setIsLoading(true);
         try {
-            const response = await fetch(`${API_BASE_URL}/api/homework/student/${user.id}/${user.class_group}`);
-            if (!response.ok) throw new Error("Failed to fetch assignments.");
-            const data = await response.json();
+            // ★★★ 2. USE apiClient ★★★
+            const response = await apiClient.get(`/homework/student/${user.id}/${user.class_group}`);
+            const data = response.data;
             
             data.sort((a, b) => {
                 if (a.status === 'Pending' && b.status !== 'Pending') return -1;
@@ -25,7 +29,7 @@ const StudentHomeworkScreen = () => {
                 return new Date(b.due_date).getTime() - new Date(a.due_date).getTime();
             });
             setAssignments(data);
-        } catch (e) { Alert.alert("Error", e.message); } 
+        } catch (e: any) { Alert.alert("Error", e.response?.data?.message || "Failed to fetch assignments."); } 
         finally { setIsLoading(false); }
     }, [user]);
 
@@ -35,20 +39,14 @@ const StudentHomeworkScreen = () => {
         if (!user) return;
 
         try {
-            // 1. Let the user pick a file
-            const result = await pick({
-                type: [types.allFiles],
-                allowMultiSelection: false,
-            });
+            const result = await pick({ type: [types.allFiles], allowMultiSelection: false });
 
-            // ✅ FIX 1: Add a safety check to ensure a file was actually picked.
             if (!result || result.length === 0) {
                 console.log('User closed picker without selecting a file.');
-                return; // Exit the function if no file is selected
+                return;
             }
             const fileToUpload = result[0];
 
-            // 2. If a file is picked, proceed with the upload
             setIsSubmitting(assignmentId);
             const formData = new FormData();
             formData.append('student_id', user.id.toString());
@@ -58,27 +56,20 @@ const StudentHomeworkScreen = () => {
                 name: fileToUpload.name,
             });
 
-            // ✅ FIX 2: Removed the manual `headers` object. This is critical.
-            // `fetch` will automatically set the correct 'multipart/form-data' header with the boundary.
-            const fetchResponse = await fetch(`${API_BASE_URL}/api/homework/submit/${assignmentId}`, {
-                method: 'POST',
-                body: formData,
+            // ★★★ 3. USE apiClient FOR FILE UPLOAD ★★★
+            await apiClient.post(`/homework/submit/${assignmentId}`, formData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
             });
-
-            const resData = await fetchResponse.json();
-            if (!fetchResponse.ok) throw new Error(resData.message || 'An unknown error occurred.');
             
             Alert.alert("Success", "Homework submitted!");
-            fetchAssignments(); // Refresh the list
+            fetchAssignments();
 
-        } catch (err) {
+        } catch (err: any) {
             if (isCancel(err)) {
-                // This will catch the user pressing the back button or cancelling the picker
                 console.log('User cancelled submission.');
             } else {
-                // This will catch network errors or other exceptions
                 console.error("Submission Error:", err);
-                Alert.alert("Error", err.message || "Could not submit file.");
+                Alert.alert("Error", err.response?.data?.message || "Could not submit file.");
             }
         } finally {
             setIsSubmitting(null);
@@ -105,7 +96,6 @@ const StudentHomeworkScreen = () => {
     );
 };
 
-// --- Sub-components (These are unchanged) ---
 const Header = () => (
     <View style={styles.header}>
         <View style={styles.iconCircle}>
@@ -129,7 +119,8 @@ const AssignmentCard = ({ item, onSubmit, isSubmitting }) => {
     };
 
     const status = getStatusInfo();
-    const handleViewAttachment = () => { if(item.attachment_path) Linking.openURL(`${API_BASE_URL}${item.attachment_path}`); };
+    // ★★★ 4. USE SERVER_URL for attachments ★★★
+    const handleViewAttachment = () => { if(item.attachment_path) Linking.openURL(`${SERVER_URL}${item.attachment_path}`); };
 
     return (
         <View style={[styles.card, { borderLeftColor: status.color }]}>
@@ -181,6 +172,7 @@ const DetailRow = ({ icon, label, value }) => (
     </View>
 );
 
+// Styles remain the same
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#f4f6f8' },
     centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },

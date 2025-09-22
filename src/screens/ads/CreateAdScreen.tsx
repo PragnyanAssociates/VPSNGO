@@ -1,7 +1,10 @@
+// 📂 File: src/screens/ads/CreateAdScreen.tsx (FINAL & VERIFIED)
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, TextInput, Button, StyleSheet, Alert, Image, ActivityIndicator, TouchableOpacity, ScrollView, SafeAreaView } from 'react-native';
 import { launchImageLibrary, Asset } from 'react-native-image-picker';
-import apiClient, { API_BASE_URL } from '../../api/client';
+import apiClient from '../../api/client';
+import { SERVER_URL } from '../../../apiConfig';
 import { useAuth } from '../../context/AuthContext';
 
 interface AdPaymentDetails {
@@ -14,20 +17,14 @@ interface AdPaymentDetails {
 }
 
 const CreateAdScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
-    // --- STATE MANAGEMENT ---
     const { user } = useAuth();
     const isAdmin = user?.role === 'admin';
-
     const [activeTab, setActiveTab] = useState<'create' | 'bank'>('create');
-    // REMOVED: const [adType, setAdType] = useState<'motion' | 'top_notch'>('motion');
     const [adText, setAdText] = useState('');
     const [adImage, setAdImage] = useState<Asset | null>(null);
-    
     const [paymentProof, setPaymentProof] = useState<Asset | null>(null);
     const [paymentText, setPaymentText] = useState('');
-
     const [dbPaymentDetails, setDbPaymentDetails] = useState<AdPaymentDetails>({});
-    
     const [formDetails, setFormDetails] = useState<AdPaymentDetails>({
         ad_amount: '',
         account_holder_name: '',
@@ -35,16 +32,14 @@ const CreateAdScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         ifsc_code: '',
         cif_code: ''
     });
-
     const [newQrImage, setNewQrImage] = useState<Asset | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isDetailsLoading, setIsDetailsLoading] = useState(true);
 
-    // --- DATA FETCHING ---
     const fetchAdPaymentDetails = useCallback(async () => {
         setIsDetailsLoading(true);
         try {
-            const { data } = await apiClient.get<AdPaymentDetails>('/api/ad-payment-details');
+            const { data } = await apiClient.get<AdPaymentDetails>('/ad-payment-details');
             setDbPaymentDetails(data || {});
             setFormDetails({
                 ad_amount: String(data?.ad_amount || ''),
@@ -62,7 +57,6 @@ const CreateAdScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
 
     useEffect(() => { fetchAdPaymentDetails(); }, [fetchAdPaymentDetails]);
 
-    // --- HANDLER FUNCTIONS ---
     const handleCreateAd = async () => {
         if (!adImage) {
             Alert.alert('Missing Ad Image', 'Please select an image for your advertisement.');
@@ -75,7 +69,6 @@ const CreateAdScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
 
         setIsSubmitting(true);
         const formData = new FormData();
-        // CHANGED: Hardcoded 'top_notch' as the ad_type
         formData.append('ad_type', 'top_notch'); 
         formData.append('ad_content_text', adText);
         formData.append('ad_content_image', { uri: adImage.uri, type: adImage.type, name: adImage.fileName });
@@ -86,7 +79,7 @@ const CreateAdScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         }
 
         try {
-            const { data } = await apiClient.post('/api/ads', formData, {
+            const { data } = await apiClient.post('/ads', formData, {
                 headers: { 'Content-Type': 'multipart/form-data' },
             });
             Alert.alert('Success!', data.message, [{ text: 'OK', onPress: () => navigation.goBack() }]);
@@ -99,10 +92,9 @@ const CreateAdScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     };
     
     const handleSaveChanges = async () => {
-        // ... (This function remains unchanged)
         setIsSubmitting(true);
         const formData = new FormData();
-        formData.append('adAmount', formDetails.ad_amount || '');
+        formData.append('adAmount', String(formDetails.ad_amount || ''));
         formData.append('accountHolderName', formDetails.account_holder_name || '');
         formData.append('accountNumber', formDetails.account_number || '');
         formData.append('ifscCode', formDetails.ifsc_code || '');
@@ -111,7 +103,7 @@ const CreateAdScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
             formData.append('qrCodeImage', { uri: newQrImage.uri, type: newQrImage.type, name: newQrImage.fileName });
         }
         try {
-            const { data } = await apiClient.post('/api/admin/ad-payment-details', formData, {
+            const { data } = await apiClient.post('/admin/ad-payment-details', formData, {
                 headers: { 'Content-Type': 'multipart/form-data' }
             });
             Alert.alert('Success', data.message);
@@ -126,9 +118,6 @@ const CreateAdScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
 
     const renderCreateAdTab = () => (
         <ScrollView contentContainerStyle={styles.tabContentContainer}>
-            {/* REMOVED: Ad Type selection UI */}
-            
-            {/* CHANGED: Step numbers are updated */}
             <Text style={styles.label}>1. Upload Ad Image</Text>
             <TouchableOpacity style={styles.imagePicker} onPress={() => launchImageLibrary({ mediaType: 'photo' }, r => r.assets && setAdImage(r.assets[0]))}>
                 {adImage ? <Image source={{ uri: adImage.uri }} style={styles.preview} /> : <Text style={styles.imagePickerText}>Tap to select an image</Text>}
@@ -158,7 +147,6 @@ const CreateAdScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         </ScrollView>
     );
 
-    // ... (renderBankDetailsTab and the return statement remain the same)
     const renderBankDetailsTab = () => {
         if (isDetailsLoading) return <ActivityIndicator size="large" style={{ marginTop: 50 }} />;
         if (isAdmin) {
@@ -166,7 +154,7 @@ const CreateAdScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                 <ScrollView contentContainerStyle={styles.tabContentContainer}>
                     <View style={styles.detailsCard}>
                         <Image 
-                            source={newQrImage?.uri ? { uri: newQrImage.uri } : (dbPaymentDetails.qr_code_url ? { uri: `${API_BASE_URL}${dbPaymentDetails.qr_code_url}` } : require('../../assets/placeholder.png'))}
+                            source={newQrImage?.uri ? { uri: newQrImage.uri } : (dbPaymentDetails.qr_code_url ? { uri: `${SERVER_URL}${dbPaymentDetails.qr_code_url}` } : require('../../assets/placeholder.png'))}
                             style={styles.qrImage}
                         />
                         <Button title="Change QR Code" onPress={() => launchImageLibrary({ mediaType: 'photo' }, r => r.assets && setNewQrImage(r.assets[0]))} />
@@ -200,7 +188,7 @@ const CreateAdScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
             <ScrollView contentContainerStyle={styles.tabContentContainer}>
                 <Text style={styles.infoText}>Use these details to pay. After paying, upload the screenshot in the "Create New Ad" tab.</Text>
                 <View style={styles.detailsCard}>
-                    {dbPaymentDetails.qr_code_url && <Image source={{ uri: `${API_BASE_URL}${dbPaymentDetails.qr_code_url}` }} style={styles.qrImage} />}
+                    {dbPaymentDetails.qr_code_url && <Image source={{ uri: `${SERVER_URL}${dbPaymentDetails.qr_code_url}` }} style={styles.qrImage} />}
                     {dbPaymentDetails.ad_amount && (
                          <View style={styles.detailItem}>
                             <Text style={styles.detailLabel}>Ad Amount</Text>
@@ -244,8 +232,6 @@ const CreateAdScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     );
 };
 
-
-// --- STYLES ---
 const styles = StyleSheet.create({
     safeArea: { flex: 1, backgroundColor: '#f0f2f5' },
     tabSelectorContainer: { flexDirection: 'row', backgroundColor: '#fff', margin: 15, borderRadius: 10, elevation: 2, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 5, },
@@ -257,12 +243,6 @@ const styles = StyleSheet.create({
     tabContentContainer: { padding: 20, paddingTop: 10, paddingBottom: 40 },
     label: { fontSize: 16, fontWeight: '600', color: '#333', marginTop: 15, marginBottom: 10 },
     input: { borderWidth: 1, borderColor: '#ddd', padding: 12, marginBottom: 20, borderRadius: 8, backgroundColor: '#fff', fontSize: 16 },
-    // REMOVED: Unused toggle styles
-    // toggleContainer: { ... },
-    // toggleButton: { ... },
-    // toggleActive: { ... },
-    // toggleText: { ... },
-    // toggleTextActive: { ... },
     imagePicker: { height: 150, width: '100%', borderWidth: 2, borderColor: '#ccc', borderStyle: 'dashed', borderRadius: 8, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fafafa' },
     imagePickerText: { color: '#666' },
     preview: { width: '100%', height: '100%', borderRadius: 6, resizeMode: 'contain' },

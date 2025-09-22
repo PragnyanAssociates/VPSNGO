@@ -1,8 +1,10 @@
+// 📂 File: src/screens/ptm/StudentPTMScreen.tsx (MODIFIED & CORRECTED)
+
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, FlatList, ActivityIndicator, StyleSheet, RefreshControl, TouchableOpacity, Linking, Alert } from 'react-native';
-import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import { View, Text, FlatList, ActivityIndicator, StyleSheet, RefreshControl, Linking, Alert } from 'react-native';
+// ★★★ 1. IMPORT apiClient AND REMOVE API_BASE_URL ★★★
+import apiClient from '../../api/client';
 import { MeetingCard, Meeting } from './MeetingCard';
-import { API_BASE_URL } from '../../../apiConfig';
 
 const StudentPTMScreen = () => {
   const [meetings, setMeetings] = useState<Meeting[]>([]);
@@ -13,17 +15,11 @@ const StudentPTMScreen = () => {
   const fetchMeetings = useCallback(async () => {
     try {
       setError(null);
-      const response = await fetch(`${API_BASE_URL}/api/ptm`);
-
-      if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.message || 'Could not fetch meeting schedules.');
-      }
-
-      const data: Meeting[] = await response.json();
-      setMeetings(data);
+      // ★★★ 2. USE apiClient ★★★
+      const response = await apiClient.get('/ptm');
+      setMeetings(response.data);
     } catch (err: any) {
-      setError(err.message);
+      setError(err.response?.data?.message || 'Could not fetch meeting schedules.');
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
@@ -76,50 +72,16 @@ const StudentPTMScreen = () => {
   );
 };
 
+// Styles remain the same
 const styles = StyleSheet.create({
-    center: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        padding: 20
-    },
-    errorText: {
-        color: 'red',
-        fontSize: 16,
-        textAlign: 'center'
-    },
-    container: {
-        flex: 1,
-        backgroundColor: '#f0f4f7'
-    },
-    header: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        padding: 20,
-        borderBottomWidth: 1,
-        borderBottomColor: '#e2e8f0',
-        backgroundColor: 'white',
-        marginBottom: 10,
-    },
-    headerIcon: {
-        fontSize: 32,
-        marginRight: 15,
-        color: '#5a67d8'
-    },
-    headerTitle: {
-        fontSize: 22,
-        fontWeight: 'bold',
-        color: '#2d3748'
-    },
-    headerSubtitle: {
-        fontSize: 14,
-        color: '#718096'
-    },
-    emptyText: {
-        textAlign: 'center',
-        fontSize: 16,
-        color: '#718096'
-    }
+    center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
+    errorText: { color: 'red', fontSize: 16, textAlign: 'center' },
+    container: { flex: 1, backgroundColor: '#f0f4f7' },
+    header: { flexDirection: 'row', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: '#e2e8f0', backgroundColor: 'white', marginBottom: 10 },
+    headerIcon: { fontSize: 32, marginRight: 15, color: '#5a67d8' },
+    headerTitle: { fontSize: 22, fontWeight: 'bold', color: '#2d3748' },
+    headerSubtitle: { fontSize: 14, color: '#718096' },
+    emptyText: { textAlign: 'center', fontSize: 16, color: '#718096' }
 });
 
 export default StudentPTMScreen;

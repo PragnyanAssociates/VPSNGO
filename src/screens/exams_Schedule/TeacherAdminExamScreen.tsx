@@ -1,19 +1,17 @@
-// 📂 File: src/screens/exams/TeacherAdminExamScreen.tsx (FINAL - With List & Detail Views)
+// 📂 File: src/screens/exams/TeacherAdminExamScreen.tsx (MODIFIED & CORRECTED)
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, FlatList, StyleSheet, ActivityIndicator, TouchableOpacity, Alert, Modal, TextInput, ScrollView, RefreshControl } from 'react-native';
+import { View, Text, FlatList, StyleSheet, ActivityIndicator, TouchableOpacity, Alert, Modal, TextInput, ScrollView } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { Picker } from '@react-native-picker/picker';
 import { useAuth } from '../../context/AuthContext';
-import { API_BASE_URL } from '../../../apiConfig';
+// ★★★ 1. IMPORT apiClient AND REMOVE API_BASE_URL ★★★
+import apiClient from '../../api/client';
 
 // --- Reusable Components ---
-
-// A single row in our dynamic form
 const defaultRow = { date: '', subject: '', time: '', block: '' };
 const defaultSpecialRow = { type: 'special', mainText: 'Teacher Work Day', subText: '(No school for students)' };
 
-// The beautiful table view, now reusable for the teacher
 const ScheduleTableView = ({ schedule }: { schedule: any }) => (
     <View style={styles.scheduleContainer}>
         <Text style={styles.scheduleTitle}>{schedule.title}</Text>
@@ -48,70 +46,61 @@ const ScheduleTableView = ({ schedule }: { schedule: any }) => (
     </View>
 );
 
-
 // --- Main Component with View Logic ---
 const TeacherAdminExamScreen = () => {
     const { user } = useAuth();
-    const [view, setView] = useState('list'); // 'list' or 'detail'
+    const [view, setView] = useState('list');
     const [selectedSchedule, setSelectedSchedule] = useState<any>(null);
-
     const [schedules, setSchedules] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isModalVisible, setIsModalVisible] = useState(false);
-    
-    // State for the create/edit form
     const [editingSchedule, setEditingSchedule] = useState<any>(null);
     const [title, setTitle] = useState('');
     const [subtitle, setSubtitle] = useState('');
     const [selectedClass, setSelectedClass] = useState('');
     const [rows, setRows] = useState<any[]>([defaultRow]);
     const [isSaving, setIsSaving] = useState(false);
-    
-    // Data for the class picker
     const [studentClasses, setStudentClasses] = useState([]);
 
     const fetchSchedules = useCallback(async () => {
         setIsLoading(true);
         try {
-            const response = await fetch(`${API_BASE_URL}/api/exam-schedules`);
-            if (!response.ok) throw new Error("Failed to fetch schedules.");
-            setSchedules(await response.json());
-        } catch (e: any) { Alert.alert("Error", e.message); } 
+            // ★★★ 2. USE apiClient FOR ALL FETCH CALLS ★★★
+            const response = await apiClient.get('/exam-schedules');
+            setSchedules(response.data);
+        } catch (e: any) { Alert.alert("Error", e.response?.data?.message || "Failed to fetch schedules."); } 
         finally { setIsLoading(false); }
     }, []);
 
     const fetchStudentClasses = async () => {
         try {
-            const response = await fetch(`${API_BASE_URL}/api/student-classes`);
-            if(response.ok) setStudentClasses(await response.json());
+            const response = await apiClient.get('/student-classes');
+            setStudentClasses(response.data);
         } catch (e) { console.error("Error fetching student classes:", e); }
     };
 
     useEffect(() => {
-        if (view === 'list') { // Only refetch when returning to the list
+        if (view === 'list') {
             fetchSchedules();
         }
-        fetchStudentClasses(); // Fetch classes once
+        fetchStudentClasses();
     }, [view]);
 
-    // --- Navigation Logic ---
     const viewDetails = async (scheduleItem: any) => {
         try {
-            const response = await fetch(`${API_BASE_URL}/api/exam-schedules/${scheduleItem.id}`);
-            if(!response.ok) throw new Error("Could not fetch schedule details");
-            const fullSchedule = await response.json();
-            setSelectedSchedule(fullSchedule);
+            const response = await apiClient.get(`/exam-schedules/${scheduleItem.id}`);
+            setSelectedSchedule(response.data);
             setView('detail');
         } catch(e: any) {
-            Alert.alert("Error", e.message);
+            Alert.alert("Error", e.response?.data?.message || "Could not fetch schedule details");
         }
     };
+
     const backToList = () => {
         setSelectedSchedule(null);
         setView('list');
     };
 
-    // --- Dynamic Form Actions ---
     const handleRowChange = (index: number, field: string, value: string) => {
         const newRows = [...rows];
         newRows[index][field] = value;
@@ -120,7 +109,6 @@ const TeacherAdminExamScreen = () => {
     const addRow = (type = 'normal') => setRows(prev => [...prev, type === 'special' ? defaultSpecialRow : { ...defaultRow }]);
     const removeRow = (index: number) => setRows(prev => prev.filter((_, i) => i !== index));
 
-    // --- Modal and CRUD Actions ---
     const resetForm = () => {
         setEditingSchedule(null);
         setTitle('');
@@ -136,8 +124,8 @@ const TeacherAdminExamScreen = () => {
 
     const openEditModal = async (schedule: any) => {
         try {
-            const response = await fetch(`${API_BASE_URL}/api/exam-schedules/${schedule.id}`);
-            const data = await response.json();
+            const response = await apiClient.get(`/exam-schedules/${schedule.id}`);
+            const data = response.data;
             setEditingSchedule(data);
             setTitle(data.title);
             setSubtitle(data.subtitle);
@@ -152,10 +140,10 @@ const TeacherAdminExamScreen = () => {
             { text: "Cancel", style: 'cancel' },
             { text: "Delete", style: 'destructive', onPress: async () => {
                 try {
-                    await fetch(`${API_BASE_URL}/api/exam-schedules/${schedule.id}`, { method: 'DELETE' });
+                    await apiClient.delete(`/exam-schedules/${schedule.id}`);
                     Alert.alert("Success", "Schedule deleted.");
                     fetchSchedules();
-                } catch(e: any) { Alert.alert("Error", e.message); }
+                } catch(e: any) { Alert.alert("Error", e.response?.data?.message || e.message); }
             }},
         ]);
     };
@@ -165,20 +153,20 @@ const TeacherAdminExamScreen = () => {
             return Alert.alert("Validation Error", "Title, Class, and at least one row are required.");
         }
         setIsSaving(true);
-        const url = editingSchedule ? `${API_BASE_URL}/api/exam-schedules/${editingSchedule.id}` : `${API_BASE_URL}/api/exam-schedules`;
-        const method = editingSchedule ? 'PUT' : 'POST';
         const payload = { title, subtitle, class_group: selectedClass, schedule_data: rows, created_by_id: user?.id };
         try {
-            const response = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-            if (!response.ok) throw new Error((await response.json()).message);
+            if (editingSchedule) {
+                await apiClient.put(`/exam-schedules/${editingSchedule.id}`, payload);
+            } else {
+                await apiClient.post('/exam-schedules', payload);
+            }
             Alert.alert("Success", `Schedule ${editingSchedule ? 'updated' : 'created'}!`);
             setIsModalVisible(false);
             fetchSchedules();
-        } catch (e: any) { Alert.alert("Error", e.message); } 
+        } catch (e: any) { Alert.alert("Error", e.response?.data?.message || e.message); } 
         finally { setIsSaving(false); }
     };
 
-    // --- Render correct view based on state ---
     if (view === 'detail' && selectedSchedule) {
         return (
             <ScrollView style={styles.container}>
@@ -217,7 +205,7 @@ const TeacherAdminExamScreen = () => {
                     </View>
                 )}
                 ListHeaderComponent={<Text style={styles.headerTitle}>Published Exam Schedules</Text>}
-                ListEmptyComponent={<Text style={styles.emptyText}>No schedules created yet.</Text>}
+                ListEmptyComponent={!isLoading && <Text style={styles.emptyText}>No schedules created yet.</Text>}
                 onRefresh={fetchSchedules}
                 refreshing={isLoading}
                 contentContainerStyle={{ paddingBottom: 80 }}
@@ -254,7 +242,7 @@ const TeacherAdminExamScreen = () => {
     );
 };
 
-
+// Styles remain the same
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#f4f6f8' },
     backButton: { flexDirection: 'row', alignItems: 'center', padding: 15 },
@@ -269,7 +257,6 @@ const styles = StyleSheet.create({
     actionButton: { padding: 8, marginLeft: 8 },
     fab: { position: 'absolute', right: 20, bottom: 20, backgroundColor: '#1e88e5', width: 60, height: 60, borderRadius: 30, justifyContent: 'center', alignItems: 'center', elevation: 4 },
     emptyText: { textAlign: 'center', marginTop: 50, fontSize: 16, color: '#777' },
-    // Modal Styles
     modalView: { flex: 1, padding: 20, backgroundColor: '#f9f9f9' },
     modalTitle: { fontSize: 22, fontWeight: 'bold', marginBottom: 20, textAlign: 'center' },
     label: { fontSize: 16, fontWeight: '500', color: '#444', marginBottom: 5, marginLeft: 5, marginTop: 10 },
@@ -286,7 +273,6 @@ const styles = StyleSheet.create({
     saveBtn: { backgroundColor: '#388e3c' },
     cancelBtn: { backgroundColor: '#6c757d' },
     btnText: { color: '#fff', fontWeight: 'bold' },
-    // Reusable Table Styles
     scheduleContainer: { backgroundColor: '#ffffff', borderRadius: 12, margin: 15, marginTop: 0, padding: 15, elevation: 3, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }},
     scheduleTitle: { fontSize: 22, fontWeight: 'bold', textAlign: 'center', color: '#212121' },
     scheduleSubtitle: { fontSize: 16, color: '#757575', textAlign: 'center', marginBottom: 20 },

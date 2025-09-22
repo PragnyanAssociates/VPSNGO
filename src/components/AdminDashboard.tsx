@@ -1,4 +1,4 @@
-// 📂 File: src/components/AdminDashboard.tsx (FINAL AND CORRECTED)
+// 📂 File: src/components/AdminDashboard.tsx (FINAL & VERIFIED)
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, SafeAreaView, Dimensions, Image, Platform, TextInput } from 'react-native';
@@ -6,7 +6,9 @@ import { useIsFocused } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { useAuth } from '../context/AuthContext';
-import { API_BASE_URL } from '../../apiConfig';
+// ★★★ CORRECT IMPORTS: Added apiClient and SERVER_URL, removed API_BASE_URL ★★★
+import { SERVER_URL } from '../../apiConfig';
+import apiClient from '../api/client';
 
 // --- COMPONENT IMPORTS ---
 import NotificationsScreen from '../screens/NotificationsScreen';
@@ -61,26 +63,23 @@ const DANGER_COLOR = '#ef4444';
 
 const AdminDashboard = ({ navigation }) => {
   const [activeTab, setActiveTab] = useState('home');
-  const [searchQuery, setSearchQuery] = useState(''); // ★ 1. STATE FOR SEARCH INPUT
-  const { user, token, logout } = useAuth();
+  const [searchQuery, setSearchQuery] = useState('');
+  const { user, logout } = useAuth();
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
   const isFocused = useIsFocused();
 
   const fetchUnreadCount = useCallback(async () => {
-    if (!user || !token) return;
+    if (!user) return;
     try {
-      const response = await fetch(`${API_BASE_URL}/api/notifications`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setUnreadNotificationsCount(data.filter(n => !n.is_read).length);
-      }
+      // ★★★ API CALL FIXED: Using apiClient ★★★
+      const response = await apiClient.get('/notifications');
+      const unreadCount = response.data.filter(n => !n.is_read).length;
+      setUnreadNotificationsCount(unreadCount);
     } catch (error) {
       console.error('Error fetching notification count:', error);
     }
-  }, [user, token]);
+  }, [user]);
 
   useEffect(() => {
     if (isFocused) {
@@ -92,22 +91,24 @@ const AdminDashboard = ({ navigation }) => {
     const fetchProfile = async () => {
       if (!user) return;
       try {
-        const response = await fetch(`${API_BASE_URL}/api/profiles/${user.id}`);
-        if (response.ok) {
-          setProfile(await response.json());
-        } else { console.error("Failed to fetch profile"); }
-      } catch (error) { console.error("Error fetching profile:", error); }
+        // ★★★ API CALL FIXED: Using apiClient with proper error handling ★★★
+        const response = await apiClient.get(`/profiles/${user.id}`);
+        setProfile(response.data);
+      } catch (error: any) {
+        // ★★★ ERROR HANDLING IMPROVED: Shows an alert to the user ★★★
+        Alert.alert('Error', error.response?.data?.message || 'Could not fetch profile.');
+      }
     };
     if (isFocused) {
       fetchProfile();
     }
   }, [user, isFocused]);
 
+  // ★★★ IMAGE URL FIXED: Using SERVER_URL for images from the backend ★★★
   const profileImageSource = profile?.profile_image_url
-    ? { uri: `${API_BASE_URL}${profile.profile_image_url}` }
+    ? { uri: `${SERVER_URL}${profile.profile_image_url}` }
     : require('../assets/profile.png');
 
-  // ★ 2. UPDATED ICONS TO MATCH THE PROVIDED IMAGE
   const allQuickAccessItems = [
     { id: 'qa1', title: 'Pre-Admissions', imageSource: 'https://cdn-icons-png.flaticon.com/128/16495/16495874.png', navigateToTab: 'PreAdmissionsScreen' },
     { id: 'qa2', title: 'Alumni', imageSource: 'https://cdn-icons-png.flaticon.com/128/2641/2641333.png', navigateToTab: 'AlumniScreen' },
@@ -141,9 +142,8 @@ const AdminDashboard = ({ navigation }) => {
     { id: 'qa26', title: 'Group Chat', imageSource: 'https://cdn-icons-png.flaticon.com/128/745/745205.png', navigateToTab: 'GroupChatScreen' },
   ];
 
-  const [filteredItems, setFilteredItems] = useState(allQuickAccessItems); // ★ 3. STATE FOR FILTERED ITEMS
+  const [filteredItems, setFilteredItems] = useState(allQuickAccessItems);
 
-  // ★ 4. EFFECT TO FILTER ITEMS BASED ON SEARCH QUERY
   useEffect(() => {
     if (searchQuery.trim() === '') {
       setFilteredItems(allQuickAccessItems);
@@ -154,7 +154,7 @@ const AdminDashboard = ({ navigation }) => {
       );
       setFilteredItems(filtered);
     }
-  }, [searchQuery]); // Runs only when searchQuery changes
+  }, [searchQuery]);
 
   const handleLogout = () => { Alert.alert("Logout", "Are you sure?", [{ text: "Cancel", style: "cancel" }, { text: "Logout", onPress: logout, style: "destructive" }]); };
   const handleBellIconClick = () => setActiveTab('allNotifications');
@@ -170,7 +170,6 @@ const AdminDashboard = ({ navigation }) => {
       case 'home': 
         return ( 
           <>
-            {/* ★ 5. SEARCH BAR UI */}
             <View style={styles.searchContainer}>
               <MaterialIcons name="search" size={22} color={TEXT_COLOR_MEDIUM} style={styles.searchIcon} />
               <TextInput
@@ -179,12 +178,11 @@ const AdminDashboard = ({ navigation }) => {
                 placeholderTextColor={TEXT_COLOR_MEDIUM}
                 value={searchQuery}
                 onChangeText={setSearchQuery}
-                clearButtonMode="while-editing" // iOS only
+                clearButtonMode="while-editing"
               />
             </View>
             <ScrollView contentContainerStyle={styles.contentScrollViewContainer}>
               <View style={styles.dashboardGrid}>
-                {/* ★ 6. RENDER FILTERED ITEMS */}
                 {filteredItems.map(item => ( 
                   <DashboardSectionCard 
                     key={item.id} 
@@ -202,7 +200,6 @@ const AdminDashboard = ({ navigation }) => {
                   /> 
                 ))}
               </View>
-              {/* ★ 7. SHOW MESSAGE IF NO RESULTS FOUND */}
               {filteredItems.length === 0 && (
                 <View style={styles.noResultsContainer}>
                     <Text style={styles.noResultsText}>No modules found for "{searchQuery}"</Text>
@@ -243,7 +240,6 @@ const AdminDashboard = ({ navigation }) => {
       case 'GroupChatScreen': return ( <><ContentScreenHeader title="Group Chat" onBack={handleBack} /><GroupChatScreen /></> );
       case 'OnlineClassScreen': return ( <><ContentScreenHeader title="Online Class" onBack={handleBack} /><OnlineClassScreen /></> );
       case 'PreAdmissionsScreen': return ( <><ContentScreenHeader title="Pre-Admissions" onBack={handleBack} /><PreAdmissionsScreen /></> );
-      
       
       default: return ( <View style={styles.fallbackContent}><Text style={styles.fallbackText}>Content for '{activeTab}' is not available.</Text><TouchableOpacity onPress={handleBack}><Text style={styles.fallbackLink}>Go to Home</Text></TouchableOpacity></View> );
     }
@@ -293,7 +289,6 @@ const BottomNavItem = ({ icon, label, isActive, onPress }) => (
     </TouchableOpacity>
 );
 
-// Styles
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: TERTIARY_COLOR, },
   topBar: { backgroundColor: SECONDARY_COLOR, paddingHorizontal: 15, paddingVertical: Platform.OS === 'ios' ? 12 : 15, borderBottomLeftRadius: 20, borderBottomRightRadius: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3, borderBottomWidth: 1, borderBottomColor: BORDER_COLOR, },
@@ -309,45 +304,11 @@ const styles = StyleSheet.create({
   contentHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 15, paddingVertical: 12, backgroundColor: SECONDARY_COLOR, borderBottomWidth: 1, borderBottomColor: BORDER_COLOR, },
   backButtonGlobal: { padding: 5, },
   contentHeaderTitle: { fontSize: 18, fontWeight: 'bold', color: PRIMARY_COLOR, textAlign: 'center', flex: 1, },
-  // ★ 8. NEW STYLES FOR SEARCH BAR
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    marginHorizontal: CONTENT_HORIZONTAL_PADDING,
-    marginTop: 15,
-    marginBottom: 10,
-    borderColor: BORDER_COLOR,
-    borderWidth: 1,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 1.84,
-    elevation: 2,
-  },
-  searchIcon: {
-    marginLeft: 15,
-  },
-  searchInput: {
-    flex: 1,
-    height: 48,
-    paddingLeft: 10,
-    fontSize: 16,
-    color: TEXT_COLOR_DARK,
-  },
-  noResultsContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 50,
-    paddingHorizontal: 20,
-  },
-  noResultsText: {
-    fontSize: 16,
-    color: TEXT_COLOR_MEDIUM,
-    textAlign: 'center',
-  },
+  searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, marginHorizontal: CONTENT_HORIZONTAL_PADDING, marginTop: 15, marginBottom: 10, borderColor: BORDER_COLOR, borderWidth: 1, shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 1.84, elevation: 2, },
+  searchIcon: { marginLeft: 15, },
+  searchInput: { flex: 1, height: 48, paddingLeft: 10, fontSize: 16, color: TEXT_COLOR_DARK, },
+  noResultsContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', marginTop: 50, paddingHorizontal: 20, },
+  noResultsText: { fontSize: 16, color: TEXT_COLOR_MEDIUM, textAlign: 'center', },
   contentScrollViewContainer: { paddingHorizontal: CONTENT_HORIZONTAL_PADDING, paddingBottom: BOTTOM_NAV_HEIGHT + 20, flexGrow: 1, },
   dashboardGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', },
   dashboardCard: { width: (windowWidth - (CONTENT_HORIZONTAL_PADDING * 2) - (CARD_GAP * 2)) / 3, borderRadius: 12, paddingVertical: 15, marginBottom: CARD_GAP, alignItems: 'center', justifyContent: 'flex-start', height: 110, backgroundColor: '#fff', shadowColor: "#000", shadowOffset: { width: 0, height: 1, }, shadowOpacity: 0.10, shadowRadius: 1.84, elevation: 2, },

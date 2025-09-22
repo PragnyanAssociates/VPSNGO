@@ -1,7 +1,11 @@
+// 📂 File: src/screens/study-materials/StudentMaterialsScreen.tsx (MODIFIED & CORRECTED)
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert, Linking } from 'react-native';
+// ★★★ 1. IMPORT apiClient AND SERVER_URL, REMOVE API_BASE_URL ★★★
+import apiClient from '../../api/client';
+import { SERVER_URL } from '../../../apiConfig';
 import { useAuth } from '../../context/AuthContext';
-import { API_BASE_URL } from '../../../apiConfig';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { useIsFocused } from '@react-navigation/native';
 
@@ -15,11 +19,11 @@ const StudentMaterialsScreen = () => {
         if (!user?.class_group) return;
         setIsLoading(true);
         try {
-            const response = await fetch(`${API_BASE_URL}/api/study-materials/student/${user.class_group}`);
-            if (!response.ok) throw new Error("Failed to fetch study materials.");
-            setMaterials(await response.json());
+            // ★★★ 2. USE apiClient ★★★
+            const response = await apiClient.get(`/study-materials/student/${user.class_group}`);
+            setMaterials(response.data);
         } catch (error: any) {
-            Alert.alert("Error", error.message);
+            Alert.alert("Error", error.response?.data?.message || "Failed to fetch study materials.");
         } finally {
             setIsLoading(false);
         }
@@ -56,7 +60,8 @@ const StudentMaterialsScreen = () => {
                 {item.file_path && (
                     <TouchableOpacity 
                         style={styles.downloadButton} 
-                        onPress={() => Linking.openURL(`${API_BASE_URL}${item.file_path}`)}
+                        // ★★★ 3. USE SERVER_URL FOR FILES ★★★
+                        onPress={() => Linking.openURL(`${SERVER_URL}${item.file_path}`)}
                     >
                         <MaterialIcons name="download" size={20} color="#fff" />
                         <Text style={styles.downloadButtonText}>Download</Text>
@@ -99,6 +104,7 @@ const StudentMaterialsScreen = () => {
     );
 };
 
+// Styles remain the same
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#eef2f5' },
     listContentContainer: { paddingHorizontal: 8, paddingBottom: 20 },
@@ -111,31 +117,11 @@ const styles = StyleSheet.create({
     cardInfo: { fontSize: 12, color: '#78909c', marginBottom: 4 },
     cardDate: { fontSize: 12, color: '#78909c', marginBottom: 12 },
     cardDescription: { fontSize: 13, color: '#455a64', lineHeight: 18, flexGrow: 1, marginBottom: 15 },
-    buttonContainer: {
-    },
-    downloadButton: {
-        flexDirection: 'row',
-        backgroundColor: '#0288d1',
-        paddingVertical: 10,
-        borderRadius: 8,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginTop: 5,
-    },
-    linkButton: {
-        backgroundColor: '#c2185b',
-    },
-    downloadButtonText: {
-        color: '#fff',
-        fontWeight: 'bold',
-        marginLeft: 8,
-    },
-    emptyText: {
-        textAlign: 'center',
-        marginTop: 50,
-        fontSize: 16,
-        color: '#666',
-    },
+    buttonContainer: {},
+    downloadButton: { flexDirection: 'row', backgroundColor: '#0288d1', paddingVertical: 10, borderRadius: 8, justifyContent: 'center', alignItems: 'center', marginTop: 5, },
+    linkButton: { backgroundColor: '#c2185b' },
+    downloadButtonText: { color: '#fff', fontWeight: 'bold', marginLeft: 8 },
+    emptyText: { textAlign: 'center', marginTop: 50, fontSize: 16, color: '#666' },
 });
 
 export default StudentMaterialsScreen;

@@ -1,9 +1,10 @@
-// 📂 File: src/screens/ads/AdminAdDashboardScreen.tsx (UPDATED with 'Review' Tab)
+// 📂 File: src/screens/ads/AdminAdDashboardScreen.tsx (FINAL & VERIFIED)
 
 import React, { useState, useCallback, useMemo } from 'react';
 import { View, Text, FlatList, StyleSheet, Alert, ActivityIndicator, Image, TouchableOpacity, Modal, SafeAreaView } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import apiClient, { API_BASE_URL } from '../../api/client';
+import apiClient from '../../api/client';
+import { SERVER_URL } from '../../../apiConfig';
 
 interface AdForAdmin {
     id: number;
@@ -16,9 +17,7 @@ interface AdForAdmin {
 }
 
 const AdminAdDashboardScreen: React.FC = () => {
-    // CHANGED: State for active tab now includes 'review' and defaults to it.
     const [activeTab, setActiveTab] = useState<'review' | 'current' | 'history'>('review');
-    
     const [ads, setAds] = useState<AdForAdmin[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -26,7 +25,7 @@ const AdminAdDashboardScreen: React.FC = () => {
     const fetchAds = useCallback(async () => {
         setIsLoading(true);
         try {
-            const { data } = await apiClient.get<AdForAdmin[]>('/api/admin/ads');
+            const { data } = await apiClient.get<AdForAdmin[]>('/admin/ads');
             setAds(data);
         } catch (error: any) {
             Alert.alert('Error', error.response?.data?.message || 'Could not fetch ads.');
@@ -42,7 +41,7 @@ const AdminAdDashboardScreen: React.FC = () => {
         Alert.alert(`Confirm Action`, `Are you sure you want to ${actionVerb} this ad?`,
             [{ text: 'Cancel' }, { text: 'Confirm', onPress: async () => {
                 try {
-                    await apiClient.put(`/api/admin/ads/${adId}/status`, { status });
+                    await apiClient.put(`/admin/ads/${adId}/status`, { status });
                     Alert.alert('Success', `Ad has been ${status}.`);
                     fetchAds();
                 } catch (error: any) {
@@ -56,7 +55,7 @@ const AdminAdDashboardScreen: React.FC = () => {
         Alert.alert(`Confirm Deletion`, `Are you sure you want to permanently delete this ad? This action cannot be undone.`,
             [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: async () => {
                 try {
-                    await apiClient.delete(`/api/admin/ads/${adId}`);
+                    await apiClient.delete(`/admin/ads/${adId}`);
                     Alert.alert('Success', 'Ad has been deleted.');
                     fetchAds();
                 } catch (error: any) {
@@ -66,7 +65,6 @@ const AdminAdDashboardScreen: React.FC = () => {
         );
     };
 
-    // CHANGED: Filter logic updated for three tabs
     const filteredAds = useMemo(() => {
         switch (activeTab) {
             case 'review':
@@ -89,21 +87,20 @@ const AdminAdDashboardScreen: React.FC = () => {
             </View>
             
             <Text style={styles.imageLabel}>Ad Content:</Text>
-            <TouchableOpacity onPress={() => setSelectedImage(`${API_BASE_URL}${item.ad_content_image_url}`)}>
-                <Image source={{ uri: `${API_BASE_URL}${item.ad_content_image_url}` }} style={styles.image} />
+            <TouchableOpacity onPress={() => setSelectedImage(`${SERVER_URL}${item.ad_content_image_url}`)}>
+                <Image source={{ uri: `${SERVER_URL}${item.ad_content_image_url}` }} style={styles.image} />
             </TouchableOpacity>
             
             {item.payment_screenshot_url && (
                 <View style={styles.paymentSection}>
                     <Text style={styles.imageLabel}>Payment Proof:</Text>
-                    <TouchableOpacity onPress={() => setSelectedImage(`${API_BASE_URL}${item.payment_screenshot_url}`)}>
-                        <Image source={{ uri: `${API_BASE_URL}${item.payment_screenshot_url}` }} style={styles.image} />
+                    <TouchableOpacity onPress={() => setSelectedImage(`${SERVER_URL}${item.payment_screenshot_url}`)}>
+                        <Image source={{ uri: `${SERVER_URL}${item.payment_screenshot_url}` }} style={styles.image} />
                     </TouchableOpacity>
                     {item.payment_text && <Text style={styles.adDetail}>Payment Note: {item.payment_text}</Text>}
                 </View>
             )}
 
-            {/* This logic remains the same as it correctly shows buttons based on the item's status */}
             <View style={styles.actions}>
                 {item.status === 'pending' && (
                     <>
@@ -138,7 +135,6 @@ const AdminAdDashboardScreen: React.FC = () => {
         <SafeAreaView style={styles.safeArea}>
             <Text style={styles.headerTitle}>Ad Management</Text>
             
-            {/* CHANGED: Tab Selector UI now has three tabs */}
             <View style={styles.tabSelectorContainer}>
                 <TouchableOpacity 
                     style={[styles.tabButton, activeTab === 'review' && styles.tabButtonActive]} 
@@ -185,7 +181,6 @@ const styles = StyleSheet.create({
     tabSelectorContainer: { flexDirection: 'row', marginHorizontal: 15, marginBottom: 10, backgroundColor: '#fff', borderRadius: 8, elevation: 2, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 5, overflow: 'hidden' },
     tabButton: { flex: 1, paddingVertical: 12, alignItems: 'center', justifyContent: 'center' },
     tabButtonActive: { backgroundColor: '#007AFF' },
-    // CHANGED: Slightly smaller font size to better fit three tabs
     tabText: { fontSize: 15, color: '#007AFF', fontWeight: '500' },
     tabTextActive: { fontSize: 15, color: '#fff', fontWeight: 'bold' },
     adItem: { padding: 15, marginHorizontal: 5, marginVertical: 8, backgroundColor: 'white', borderRadius: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.2, shadowRadius: 1.41, elevation: 3 },

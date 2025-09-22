@@ -1,4 +1,4 @@
-// 📂 File: src/components/AdminLM.tsx (FULLY UPDATED BASED ON FEEDBACK)
+// 📂 File: src/components/AdminLM.tsx (FINAL & CORRECTED)
 
 import React, { useState, useEffect, useMemo } from 'react';
 import {
@@ -7,8 +7,8 @@ import {
 } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import Icon from 'react-native-vector-icons/MaterialIcons';
-import { API_BASE_URL } from '../../apiConfig';
-// ✨ REMOVED: useAuth is no longer needed as the self-service password change is removed.
+// ★★★ CORRECT IMPORT: Using our central apiClient for all network requests ★★★
+import apiClient from '../api/client';
 
 // Constants for categories and roles
 const CLASS_CATEGORIES = [ 'Admins', 'Teachers', 'LKG', 'UKG', 'Class 1', 'Class 2', 'Class 3', 'Class 4', 'Class 5', 'Class 6', 'Class 7', 'Class 8', 'Class 9', 'Class 10' ];
@@ -32,19 +32,14 @@ const AdminLM = () => {
   const [expandedClass, setExpandedClass] = useState<string | null>(null);
   const [editingUser, setEditingUser] = useState<User | null>(null);
 
-  // ✨ REMOVED: State for the separate "Change Password" modal is gone.
-  // const [isChangePasswordModalVisible, setIsChangePasswordModalVisible] = useState(false);
-  // const [passwordData, setPasswordData] = useState({ currentPassword: '', newPassword: '', confirmNewPassword: '' });
-
   const fetchUsers = async () => {
     try {
       setIsLoading(true);
-      const response = await fetch(`${API_BASE_URL}/api/users`);
-      if (!response.ok) throw new Error('Failed to fetch data from the server.');
-      const data = await response.json();
-      setUsers(data);
+      // ★★★ API CALL FIXED: Using apiClient, simplified URL, and automatic error handling ★★★
+      const response = await apiClient.get('/users');
+      setUsers(response.data);
     } catch (error: any) {
-      Alert.alert('Network Error', error.message);
+      Alert.alert('Network Error', error.response?.data?.message || 'Failed to fetch users.');
     } finally {
       setIsLoading(false);
     }
@@ -74,7 +69,6 @@ const AdminLM = () => {
 
   const openEditModal = (user: User) => {
     setEditingUser(user);
-    // Password field is intentionally blank for security
     setFormData({ ...user, password: '', subjects_taught: user.subjects_taught || [] });
     setIsModalVisible(true);
   };
@@ -84,20 +78,15 @@ const AdminLM = () => {
       Alert.alert('Error', 'Username and Full Name are required.');
       return;
     }
-    // Password is only required for brand new users.
     if (!editingUser && !formData.password) {
         Alert.alert('Error', 'Password is required for new users.');
         return;
     }
 
     const payload = { ...formData };
-    
-    // For editing, if the password field is empty, don't send it in the payload.
-    // This prevents accidentally overwriting the password with an empty string.
     if (editingUser && !payload.password) {
         delete payload.password;
     }
-
     if (payload.role === 'student' || payload.role === 'admin') {
         delete payload.subjects_taught;
     }
@@ -106,25 +95,21 @@ const AdminLM = () => {
     }
 
     const isEditing = !!editingUser;
-    // For PUT (editing), we'll now use a dedicated endpoint that handles selective updates
-    const url = isEditing ? `${API_BASE_URL}/api/users/${editingUser!.id}` : `${API_BASE_URL}/api/users`;
-    // The method remains PUT for editing, POST for creating.
-    const method = isEditing ? 'PUT' : 'POST';
 
     try {
-      const response = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.message);
+      // ★★★ API CALL FIXED: Using apiClient for both creating (POST) and updating (PUT) ★★★
+      if (isEditing) {
+        await apiClient.put(`/users/${editingUser!.id}`, payload);
+      } else {
+        await apiClient.post('/users', payload);
+      }
+      
       Alert.alert('Success', `User ${isEditing ? 'updated' : 'created'} successfully!`);
       setIsModalVisible(false);
       setEditingUser(null);
-      fetchUsers();
+      fetchUsers(); // Refresh the user list
     } catch (error: any) {
-      Alert.alert('Save Failed', `An error occurred: ${error.message}`);
+      Alert.alert('Save Failed', error.response?.data?.message || 'An error occurred.');
     }
   };
 
@@ -133,17 +118,17 @@ const AdminLM = () => {
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: async () => {
           try {
-            const response = await fetch(`${API_BASE_URL}/api/users/${user.id}`, { method: 'DELETE' });
-            if (!response.ok) throw new Error('Failed to delete the user.');
+            // ★★★ API CALL FIXED: Using apiClient for DELETE requests ★★★
+            await apiClient.delete(`/users/${user.id}`);
             Alert.alert('Deleted!', `"${user.full_name}" was removed successfully.`);
             fetchUsers();
-          } catch (error: any) { Alert.alert('Error', error.message); }
+          } catch (error: any) { 
+            Alert.alert('Error', error.response?.data?.message || 'Failed to delete the user.'); 
+          }
       }},
     ]);
   };
 
-  // ✨ MODIFIED: This is the secure, correct function for the "key" icon.
-  // It allows an admin to force-reset a user's password.
   const handleResetPassword = (user: User) => {
     Alert.prompt(
       'Reset Password', `Enter a new temporary password for "${user.full_name}":`,
@@ -154,23 +139,16 @@ const AdminLM = () => {
               return;
             }
             try {
-              const response = await fetch(`${API_BASE_URL}/api/users/${user.id}/reset-password`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ newPassword: newPassword }),
-              });
-              const result = await response.json();
-              if (!response.ok) throw new Error(result.message);
-              Alert.alert('Success', result.message);
+              // ★★★ API CALL FIXED: Using apiClient for PATCH requests ★★★
+              const response = await apiClient.patch(`/users/${user.id}/reset-password`, { newPassword });
+              Alert.alert('Success', response.data.message);
             } catch (error: any) {
-              Alert.alert('Reset Failed', error.message);
+              Alert.alert('Reset Failed', error.response?.data?.message || 'An unknown error occurred.');
             }
         }},
       ], 'plain-text'
     );
   };
-
-  // ✨ REMOVED: The handleChangeOwnPassword function is no longer needed.
 
   const handleToggleAccordion = (className: string) => {
     setExpandedClass(expandedClass === className ? null : className);
@@ -218,7 +196,6 @@ const AdminLM = () => {
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>User Management</Text>
-        {/* ✨ REMOVED: The lock icon and its surrounding view are gone. */}
         <TouchableOpacity style={styles.addButton} onPress={openAddModal}>
             <Icon name="add" size={20} color="#fff" />
             <Text style={styles.addButtonText}>Add User</Text>
@@ -301,13 +278,10 @@ const AdminLM = () => {
             </ScrollView>
         </KeyboardAvoidingView>
       </Modal>
-
-      {/* ✨ REMOVED: The entire "Change Own Password" modal is gone. */}
     </SafeAreaView>
   );
 };
 
-// Full StyleSheet with improved modal button layout
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#f4f7f6' },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f4f7f6' },
@@ -335,15 +309,8 @@ const styles = StyleSheet.create({
   input: { backgroundColor: '#f7f7f7', borderRadius: 8, padding: 12, fontSize: 16, color: '#2C3E50', borderWidth: 1, borderColor: '#e0e0e0' },
   modalPickerContainer: { backgroundColor: '#f7f7f7', borderRadius: 8, borderWidth: 1, borderColor: '#e0e0e0', marginTop: 5, overflow: 'hidden' },
   modalPicker: { height: 50, width: '100%', color: '#2C3E50' },
-  // ✨ MODIFIED: Styles for modal buttons to ensure they are side-by-side.
   modalButtonContainer: { flexDirection: 'row', justifyContent: 'space-around', marginTop: 30 },
-  modalButton: {
-    flex: 0.45, // Each button takes up 45% of the container width
-    paddingVertical: 14,
-    borderRadius: 8,
-    alignItems: 'center',
-    elevation: 2
-  },
+  modalButton: { flex: 0.45, paddingVertical: 14, borderRadius: 8, alignItems: 'center', elevation: 2 },
   cancelButton: { backgroundColor: '#95A5A6' },
   submitButton: { backgroundColor: '#27AE60' },
   modalButtonText: { color: '#FFFFFF', fontSize: 16, fontWeight: 'bold' },

@@ -1,11 +1,11 @@
-// 📂 File: src/screens/sports/StudentSportsScreen.tsx
+// 📂 File: src/screens/sports/StudentSportsScreen.tsx (REFACTORED)
 
 import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, Alert, FlatList } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useAuth } from '../../context/AuthContext';
-import { API_BASE_URL } from '../../../apiConfig';
+import apiClient from '../../api/client'; // 👈 IMPORT our smart client
 
 const GREEN_THEME = {
   primary: '#2e7d32',
@@ -26,14 +26,14 @@ const StudentSportsScreen = () => {
     if (!user) return;
     setLoading(true);
     try {
+      // ✅ USE apiClient for concurrent requests
       const [regRes, availRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/api/sports/my-registrations/${user.id}`),
-        fetch(`${API_BASE_URL}/api/sports/available/${user.id}`)
+        apiClient.get(`/sports/my-registrations/${user.id}`),
+        apiClient.get(`/sports/available/${user.id}`)
       ]);
-      const regData = await regRes.json();
-      const availData = await availRes.json();
-      setRegistered(regData);
-      setAvailable(availData);
+      // ✅ Axios nests the response data in the 'data' property
+      setRegistered(regRes.data);
+      setAvailable(availRes.data);
     } catch (error) {
       console.error("Error fetching sports data:", error);
       Alert.alert("Error", "Could not load sports activities.");
@@ -46,23 +46,26 @@ const StudentSportsScreen = () => {
 
   const handleApply = async (activityId) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/sports/apply`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, activityId }),
+      // ✅ USE apiClient.post to send data
+      const response = await apiClient.post('/sports/apply', { 
+        userId: user.id, 
+        activityId 
       });
-      const data = await response.json();
-      Alert.alert(response.ok ? "Success" : "Info", data.message);
+
+      // ✅ Check response.ok (a helper property we added to our client)
+      Alert.alert(response.ok ? "Success" : "Info", response.data.message);
       if (response.ok) {
         fetchData(); // Refresh the lists
       }
     } catch (error) {
-      Alert.alert("Error", "An application error occurred.");
+      console.error("Application error:", error);
+      Alert.alert("Error", "An application error occurred. Please try again.");
     }
   };
 
   return (
     <View style={styles.container}>
+      {/* --- UI Remains Unchanged --- */}
       <View style={styles.headerBanner}>
         <MaterialCommunityIcons name="shield-check" size={24} color="#fff" />
         <View style={{ marginLeft: 15 }}>
@@ -101,6 +104,7 @@ const StudentSportsScreen = () => {
   );
 };
 
+// --- Child Components (ActivityCard, AvailableCard) Remain Unchanged ---
 const ActivityCard = ({ item }) => (
   <View style={styles.card}>
     <Text style={styles.cardTitle}>{item.name}</Text>
@@ -126,6 +130,8 @@ const AvailableCard = ({ item, onApply }) => (
     </View>
 );
 
+
+// --- Styles Remain Unchanged ---
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f0f4f0' },
   headerBanner: { flexDirection: 'row', backgroundColor: GREEN_THEME.primary, padding: 20, borderBottomLeftRadius: 20, borderBottomRightRadius: 20, alignItems: 'center' },

@@ -1,13 +1,12 @@
-// 📂 File: src/components/ads/TopNotchAd.tsx (FINAL - CHANGED TO A POP-UP MODAL)
+// 📂 File: src/components/ads/TopNotchAd.tsx (FINAL & VERIFIED)
 
 import React, { useState } from 'react';
 import { View, Text, Image, StyleSheet, TouchableOpacity, Modal, SafeAreaView } from 'react-native';
-import { API_BASE_URL } from '../../api/client';
+import { SERVER_URL } from '../../../apiConfig';
 
-// The Ad interface remains the same
 export interface Ad {
   id: number;
-  ad_type: 'motion' | 'top_notch'; // 'top_notch' now means 'pop-up'
+  ad_type: 'motion' | 'top_notch'; // 'top_notch' acts as a pop-up
   ad_content_image_url: string;
   ad_content_text?: string;
 }
@@ -16,36 +15,31 @@ interface Props {
   ad: Ad;
 }
 
-// The component is now renamed internally to better reflect its function
-const PopupAd: React.FC<Props> = ({ ad }) => {
-  const [modalVisible, setModalVisible] = useState(true); // Modal is visible by default
+const TopNotchAd: React.FC<Props> = ({ ad }) => {
+  const [modalVisible, setModalVisible] = useState(true);
 
-  const imageUrl = `${API_BASE_URL}${ad.ad_content_image_url}`;
+  const imageUrl = `${SERVER_URL}${ad.ad_content_image_url}`;
 
-  // This function is called when the user presses the close button or outside the modal
   const handleClose = () => {
     setModalVisible(false);
   };
 
   return (
     <Modal
-      animationType="fade" // The pop-up will fade in
-      transparent={true}    // The background will be see-through
+      animationType="fade"
+      transparent={true}
       visible={modalVisible}
-      onRequestClose={handleClose} // Allows closing with the Android back button
+      onRequestClose={handleClose}
     >
       <SafeAreaView style={styles.centeredView}>
         <View style={styles.modalView}>
           
-          {/* Close button is now in the top-right corner */}
           <TouchableOpacity style={styles.closeButton} onPress={handleClose}>
             <Text style={styles.closeButtonText}>✕</Text>
           </TouchableOpacity>
 
-          {/* The Ad's Image */}
           <Image source={{ uri: imageUrl }} style={styles.adImage} />
 
-          {/* The Ad's Text (if it exists) */}
           {ad.ad_content_text && (
             <Text style={styles.modalText}>{ad.ad_content_text}</Text>
           )}
@@ -57,14 +51,12 @@ const PopupAd: React.FC<Props> = ({ ad }) => {
 };
 
 const styles = StyleSheet.create({
-  // This is the dark, semi-transparent background that covers the whole screen
   centeredView: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.6)', // Dark overlay
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
   },
-  // This is the white container for the pop-up ad itself
   modalView: {
     margin: 20,
     backgroundColor: 'white',
@@ -79,9 +71,8 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 4,
     elevation: 5,
-    width: '90%', // The pop-up will take 90% of the screen width
+    width: '90%',
   },
-  // The close button
   closeButton: {
     position: 'absolute',
     top: -10,
@@ -92,22 +83,20 @@ const styles = StyleSheet.create({
     height: 30,
     justifyContent: 'center',
     alignItems: 'center',
-    elevation: 6, // Make sure it's on top
+    elevation: 6,
   },
   closeButtonText: {
     color: 'white',
     fontWeight: 'bold',
     fontSize: 16,
   },
-  // The ad image inside the pop-up
   adImage: {
     width: '100%',
-    height: 200, // You can adjust the height
+    height: 200,
     borderRadius: 10,
     marginBottom: 15,
     resizeMode: 'contain',
   },
-  // The ad text inside the pop-up
   modalText: {
     marginBottom: 15,
     textAlign: 'center',
@@ -116,4 +105,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default PopupAd;
+export default TopNotchAd;

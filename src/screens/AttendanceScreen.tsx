@@ -1,4 +1,4 @@
-// 📂 File: AttendanceScreen.tsx (CORRECTED & FINAL)
+// 📂 File: src/screens/AttendanceScreen.tsx (MODIFIED & CORRECTED)
 
 import React, { useState, useEffect, useMemo } from 'react';
 import {
@@ -14,7 +14,8 @@ import {
 import { Picker } from '@react-native-picker/picker';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useAuth } from '../context/AuthContext';
-import { API_BASE_URL } from '../../apiConfig';
+// ★★★ 1. IMPORT apiClient AND REMOVE API_BASE_URL ★★★
+import apiClient from '../api/client';
 
 // --- Constants (Shared across views) ---
 const PRIMARY_COLOR = '#008080';
@@ -35,8 +36,6 @@ const PERIOD_DEFINITIONS = [
   { period: 7, time: '01:00-01:45' }, { period: 8, time: '01:45-02:30' },
 ];
 
-// ==================== FIXED CODE START ====================
-// These helper components are now defined at the top level so all other components in this file can use them.
 const SummaryCard = ({ label, value, color }) => (
     <View style={styles.summaryBox}>
         <Text style={[styles.summaryValue, { color }]}>{value}</Text>
@@ -45,12 +44,8 @@ const SummaryCard = ({ label, value, color }) => (
 );
 
 const capitalize = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
-// ===================== FIXED CODE END =====================
 
-
-// ====================================================================================
 // --- Main Router Component ---
-// ====================================================================================
 const AttendanceScreen = ({ route }) => {
   const { user } = useAuth();
   if (!user) return <View style={styles.loaderContainer}><Text style={styles.noDataText}>User not found.</Text></View>;
@@ -67,9 +62,7 @@ const AttendanceScreen = ({ route }) => {
   }
 };
 
-// ====================================================================================
 // --- Student Attendance View ---
-// ====================================================================================
 const StudentAttendanceView = ({ student }) => {
   const [viewMode, setViewMode] = useState('daily');
   const [data, setData] = useState({ summary: {}, history: [] });
@@ -80,10 +73,10 @@ const StudentAttendanceView = ({ student }) => {
       if (!student?.id) return;
       setIsLoading(true);
       try {
-        const response = await fetch(`${API_BASE_URL}/api/attendance/my-history/${student.id}?viewMode=${viewMode}`);
-        if (!response.ok) throw new Error('Could not load your attendance history.');
+        // ★★★ 2. USE apiClient TO FETCH HISTORY ★★★
+        const response = await apiClient.get(`/attendance/my-history/${student.id}?viewMode=${viewMode}`);
         
-        const jsonData = await response.json();
+        const jsonData = response.data;
         const historyWithPeriod = jsonData.history.map(item => ({
           ...item,
           period_time: PERIOD_DEFINITIONS.find(p => p.period === item.period_number)?.time || `Period ${item.period_number}`
@@ -91,8 +84,8 @@ const StudentAttendanceView = ({ student }) => {
         
         setData({ ...jsonData, history: historyWithPeriod });
 
-      } catch (error) {
-        Alert.alert('Error', error.message);
+      } catch (error: any) {
+        Alert.alert('Error', error.response?.data?.message || 'Could not load your attendance history.');
       } finally {
         setIsLoading(false);
       }
@@ -154,9 +147,7 @@ const StudentAttendanceView = ({ student }) => {
   );
 };
 
-// ====================================================================================
 // --- Teacher Attendance Summary View ---
-// ====================================================================================
 const TeacherSummaryView = ({ teacher }) => {
     const [assignments, setAssignments] = useState([]);
     const [selectedClass, setSelectedClass] = useState('');
@@ -172,14 +163,12 @@ const TeacherSummaryView = ({ teacher }) => {
         }
         setIsLoading(true);
         try {
-            const url = `${API_BASE_URL}/api/attendance/teacher-summary?teacherId=${teacher.id}&classGroup=${classGroup}&subjectName=${subjectName}`;
-            const response = await fetch(url);
-            if (!response.ok) throw new Error(`Server responded with status: ${response.status}`);
-            const data = await response.json();
-            setSummaryData(data);
-        } catch (error) {
+            // ★★★ 3. USE apiClient TO FETCH TEACHER SUMMARY ★★★
+            const response = await apiClient.get(`/attendance/teacher-summary?teacherId=${teacher.id}&classGroup=${classGroup}&subjectName=${subjectName}`);
+            setSummaryData(response.data);
+        } catch (error: any) {
             console.error("Fetch Summary Error:", error);
-            Alert.alert('Error', 'Could not retrieve attendance data.');
+            Alert.alert('Error', error.response?.data?.message || 'Could not retrieve attendance data.');
             setSummaryData(null);
         } finally {
             setIsLoading(false);
@@ -193,10 +182,9 @@ const TeacherSummaryView = ({ teacher }) => {
                 return;
             }
             try {
-                const response = await fetch(`${API_BASE_URL}/api/teacher-assignments/${teacher.id}`);
-                if (!response.ok) throw new Error('Failed to fetch assignments from server.');
-                
-                const data = await response.json();
+                // ★★★ 4. USE apiClient TO FETCH ASSIGNMENTS ★★★
+                const response = await apiClient.get(`/teacher-assignments/${teacher.id}`);
+                const data = response.data;
                 setAssignments(data);
 
                 if (data && data.length > 0) {
@@ -208,9 +196,9 @@ const TeacherSummaryView = ({ teacher }) => {
                 } else {
                     setIsLoading(false);
                 }
-            } catch (error) {
+            } catch (error: any) {
                 console.error("Fetch Assignments Error:", error);
-                Alert.alert('Error', 'Could not fetch your class assignments.');
+                Alert.alert('Error', error.response?.data?.message || 'Could not fetch your class assignments.');
                 setIsLoading(false);
             }
         };
@@ -296,9 +284,7 @@ const TeacherSummaryView = ({ teacher }) => {
     );
 };
 
-// ====================================================================================
 // --- Admin Attendance View ---
-// ====================================================================================
 const AdminAttendanceView = () => {
   const [selectedClass, setSelectedClass] = useState(CLASS_GROUPS[0]);
   const [subjects, setSubjects] = useState([]);
@@ -314,17 +300,17 @@ const AdminAttendanceView = () => {
       setSelectedSubject('');
       setSummaryData(null);
       try {
-        const response = await fetch(`${API_BASE_URL}/api/subjects/${selectedClass}`);
-        if (!response.ok) throw new Error('Failed to fetch subjects for this class.');
-        const data = await response.json();
+        // ★★★ 5. USE apiClient TO FETCH SUBJECTS ★★★
+        const response = await apiClient.get(`/subjects/${selectedClass}`);
+        const data = response.data;
         setSubjects(data);
         if (data.length > 0) {
           setSelectedSubject(data[0]);
         } else {
           setIsLoading(false);
         }
-      } catch (error) {
-        Alert.alert('Error', error.message);
+      } catch (error: any) {
+        Alert.alert('Error', error.response?.data?.message || 'Failed to fetch subjects for this class.');
         setIsLoading(false);
       }
     };
@@ -340,13 +326,11 @@ const AdminAttendanceView = () => {
       }
       setIsLoading(true);
       try {
-        const url = `${API_BASE_URL}/api/attendance/admin-summary?classGroup=${selectedClass}&subjectName=${selectedSubject}`;
-        const response = await fetch(url);
-        if (!response.ok) throw new Error('Failed to fetch summary data.');
-        const data = await response.json();
-        setSummaryData(data);
-      } catch (error) {
-        Alert.alert('Error', 'Could not fetch attendance summary.');
+        // ★★★ 6. USE apiClient TO FETCH ADMIN SUMMARY ★★★
+        const response = await apiClient.get(`/attendance/admin-summary?classGroup=${selectedClass}&subjectName=${selectedSubject}`);
+        setSummaryData(response.data);
+      } catch (error: any) {
+        Alert.alert('Error', error.response?.data?.message || 'Could not fetch attendance summary.');
         setSummaryData(null);
       } finally {
         setIsLoading(false);
@@ -416,9 +400,7 @@ const AdminAttendanceView = () => {
   );
 };
 
-// ====================================================================================
 // --- Teacher Live Attendance View ---
-// ====================================================================================
 const TeacherLiveAttendanceView = ({ route, teacher }) => {
   const { class_group, subject_name, period_number, date } = route?.params || {};
   const [students, setStudents] = useState([]);
@@ -435,13 +417,12 @@ const TeacherLiveAttendanceView = ({ route, teacher }) => {
         return;
       }
       try {
-        const url = `${API_BASE_URL}/api/attendance/sheet?class_group=${class_group}&date=${date}&period_number=${period_number}`;
-        const response = await fetch(url);
-        if (!response.ok) throw new Error('Failed to load students.');
-        const data = await response.json();
+        // ★★★ 7. USE apiClient TO FETCH ATTENDANCE SHEET ★★★
+        const response = await apiClient.get(`/attendance/sheet?class_group=${class_group}&date=${date}&period_number=${period_number}`);
+        const data = response.data;
         const studentsWithStatus = data.map(s => ({ ...s, status: s.status || 'Present' }));
         setStudents(studentsWithStatus);
-      } catch (error) { Alert.alert('Error', error.message); } 
+      } catch (error: any) { Alert.alert('Error', error.response?.data?.message || 'Failed to load students.'); } 
       finally { setIsLoading(false); }
     };
     fetchAttendanceSheet();
@@ -456,17 +437,17 @@ const TeacherLiveAttendanceView = ({ route, teacher }) => {
     if (attendanceData.length === 0) return;
     setIsSaving(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/attendance`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ class_group, subject_name, period_number, date, teacher_id: teacher.id, attendanceData }),
+      // ★★★ 8. USE apiClient TO SAVE ATTENDANCE ★★★
+      await apiClient.post('/attendance', {
+        class_group,
+        subject_name,
+        period_number,
+        date,
+        teacher_id: teacher.id,
+        attendanceData,
       });
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(errorText || 'Failed to save attendance.');
-      }
       Alert.alert('Success', 'Attendance saved successfully!');
-    } catch (error) { Alert.alert('Error', error.message); }
+    } catch (error: any) { Alert.alert('Error', error.response?.data?.message || 'Failed to save attendance.'); }
     finally { setIsSaving(false); }
   };
 
@@ -501,9 +482,7 @@ const TeacherLiveAttendanceView = ({ route, teacher }) => {
   );
 };
 
-// ====================================================================================
 // --- Styles ---
-// ====================================================================================
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F4F6F8' },
   loaderContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },

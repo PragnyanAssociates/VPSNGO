@@ -1,12 +1,14 @@
+// 📂 File: src/screens/labs/TeacherAdminLabsScreen.tsx (MODIFIED & CORRECTED)
+
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, FlatList, StyleSheet, ActivityIndicator, TouchableOpacity, Modal, TextInput, Alert, Image, ScrollView } from 'react-native';
+import { View, Text, FlatList, StyleSheet, ActivityIndicator, TouchableOpacity, Modal, TextInput, Alert, ScrollView } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { launchImageLibrary, ImagePickerResponse } from 'react-native-image-picker';
-// ✅ CHANGED: Replaced 'react-native-file-picker' with the correct, working library
 import { pick, types, isCancel } from '@react-native-documents/picker';
-import { LabCard, Lab } from './LabCard'; // Assuming LabCard is correctly defined elsewhere
+import { LabCard, Lab } from './LabCard';
 import { useAuth } from '../../context/AuthContext';
-import { API_BASE_URL } from '../../../apiConfig';
+// ★★★ 1. IMPORT apiClient AND REMOVE API_BASE_URL ★★★
+import apiClient from '../../api/client';
 
 const TeacherAdminLabsScreen = () => {
     const { user } = useAuth();
@@ -23,10 +25,10 @@ const TeacherAdminLabsScreen = () => {
     const fetchLabs = useCallback(async () => {
         setIsLoading(true);
         try {
-            const response = await fetch(`${API_BASE_URL}/api/labs`);
-            if (!response.ok) throw new Error('Failed to fetch labs');
-            setLabs(await response.json());
-        } catch (e: any) { Alert.alert("Error", e.message); } 
+            // ★★★ 2. USE apiClient ★★★
+            const response = await apiClient.get('/labs');
+            setLabs(response.data);
+        } catch (e: any) { Alert.alert("Error", e.response?.data?.message || 'Failed to fetch labs'); } 
         finally { setIsLoading(false); }
     }, []);
 
@@ -40,44 +42,26 @@ const TeacherAdminLabsScreen = () => {
         });
     };
 
-    // ✅ CHANGED: Updated function to use @react-native-documents/picker
     const handleChooseFile = async () => {
         try {
-            const result = await pick({
-                type: [types.allFiles], // Allows PDFs, documents, etc.
-                allowMultiSelection: false,
-            });
-    
-            // Safety check to ensure a file was picked
+            const result = await pick({ type: [types.allFiles], allowMultiSelection: false });
             if (result && result.length > 0) {
-                setSelectedFile(result[0]); // It returns an array, so we take the first item
+                setSelectedFile(result[0]);
             }
         } catch (err) {
-            if (isCancel(err)) {
-                console.log('User cancelled file selection.');
-            } else {
-                Alert.alert('Error', 'An unknown error occurred while selecting the file.');
-                console.error(err);
-            }
+            if (isCancel(err)) { console.log('User cancelled file selection.'); } 
+            else { Alert.alert('Error', 'An unknown error occurred while selecting the file.'); console.error(err); }
         }
     };
 
     const handleOpenModal = (lab: Lab | null = null) => {
         setEditingLab(lab);
         if (lab) {
-            setFormData({
-                title: lab.title,
-                subject: lab.subject,
-                lab_type: lab.lab_type,
-                description: lab.description,
-                access_url: lab.access_url || '',
-            });
+            setFormData({ title: lab.title, subject: lab.subject, lab_type: lab.lab_type, description: lab.description, access_url: lab.access_url || '' });
         } else {
             setFormData(initialFormState);
         }
-        setSelectedImage(null);
-        setSelectedFile(null);
-        setIsModalOpen(true);
+        setSelectedImage(null); setSelectedFile(null); setIsModalOpen(true);
     };
 
     const handleSave = async () => {
@@ -95,31 +79,21 @@ const TeacherAdminLabsScreen = () => {
         if (selectedImage?.assets?.[0]) {
             data.append('coverImage', { uri: selectedImage.assets[0].uri, type: selectedImage.assets[0].type, name: selectedImage.assets[0].fileName });
         }
-        
         if (selectedFile) {
-            data.append('labFile', {
-                uri: selectedFile.uri,
-                type: selectedFile.type,
-                name: selectedFile.name,
-            });
+            data.append('labFile', { uri: selectedFile.uri, type: selectedFile.type, name: selectedFile.name });
         }
         
-        const url = editingLab ? `${API_BASE_URL}/api/labs/${editingLab.id}` : `${API_BASE_URL}/api/labs`;
-        const method = editingLab ? 'PUT' : 'POST';
-
         try {
-            // ✅ CRITICAL FIX: Removed the manual 'Content-Type' header for file uploads.
-            const response = await fetch(url, { 
-                method, 
-                body: data 
-            });
-
-            const resData = await response.json();
-            if (!response.ok) throw new Error(resData.message || 'An unknown error occurred.');
+            // ★★★ 3. USE apiClient FOR SAVING/UPDATING ★★★
+            if (editingLab) {
+                await apiClient.put(`/labs/${editingLab.id}`, data, { headers: { 'Content-Type': 'multipart/form-data' } });
+            } else {
+                await apiClient.post('/labs', data, { headers: { 'Content-Type': 'multipart/form-data' } });
+            }
             Alert.alert("Success", `Lab ${editingLab ? 'updated' : 'created'} successfully!`);
             setIsModalOpen(false);
             fetchLabs();
-        } catch (error: any) { Alert.alert("Save Error", error.message); }
+        } catch (error: any) { Alert.alert("Save Error", error.response?.data?.message || 'An unknown error occurred.'); }
     };
 
     const handleDelete = async (id: number) => {
@@ -127,11 +101,11 @@ const TeacherAdminLabsScreen = () => {
             { text: "Cancel", style: "cancel" },
             { text: "Delete", style: "destructive", onPress: async () => {
                 try {
-                    const response = await fetch(`${API_BASE_URL}/api/labs/${id}`, { method: 'DELETE' });
-                    if (!response.ok) throw new Error("Failed to delete lab.");
+                    // ★★★ 4. USE apiClient ★★★
+                    await apiClient.delete(`/labs/${id}`);
                     Alert.alert("Success", "Lab deleted.");
                     fetchLabs();
-                } catch (e: any) { Alert.alert("Error", e.message); }
+                } catch (e: any) { Alert.alert("Error", e.response?.data?.message || "Failed to delete lab."); }
             }}
         ]);
     };
@@ -155,15 +129,9 @@ const TeacherAdminLabsScreen = () => {
                         </View>
                     </View>
                 }
-                ListFooterComponent={
-                    <TouchableOpacity style={styles.addButton} onPress={() => handleOpenModal(null)}>
-                        <MaterialIcons name="add" size={24} color="#fff" />
-                        <Text style={styles.addButtonText}>Add New Lab</Text>
-                    </TouchableOpacity>
-                }
+                ListFooterComponent={ <TouchableOpacity style={styles.addButton} onPress={() => handleOpenModal(null)}><MaterialIcons name="add" size={24} color="#fff" /><Text style={styles.addButtonText}>Add New Lab</Text></TouchableOpacity> }
                 ListEmptyComponent={<Text style={styles.emptyText}>No labs created yet. Add one below.</Text>}
             />
-
             <Modal visible={isModalOpen} onRequestClose={() => setIsModalOpen(false)} animationType="slide">
                 <ScrollView style={styles.modalContainer} contentContainerStyle={{ paddingBottom: 40 }}>
                     <Text style={styles.modalTitle}>{editingLab ? 'Edit Digital Lab' : 'Add New Digital Lab'}</Text>
@@ -171,24 +139,13 @@ const TeacherAdminLabsScreen = () => {
                     <TextInput style={styles.input} placeholder="Subject (e.g., Science)" value={formData.subject} onChangeText={t => setFormData({...formData, subject: t})} />
                     <TextInput style={styles.input} placeholder="Type (e.g., Simulation, PDF, Video)" value={formData.lab_type} onChangeText={t => setFormData({...formData, lab_type: t})} />
                     <TextInput style={styles.textarea} placeholder="Description" value={formData.description} onChangeText={t => setFormData({...formData, description: t})} multiline />
-                    
-                    <TouchableOpacity style={styles.uploadButton} onPress={handleChoosePhoto}>
-                        <MaterialIcons name="image" size={20} color="#fff" />
-                        <Text style={styles.uploadButtonText}>{editingLab?.cover_image_url || selectedImage ? 'Change Cover Image' : 'Select Cover Image'}</Text>
-                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.uploadButton} onPress={handleChoosePhoto}><MaterialIcons name="image" size={20} color="#fff" /><Text style={styles.uploadButtonText}>{editingLab?.cover_image_url || selectedImage ? 'Change Cover Image' : 'Select Cover Image'}</Text></TouchableOpacity>
                     {selectedImage?.assets?.[0]?.uri && <Text style={styles.fileNameText}>Selected: {selectedImage.assets[0].fileName}</Text>}
-                    
                     <Text style={styles.orText}>- OR -</Text>
-                    
                     <TextInput style={styles.input} placeholder="Access URL (Optional if uploading file)" value={formData.access_url} onChangeText={t => setFormData({...formData, access_url: t})} keyboardType="url" />
-
-                    <TouchableOpacity style={[styles.uploadButton, {backgroundColor: '#5cb85c'}]} onPress={handleChooseFile}>
-                        <MaterialIcons name="attach-file" size={20} color="#fff" />
-                        <Text style={styles.uploadButtonText}>{editingLab?.file_path || selectedFile ? 'Change Lab File' : 'Upload Lab File (PDF, etc.)'}</Text>
-                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.uploadButton, {backgroundColor: '#5cb85c'}]} onPress={handleChooseFile}><MaterialIcons name="attach-file" size={20} color="#fff" /><Text style={styles.uploadButtonText}>{editingLab?.file_path || selectedFile ? 'Change Lab File' : 'Upload Lab File (PDF, etc.)'}</Text></TouchableOpacity>
                     {selectedFile?.name && <Text style={styles.fileNameText}>Selected: {selectedFile.name}</Text>}
                     {editingLab?.file_path && !selectedFile && <Text style={styles.fileNameText}>Current file: {editingLab.file_path.split('/').pop()}</Text>}
-
                     <View style={styles.modalActions}>
                         <TouchableOpacity style={[styles.modalButton, styles.cancelButton]} onPress={() => setIsModalOpen(false)}><Text>Cancel</Text></TouchableOpacity>
                         <TouchableOpacity style={[styles.modalButton, styles.saveButton]} onPress={handleSave}><Text style={styles.saveButtonText}>Save Lab</Text></TouchableOpacity>
@@ -199,7 +156,7 @@ const TeacherAdminLabsScreen = () => {
     );
 };
 
-// Styles are unchanged
+// Styles remain unchanged
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#e8f5e9' },
     centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },

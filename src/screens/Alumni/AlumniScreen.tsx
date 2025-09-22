@@ -1,3 +1,5 @@
+// 📂 File: src/screens/AlumniScreen.tsx (CORRECTED & FINAL)
+
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
@@ -19,7 +21,7 @@ import FontAwesome from 'react-native-vector-icons/FontAwesome';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { useAuth } from '../../context/AuthContext';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
-import { API_BASE_URL } from '../../../apiConfig';
+import { API_BASE_URL, SERVER_URL } from '../../../apiConfig'; // ★★★ IMPORT BOTH ★★★
 import { launchImageLibrary, ImagePickerResponse, Asset } from 'react-native-image-picker';
 
 // Enable LayoutAnimation for Android
@@ -54,7 +56,6 @@ const formatDate = (dateString?: string): string => {
   if (!dateString) return 'N/A';
   const date = new Date(dateString);
   const userTimezoneOffset = date.getTimezoneOffset() * 60000;
-  // ★★★★★★★★★★★★★★★★★★★★ FIX IS HERE ★★★★★★★★★★★★★★★★★★★★
   return new Date(date.getTime() + userTimezoneOffset).toLocaleDateString('en-GB', {
     day: '2-digit', month: '2-digit', year: 'numeric'
   });
@@ -82,7 +83,8 @@ const AlumniScreen: React.FC = () => {
     const fetchData = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await fetch(`${API_BASE_URL}/api/alumni`, {
+            // ★★★ FIXED TYPO ★★★ (Removed /api)
+            const response = await fetch(`${API_BASE_URL}/alumni`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             if (!response.ok) throw new Error('Failed to fetch alumni data.');
@@ -140,8 +142,9 @@ const AlumniScreen: React.FC = () => {
                 processedData[key] = toYYYYMMDD(new Date(processedData[key]));
             }
         });
-
-        const url = isEditing ? `${API_BASE_URL}/api/alumni/${currentItem?.id}` : `${API_BASE_URL}/api/alumni`;
+        
+        // ★★★ FIXED TYPO ★★★ (Removed /api)
+        const url = isEditing ? `${API_BASE_URL}/alumni/${currentItem?.id}` : `${API_BASE_URL}/alumni`;
         const method = isEditing ? 'PUT' : 'POST';
         const data = new FormData();
 
@@ -173,7 +176,8 @@ const AlumniScreen: React.FC = () => {
             { text: "Cancel", style: "cancel" },
             { text: "Delete", style: "destructive", onPress: async () => {
                 try {
-                    const response = await fetch(`${API_BASE_URL}/api/alumni/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+                    // ★★★ FIXED TYPO ★★★ (Removed /api)
+                    const response = await fetch(`${API_BASE_URL}/alumni/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
                     const resData = await response.json();
                     if (!response.ok) throw new Error(resData.message || 'Failed to delete record.');
                     Alert.alert("Success", resData.message || 'Record deleted.');
@@ -246,7 +250,8 @@ const AlumniScreen: React.FC = () => {
                     <Text style={styles.modalTitle}>{isEditing ? 'Edit Alumni Record' : 'Add New Alumni'}</Text>
 
                     <View style={styles.imagePickerContainer}>
-                        <Image source={selectedImage?.uri ? { uri: selectedImage.uri } : (formData.profile_pic_url ? { uri: `${API_BASE_URL}${formData.profile_pic_url}` } : require('../../assets/profile.png'))} style={styles.profileImage} />
+                        {/* ★★★ IMAGE URL FIXED ★★★ (Used SERVER_URL instead of API_BASE_URL) */}
+                        <Image source={selectedImage?.uri ? { uri: selectedImage.uri } : (formData.profile_pic_url ? { uri: `${SERVER_URL}${formData.profile_pic_url}` } : require('../../assets/profile.png'))} style={styles.profileImage} />
                         <TouchableOpacity style={styles.imagePickerButton} onPress={handleChoosePhoto}>
                             <FontAwesome name="camera" size={16} color="#fff" />
                             <Text style={styles.imagePickerButtonText}>Choose Photo</Text>
@@ -302,7 +307,8 @@ const AlumniScreen: React.FC = () => {
 const AlumniCardItem = ({ item, onEdit, onDelete, isExpanded, onPress }) => (
     <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.8}>
         <View style={styles.cardHeader}>
-            <Image source={item.profile_pic_url ? { uri: `${API_BASE_URL}${item.profile_pic_url}` } : require('../../assets/profile.png')} style={styles.avatarImage} />
+            {/* ★★★ IMAGE URL FIXED ★★★ (Used SERVER_URL instead of API_BASE_URL) */}
+            <Image source={item.profile_pic_url ? { uri: `${SERVER_URL}${item.profile_pic_url}` } : require('../../assets/profile.png')} style={styles.avatarImage} />
             <View style={styles.cardHeaderText}>
                 <Text style={styles.cardTitle}>{item.alumni_name}</Text>
                 <Text style={styles.cardSubtitle}>Admission No: {item.admission_no}</Text>

@@ -1,11 +1,14 @@
+// 📂 File: src/screens/study-materials/TeacherAdminMaterialsScreen.tsx (MODIFIED & CORRECTED)
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert, Modal, ScrollView, TextInput, Linking } from 'react-native';
+// ★★★ 1. IMPORT apiClient AND SERVER_URL, REMOVE API_BASE_URL ★★★
+import apiClient from '../../api/client';
+import { SERVER_URL } from '../../../apiConfig';
 import { useAuth } from '../../context/AuthContext';
-import { API_BASE_URL } from '../../../apiConfig';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { Picker } from '@react-native-picker/picker';
 import { useIsFocused } from '@react-navigation/native';
-// ✅ CHANGED: Removed image-picker and added the correct documents picker
 import { pick, types, isCancel } from '@react-native-documents/picker';
 
 // --- Main Router Component ---
@@ -21,10 +24,10 @@ const TeacherAdminMaterialsScreen = () => {
         if (!user?.id) return;
         setIsLoading(true);
         try {
-            const response = await fetch(`${API_BASE_URL}/api/study-materials/teacher/${user.id}`);
-            if (!response.ok) throw new Error("Failed to fetch your materials.");
-            setMaterials(await response.json());
-        } catch (error: any) { Alert.alert("Error", error.message); }
+            // ★★★ 2. USE apiClient ★★★
+            const response = await apiClient.get(`/study-materials/teacher/${user.id}`);
+            setMaterials(response.data);
+        } catch (error: any) { Alert.alert("Error", error.response?.data?.message || "Failed to fetch your materials."); }
         finally { setIsLoading(false); }
     }, [user?.id]);
 
@@ -46,11 +49,11 @@ const TeacherAdminMaterialsScreen = () => {
                 text: "Delete", style: "destructive",
                 onPress: async () => {
                     try {
-                        const response = await fetch(`${API_BASE_URL}/api/study-materials/${material.material_id}`, { method: 'DELETE' });
-                        if (!response.ok) throw new Error("Failed to delete.");
+                        // ★★★ 3. USE apiClient ★★★
+                        await apiClient.delete(`/study-materials/${material.material_id}`);
                         Alert.alert("Success", "Material deleted.");
                         setMaterials(prev => prev.filter(m => m.material_id !== material.material_id));
-                    } catch (error: any) { Alert.alert("Error", error.message); }
+                    } catch (error: any) { Alert.alert("Error", error.response?.data?.message || "Failed to delete."); }
                 },
             },
         ]);
@@ -73,7 +76,8 @@ const TeacherAdminMaterialsScreen = () => {
                     {item.file_path && (
                         <TouchableOpacity 
                             style={styles.viewButton} 
-                            onPress={() => Linking.openURL(`${API_BASE_URL}${item.file_path}`)}
+                            // ★★★ 4. USE SERVER_URL for files ★★★
+                            onPress={() => Linking.openURL(`${SERVER_URL}${item.file_path}`)}
                         >
                             <MaterialIcons name="download" size={18} color="#fff" />
                             <Text style={styles.viewButtonText}>Download</Text>
@@ -110,7 +114,6 @@ const TeacherAdminMaterialsScreen = () => {
     );
 };
 
-
 // --- Modal Form Component ---
 const MaterialFormModal = ({ material, onClose, onSave }) => {
     const { user } = useAuth();
@@ -126,28 +129,23 @@ const MaterialFormModal = ({ material, onClose, onSave }) => {
     const [isSaving, setIsSaving] = useState(false);
 
     useEffect(() => {
-        const fetchClasses = async () => { try { const response = await fetch(`${API_BASE_URL}/api/student-classes`); if (response.ok) setStudentClasses(await response.json()); } catch (e) { console.error(e); }};
+        const fetchClasses = async () => { try { 
+            // ★★★ 5. USE apiClient ★★★
+            const response = await apiClient.get('/student-classes');
+            setStudentClasses(response.data); 
+        } catch (e) { console.error(e); }};
         fetchClasses();
     }, []);
 
-    // ✅ CHANGED: Replaced image-picker logic with the working documents picker logic
     const handleFilePick = async () => {
         try {
-            const result = await pick({
-                type: [types.allFiles],
-                allowMultiSelection: false,
-            });
-
+            const result = await pick({ type: [types.allFiles], allowMultiSelection: false });
             if (result && result.length > 0) {
-                setFile(result[0]); // The object structure { uri, type, name } is compatible
+                setFile(result[0]);
             }
         } catch (err) {
-            if (isCancel(err)) {
-                console.log('User cancelled file selection.');
-            } else {
-                Alert.alert("Error", "An unknown error occurred while picking the file.");
-                console.error(err);
-            }
+            if (isCancel(err)) { console.log('User cancelled file selection.'); } 
+            else { Alert.alert("Error", "An unknown error occurred while picking the file."); console.error(err); }
         }
     };
 
@@ -164,29 +162,27 @@ const MaterialFormModal = ({ material, onClose, onSave }) => {
         formData.append('uploaded_by', user.id.toString());
 
         if (file) {
-            formData.append('materialFile', file);
+            formData.append('materialFile', {
+                uri: file.uri,
+                type: file.type,
+                name: file.name,
+            });
         } else if (isEditMode && material.file_path) {
-            // Only send existing_file_path if no new file is selected
             formData.append('existing_file_path', material.file_path);
         }
         
-        const url = isEditMode ? `${API_BASE_URL}/api/study-materials/${material.material_id}` : `${API_BASE_URL}/api/study-materials`;
-        const method = isEditMode ? 'PUT' : 'POST';
-        
         try {
-            // ✅ CRITICAL FIX: Removed the manual `headers` object to allow fetch to work correctly.
-            const response = await fetch(url, { 
-                method, 
-                body: formData 
-            });
-            
-            if (!response.ok) throw new Error((await response.json()).message || "Save failed.");
-            
+            // ★★★ 6. USE apiClient FOR SAVING/UPDATING ★★★
+            if (isEditMode) {
+                await apiClient.put(`/study-materials/${material.material_id}`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+            } else {
+                await apiClient.post('/study-materials', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+            }
             Alert.alert("Success", `Material ${isEditMode ? 'updated' : 'uploaded'} successfully.`);
             onSave();
             onClose();
         } catch (error: any) {
-            Alert.alert("Error", error.message);
+            Alert.alert("Error", error.response?.data?.message || "Save failed.");
         } finally {
             setIsSaving(false);
         }
@@ -219,7 +215,7 @@ const MaterialFormModal = ({ material, onClose, onSave }) => {
     );
 };
 
-// Styles are unchanged
+// Styles remain the same
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#f4f6f8' },
     headerTitle: { fontSize: 24, fontWeight: 'bold', padding: 15, color: '#333' },
@@ -229,30 +225,13 @@ const styles = StyleSheet.create({
     cardTitle: { fontSize: 18, fontWeight: 'bold', color: '#37474f', flex: 1, marginRight: 10 },
     cardSubtitle: { fontSize: 14, color: '#546e7a', marginTop: 4, marginBottom: 8 },
     cardDescription: { fontSize: 14, color: '#455a64', marginBottom: 15 },
-    buttonContainer: {
-        marginTop: 'auto',
-    },
-    viewButton: {
-        flexDirection: 'row',
-        backgroundColor: '#0288d1',
-        paddingVertical: 10,
-        borderRadius: 8,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginTop: 10,
-    },
-    linkButton: {
-        backgroundColor: '#c2185b',
-    },
-    viewButtonText: {
-        color: '#fff',
-        fontWeight: 'bold',
-        marginLeft: 8,
-    },
+    buttonContainer: { marginTop: 'auto' },
+    viewButton: { flexDirection: 'row', backgroundColor: '#0288d1', paddingVertical: 10, borderRadius: 8, justifyContent: 'center', alignItems: 'center', marginTop: 10, },
+    linkButton: { backgroundColor: '#c2185b' },
+    viewButtonText: { color: '#fff', fontWeight: 'bold', marginLeft: 8 },
     addButton: { flexDirection: 'row', backgroundColor: '#28a745', padding: 15, margin: 15, borderRadius: 10, justifyContent: 'center', alignItems: 'center', elevation: 3 },
     addButtonText: { color: '#fff', fontSize: 16, fontWeight: 'bold', marginLeft: 10 },
     emptyText: { textAlign: 'center', marginTop: 50, fontSize: 16, color: '#777' },
-    // Modal Styles
     modalView: { flex: 1, padding: 20, backgroundColor: '#f9f9f9' },
     modalTitle: { fontSize: 22, fontWeight: 'bold', marginBottom: 20, textAlign: 'center' },
     label: { fontSize: 16, fontWeight: '500', color: '#444', marginBottom: 5, marginLeft: 5 },

@@ -1,3 +1,5 @@
+// 📂 File: src/screens/TimetableScreen.tsx (MODIFIED & CORRECTED)
+
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, SafeAreaView,
@@ -5,7 +7,8 @@ import {
 } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { useAuth } from '../context/AuthContext';
-import { API_BASE_URL } from '../../apiConfig';
+// ★★★ 1. IMPORT apiClient AND REMOVE API_BASE_URL ★★★
+import apiClient from '../api/client';
 import { useNavigation, useIsFocused } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
@@ -120,14 +123,11 @@ const TimetableScreen = () => {
   const fetchTimetable = async (classGroup: string) => {
     setIsTimetableLoading(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/timetable/${classGroup}`);
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(errorText || 'Failed to fetch timetable data.');
-      }
-      setApiTimetableData(await response.json());
+      // ★★★ 2. USE apiClient TO FETCH TIMETABLE ★★★
+      const response = await apiClient.get(`/timetable/${classGroup}`);
+      setApiTimetableData(response.data);
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'An error occurred while fetching timetable.');
+      Alert.alert('Error', error.response?.data?.message || 'An error occurred while fetching timetable.');
       setApiTimetableData([]);
     } finally {
       setIsTimetableLoading(false);
@@ -136,14 +136,11 @@ const TimetableScreen = () => {
 
   const fetchTeachers = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/teachers`);
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(errorText || 'Failed to fetch teachers list.');
-      }
-      setTeachers(await response.json());
+      // ★★★ 3. USE apiClient TO FETCH TEACHERS ★★★
+      const response = await apiClient.get('/teachers');
+      setTeachers(response.data);
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'An error occurred while fetching teachers.');
+      Alert.alert('Error', error.response?.data?.message || 'An error occurred while fetching teachers.');
     }
   };
 
@@ -175,23 +172,17 @@ const TimetableScreen = () => {
     setIsModalVisible(true);
   };
 
-  // ==================== FIXED CODE START ====================
-  // This function now correctly validates the day before navigating.
   const handleTeacherSlotPress = (subject: string, periodNumber: number, dayOfColumn: Day) => {
     const today = new Date();
     const currentDayOfWeek = today.toLocaleString('en-US', { weekday: 'long' }) as Day;
 
-    // 1. Check if the day the user clicked on is actually today.
     if (dayOfColumn !== currentDayOfWeek) {
       Alert.alert('Invalid Day', `You can only mark attendance for today (${currentDayOfWeek}).`);
       return;
     }
     
-    // 2. Since the button is only clickable if `isMyPeriod` is true, we know the user is assigned.
-    // No further validation is needed here. We can proceed to navigate.
-    if (!user?.id) return; // Safety check
+    if (!user?.id) return;
 
-    // 3. Navigate with today's date.
     navigation.navigate('Attendance', {
       class_group: selectedClass,
       subject_name: subject,
@@ -199,7 +190,6 @@ const TimetableScreen = () => {
       date: today.toISOString().split('T')[0],
     });
   };
-  // ===================== FIXED CODE END =====================
 
   const handleSaveChanges = async (slotToSave: { subject_name?: string; teacher_id?: number }) => {
     if (!selectedSlot || !selectedClass) return;
@@ -211,20 +201,13 @@ const TimetableScreen = () => {
       teacher_id: slotToSave.teacher_id || null,
     };
     try {
-      const response = await fetch(`${API_BASE_URL}/api/timetable`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(errorText || 'Failed to update timetable.');
-      }
+      // ★★★ 4. USE apiClient TO SAVE TIMETABLE ★★★
+      await apiClient.post('/timetable', payload);
       Alert.alert('Success', 'Timetable updated!');
       setIsModalVisible(false);
       fetchTimetable(selectedClass);
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'An error occurred while updating timetable.');
+      Alert.alert('Error', error.response?.data?.message || 'An error occurred while updating timetable.');
     }
   };
 
@@ -282,7 +265,7 @@ const TimetableScreen = () => {
                   {row.periods.map((period, periodIndex) => {
                     const day = DAYS[periodIndex];
                     const periodNumber = PERIOD_DEFINITIONS[rowIndex].period;
-                    const isMyPeriod = user.id && period.teacher_id === user.id;
+                    const isMyPeriod = user.id && String(period.teacher_id) === String(user.id);
                     return (
                       <TouchableOpacity
                         key={periodIndex}
@@ -293,14 +276,11 @@ const TimetableScreen = () => {
                           { width: tableHeaders[periodIndex + 1].width },
                         ]}
                         disabled={user.role !== 'admin' && !isMyPeriod}
-                        // ==================== FIXED CODE START ====================
-                        // We now pass the 'day' of the column to the handler function.
                         onPress={() =>
                           user.role === 'admin'
                             ? handleSlotPress(day, periodNumber)
                             : isMyPeriod && handleTeacherSlotPress(period.subject!, periodNumber, day)
                         }
-                        // ===================== FIXED CODE END =====================
                       >
                         <Text style={period.isBreak ? styles.breakTextSubject : styles.subjectText} numberOfLines={2}>
                           {period.subject || '-'}
@@ -334,7 +314,7 @@ const TimetableScreen = () => {
   );
 };
 
-// --- Edit Slot Modal Component ---
+// --- Edit Slot Modal Component (No changes needed here) ---
 const EditSlotModal = ({
   isVisible,
   onClose,
@@ -435,7 +415,7 @@ const EditSlotModal = ({
   );
 };
 
-// --- Styles ---
+// --- Styles (No changes needed here) ---
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#F4F6F8' },
   loaderContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F4F6F8' },

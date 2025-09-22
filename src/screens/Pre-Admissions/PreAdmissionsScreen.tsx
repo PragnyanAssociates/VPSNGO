@@ -1,10 +1,12 @@
+// 📂 File: src/screens/PreAdmissionsScreen.tsx (CORRECTED & FINAL)
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, ActivityIndicator, Modal, ScrollView, TextInput, Platform, Image, LayoutAnimation, UIManager } from 'react-native';
 import FontAwesome from 'react-native-vector-icons/FontAwesome';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { useAuth } from '../../context/AuthContext'; // Adjust path if needed
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
-import { API_BASE_URL } from '../../../apiConfig'; // Adjust path if needed
+import { API_BASE_URL, SERVER_URL } from '../../../apiConfig'; // Import BOTH
 import { launchImageLibrary, ImagePickerResponse, Asset } from 'react-native-image-picker';
 
 // Enable LayoutAnimation for Android
@@ -79,7 +81,7 @@ const PreAdmissionsScreen: React.FC = () => {
     const fetchData = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await fetch(`${API_BASE_URL}/api/preadmissions`, { headers: { Authorization: `Bearer ${token}` } });
+            const response = await fetch(`${API_BASE_URL}/preadmissions`, { headers: { Authorization: `Bearer ${token}` } });
             if (!response.ok) throw new Error('Failed to fetch data.');
             setData(await response.json());
         } catch (error: any) { Alert.alert('Error', error.message); } 
@@ -124,8 +126,8 @@ const PreAdmissionsScreen: React.FC = () => {
         if (processedData.dob) {
             processedData.dob = toYYYYMMDD(new Date(processedData.dob));
         }
-
-        const url = isEditing ? `${API_BASE_URL}/api/preadmissions/${currentItem?.id}` : `${API_BASE_URL}/api/preadmissions`;
+        
+        const url = isEditing ? `${API_BASE_URL}/preadmissions/${currentItem?.id}` : `${API_BASE_URL}/preadmissions`;
         const method = isEditing ? 'PUT' : 'POST';
         const body = new FormData();
 
@@ -153,7 +155,7 @@ const PreAdmissionsScreen: React.FC = () => {
             { text: "Cancel", style: "cancel" },
             { text: "Delete", style: "destructive", onPress: async () => {
                 try {
-                    const response = await fetch(`${API_BASE_URL}/api/preadmissions/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+                    const response = await fetch(`${API_BASE_URL}/preadmissions/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
                     const resData = await response.json();
                     if (!response.ok) throw new Error(resData.message);
                     Alert.alert("Success", resData.message);
@@ -205,12 +207,12 @@ const PreAdmissionsScreen: React.FC = () => {
             <TouchableOpacity style={styles.fab} onPress={() => handleOpenModal()}><MaterialIcons name="add" size={24} color="#fff" /></TouchableOpacity>
             
             <Modal visible={modalVisible} animationType="slide" onRequestClose={() => setModalVisible(false)}>
-                {/* ★★★★★★★★★★★★★★★★★★★★ FIX: RESTORED MODAL CONTENT HERE ★★★★★★★★★★★★★★★★★★★★ */}
                 <ScrollView style={styles.modalContainer} contentContainerStyle={{paddingBottom: 50}}>
                     <Text style={styles.modalTitle}>{isEditing ? 'Edit Application' : 'New Application'}</Text>
                     
                     <View style={styles.imagePickerContainer}>
-                        <Image source={selectedImage?.uri ? { uri: selectedImage.uri } : (formData.photo_url ? { uri: `${API_BASE_URL}${formData.photo_url}` } : require('../../assets/profile.png'))} style={styles.profileImage} />
+                        {/* ★★★ IMAGE URL FIXED ★★★ (Used SERVER_URL instead of API_BASE_URL) */}
+                        <Image source={selectedImage?.uri ? { uri: selectedImage.uri } : (formData.photo_url ? { uri: `${SERVER_URL}${formData.photo_url}` } : require('../../assets/profile.png'))} style={styles.profileImage} />
                         <TouchableOpacity style={styles.imagePickerButton} onPress={handleChoosePhoto}><FontAwesome name="camera" size={16} color="#fff" /><Text style={styles.imagePickerButtonText}>Choose Photo</Text></TouchableOpacity>
                     </View>
                     
@@ -253,7 +255,8 @@ const PreAdmissionsScreen: React.FC = () => {
 const PreAdmissionCardItem = ({ item, onEdit, onDelete, isExpanded, onPress }) => (
     <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.8}>
         <View style={styles.cardHeader}>
-            <Image source={item.photo_url ? { uri: `${API_BASE_URL}${item.photo_url}` } : require('../../assets/profile.png')} style={styles.avatarImage} />
+            {/* ★★★ IMAGE URL FIXED ★★★ (Used SERVER_URL instead of API_BASE_URL) */}
+            <Image source={item.photo_url ? { uri: `${SERVER_URL}${item.photo_url}` } : require('../../assets/profile.png')} style={styles.avatarImage} />
             <View style={styles.cardHeaderText}>
                 <Text style={styles.cardTitle}>{item.student_name}</Text>
                 <Text style={styles.cardSubtitle}>Joining: {item.joining_grade}</Text>
@@ -292,6 +295,7 @@ const InfoRow = ({ icon, label, value, isMultiLine = false }) => (
 
 
 // --- STYLESHEET ---
+// (No changes to the styles)
 const styles = StyleSheet.create({
     center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F0F4F7' },
     container: { flex: 1, backgroundColor: '#F0F4F7' },

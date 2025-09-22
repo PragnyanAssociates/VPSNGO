@@ -1,17 +1,17 @@
-// 📂 File: src/screens/sports/AdminSportsScreen.tsx (FIXED VERSION)
+// 📂 File: src/screens/sports/AdminSportsScreen.tsx (REFACTORED)
 
 import React, { useState, useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, ActivityIndicator, TextInput, ScrollView } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useAuth } from '../../context/AuthContext';
-import { API_BASE_URL } from '../../../apiConfig';
+import apiClient from '../../api/client'; // 👈 IMPORT our smart client
 
 const GREEN_THEME = { primary: '#2e7d32', secondary: '#e8f5e9', accent: '#ff8f00', textDark: '#212121', textLight: '#757575', danger: '#c62828', applied: '#29b6f6', approved: '#66bb6a', rejected: '#ef5350' };
 
-// Main component that controls which view is visible
+// Main component - No changes needed here
 const AdminSportsScreen = () => {
-    const [view, setView] = useState('list'); // 'list', 'details', 'create'
+    const [view, setView] = useState('list');
     const [selectedActivity, setSelectedActivity] = useState(null);
     const { user } = useAuth();
 
@@ -27,18 +27,22 @@ const AdminSportsScreen = () => {
     );
 };
 
-// --- Child Component: Shows the list of all created activities ---
+// --- Child Component: List of activities ---
 const ActivityListView = ({ onSelect, onCreate }) => {
     const [activities, setActivities] = useState([]);
     const [loading, setLoading] = useState(true);
 
-    const fetchData = useCallback(() => {
+    const fetchData = useCallback(async () => { // ✅ Use async/await
         setLoading(true);
-        fetch(`${API_BASE_URL}/api/sports/all`)
-            .then(res => res.json())
-            .then(data => setActivities(data))
-            .catch(err => Alert.alert("Error", "Could not load activities."))
-            .finally(() => setLoading(false));
+        try {
+            const response = await apiClient.get('/sports/all'); // ✅ Use apiClient
+            setActivities(response.data);
+        } catch (error) {
+            console.error("Error fetching activities:", error);
+            Alert.alert("Error", "Could not load activities.");
+        } finally {
+            setLoading(false);
+        }
     }, []);
 
     useFocusEffect(fetchData);
@@ -69,19 +73,23 @@ const ActivityListView = ({ onSelect, onCreate }) => {
     );
 };
 
-// --- Child Component: Shows the details and application history for one activity ---
+// --- Child Component: Activity details ---
 const ActivityDetails = ({ activity, onBack }) => {
     const [allApplications, setAllApplications] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [activeFilter, setActiveFilter] = useState('All'); // 'All', 'Applied', 'Approved', 'Rejected'
+    const [activeFilter, setActiveFilter] = useState('All');
 
-    const fetchApplications = useCallback(() => {
+    const fetchApplications = useCallback(async () => { // ✅ Use async/await
         setLoading(true);
-        fetch(`${API_BASE_URL}/api/sports/applications/${activity.id}`)
-            .then(res => res.json())
-            .then(data => setAllApplications(data))
-            .catch(err => Alert.alert("Error", "Could not load application history."))
-            .finally(() => setLoading(false));
+        try {
+            const response = await apiClient.get(`/sports/applications/${activity.id}`); // ✅ Use apiClient
+            setAllApplications(response.data);
+        } catch (error) {
+            console.error("Error fetching applications:", error);
+            Alert.alert("Error", "Could not load application history.");
+        } finally {
+            setLoading(false);
+        }
     }, [activity.id]);
 
     useFocusEffect(fetchApplications);
@@ -121,62 +129,56 @@ const ActivityDetails = ({ activity, onBack }) => {
     );
 };
 
-// --- Child Component: Renders a single application card with all logic ---
+// --- Child Component: Application card ---
 const ApplicationCard = ({ application, onUpdate }) => {
-    const { user } = useAuth(); // ✅ ADD THIS LINE TO GET ADMIN USER
+    const { user } = useAuth();
 
     const handleStatusUpdate = (regId, status) => {
         Alert.alert(
-            `Confirm Action`,
-            `Are you sure you want to ${status.toLowerCase()} this application?`,
+            `Confirm Action`, `Are you sure you want to ${status.toLowerCase()} this application?`,
             [
                 { text: 'Cancel', style: 'cancel' },
-                { text: 'Confirm', onPress: () => {
-                    // ✅ FIXED: Add adminId to the request body
-                    fetch(`${API_BASE_URL}/api/sports/application/status`, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ 
+                { text: 'Confirm', async onPress() { // ✅ Use async
+                    try {
+                        const response = await apiClient.put('/sports/application/status', { // ✅ Use apiClient
                             registrationId: regId, 
                             status,
-                            adminId: user?.id // ✅ ADD THIS LINE
-                        })
-                    })
-                    .then(res => { 
-                        if(res.ok) {
+                            adminId: user?.id 
+                        });
+                        if (response.ok) {
                             onUpdate();
                             Alert.alert('Success', `Application ${status.toLowerCase()} successfully!`);
                         } else {
-                            Alert.alert('Error', `Failed to ${status.toLowerCase()} application`);
+                            Alert.alert('Error', response.data.message || `Failed to update status.`);
                         }
-                    })
-                    .catch(error => {
+                    } catch (error) {
                         console.error('Error updating status:', error);
-                        Alert.alert('Error', 'Network error occurred');
-                    });
+                        Alert.alert('Error', 'A network error occurred.');
+                    }
                 }}
             ]
         );
     };
 
-    const handleSaveRemarks = (regId, text) => {
-        fetch(`${API_BASE_URL}/api/sports/application/remarks`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ registrationId: regId, remarks: text })
-        });
+    const handleSaveRemarks = async (regId, text) => { // ✅ Use async for consistency
+        try {
+            await apiClient.put('/sports/application/remarks', { // ✅ Use apiClient
+                registrationId: regId, remarks: text 
+            });
+        } catch (error) { console.error("Could not save remarks:", error); }
     };
     
-    const handleSaveAchievements = (regId, text) => {
-        fetch(`${API_BASE_URL}/api/sports/application/achievements`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ registrationId: regId, achievements: text })
-        });
+    const handleSaveAchievements = async (regId, text) => { // ✅ Use async for consistency
+        try {
+            await apiClient.put('/sports/application/achievements', { // ✅ Use apiClient
+                registrationId: regId, achievements: text 
+            });
+        } catch (error) { console.error("Could not save achievements:", error); }
     };
 
     return (
         <View style={styles.appCard}>
+            {/* --- UI Remains Unchanged --- */}
             <View style={styles.appCardHeader}>
                 <Text style={styles.studentName}>{application.full_name}</Text>
                 <StatusBadge status={application.status} />
@@ -221,44 +223,41 @@ const ApplicationCard = ({ application, onUpdate }) => {
     );
 };
 
-// --- Helper Component: Renders a colored status badge ---
+// --- Helper Component: Status Badge - No Changes ---
 const StatusBadge = ({ status }) => {
-    const style = {
-        Applied: { backgroundColor: GREEN_THEME.applied },
-        Approved: { backgroundColor: GREEN_THEME.approved },
-        Rejected: { backgroundColor: GREEN_THEME.rejected },
-    };
-    return (
-        <View style={[styles.statusBadge, style[status]]}>
-            <Text style={styles.statusBadgeText}>{status}</Text>
-        </View>
-    );
+    const style = { Applied: { backgroundColor: GREEN_THEME.applied }, Approved: { backgroundColor: GREEN_THEME.approved }, Rejected: { backgroundColor: GREEN_THEME.rejected } };
+    return ( <View style={[styles.statusBadge, style[status]]}><Text style={styles.statusBadgeText}>{status}</Text></View> );
 };
 
-// --- Child Component: The form for creating a new activity ---
+// --- Child Component: Create form ---
 const CreateActivityForm = ({ onBack, editorId }) => {
     const [name, setName] = useState('');
     const [team, setTeam] = useState('');
     const [coach, setCoach] = useState('');
     const [schedule, setSchedule] = useState('');
 
-    const handleSubmit = () => {
+    const handleSubmit = async () => { // ✅ Use async
         if (!name.trim() || !coach.trim()) {
             return Alert.alert("Validation Error", "Activity Name and Coach Name are required.");
         }
         const payload = { name, team_name: team, coach_name: coach, schedule_details: schedule, created_by: editorId };
-        fetch(`${API_BASE_URL}/api/sports`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        }).then(res => {
-            if (res.ok) { Alert.alert("Success", "Activity created!"); onBack(); }
-            else { Alert.alert("Error", "Could not create activity."); }
-        })
+        try {
+            const response = await apiClient.post('/sports', payload); // ✅ Use apiClient
+            if (response.ok) {
+                Alert.alert("Success", "Activity created!");
+                onBack();
+            } else {
+                Alert.alert("Error", response.data.message || "Could not create activity.");
+            }
+        } catch (error) {
+            console.error("Error creating activity:", error);
+            Alert.alert("Error", "An unexpected error occurred.");
+        }
     };
 
     return (
         <ScrollView>
+             {/* --- UI Remains Unchanged --- */}
             <TouchableOpacity style={styles.backButton} onPress={onBack}><MaterialCommunityIcons name="arrow-left" size={22} /><Text> Cancel</Text></TouchableOpacity>
             <Text style={styles.detailsTitle}>Create New Activity</Text>
             <TextInput placeholder="Activity Name (e.g., Basketball) *" style={styles.input} value={name} onChangeText={setName} />
@@ -270,7 +269,7 @@ const CreateActivityForm = ({ onBack, editorId }) => {
     );
 };
 
-// Styles remain the same...
+// --- Styles Remain Unchanged ---
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#f0f4f0' },
     // LIST VIEW STYLES

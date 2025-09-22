@@ -1,9 +1,10 @@
-// 📂 File: screens/syllabus/TeacherSyllabusScreen.js (FINAL & CORRECTED)
+// 📂 File: screens/syllabus/TeacherSyllabusScreen.js (MODIFIED & CORRECTED)
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert, ScrollView } from 'react-native';
+// ★★★ 1. IMPORT apiClient AND REMOVE API_BASE_URL ★★★
+import apiClient from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
-import { API_BASE_URL } from '../../../apiConfig';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { useIsFocused } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
@@ -27,10 +28,10 @@ const TeacherSyllabusListScreen = ({ navigation }) => {
         if (!user?.id) return;
         setIsLoading(true);
         try {
-            const response = await fetch(`${API_BASE_URL}/api/teacher-assignments/${user.id}`);
-            if (!response.ok) throw new Error("Failed to load your assigned subjects.");
-            setAssignments(await response.json());
-        } catch (error) { Alert.alert("Error", error.message); }
+            // ★★★ 2. USE apiClient ★★★
+            const response = await apiClient.get(`/teacher-assignments/${user.id}`);
+            setAssignments(response.data);
+        } catch (error) { Alert.alert("Error", error.response?.data?.message || "Failed to load your assigned subjects."); }
         finally { setIsLoading(false); }
     }, [user?.id]);
 
@@ -68,7 +69,6 @@ const TeacherSyllabusListScreen = ({ navigation }) => {
     );
 };
 
-// ✅ THIS SCREEN CONTAINS THE FINAL FIX FOR THE OVERVIEW COUNTS
 const TeacherLessonProgressScreen = ({ route, navigation }) => {
     const { classGroup, subjectName } = route.params;
     const { user: teacher } = useAuth();
@@ -76,26 +76,16 @@ const TeacherLessonProgressScreen = ({ route, navigation }) => {
     const [overview, setOverview] = useState({ completed: 0, missed: 0, pending: 0, total: 0 });
     const [isLoading, setIsLoading] = useState(true);
 
-    // ✅ EDITED: This function is now simpler and more reliable.
     const fetchData = useCallback(async () => {
         setIsLoading(true);
         try {
-            // Step 1: Get the main syllabus ID first.
-            const syllabusResponse = await fetch(`${API_BASE_URL}/api/syllabus/teacher/${classGroup}/${subjectName}`);
-            if (!syllabusResponse.ok) {
-                if (syllabusResponse.status === 404) throw new Error("Syllabus has not been created for this subject yet.");
-                throw new Error("Failed to load syllabus data.");
-            }
-            const syllabusData = await syllabusResponse.json();
+            // ★★★ 3. USE apiClient FOR ALL FETCH CALLS ★★★
+            const syllabusResponse = await apiClient.get(`/syllabus/teacher/${classGroup}/${subjectName}`);
+            const syllabusData = syllabusResponse.data;
             
-            // Step 2: Use the syllabus ID to fetch the complete progress data. This is our single source of truth.
-            const progressResponse = await fetch(`${API_BASE_URL}/api/syllabus/class-progress/${syllabusData.id}`);
-            if (!progressResponse.ok) {
-                throw new Error("Could not load lesson progress.");
-            }
-            const progressData = await progressResponse.json();
+            const progressResponse = await apiClient.get(`/syllabus/class-progress/${syllabusData.id}`);
+            const progressData = progressResponse.data;
 
-            // Step 3: Calculate the overview counts based on the fresh data.
             const newOverview = { completed: 0, missed: 0, pending: 0, total: progressData.length };
             progressData.forEach(lesson => {
                 if (lesson.status === 'Completed') newOverview.completed++;
@@ -104,7 +94,6 @@ const TeacherLessonProgressScreen = ({ route, navigation }) => {
             });
             setOverview(newOverview);
             
-            // Step 4: Set the syllabus state with the lessons and their correct, current statuses.
             const lessonsWithStatus = progressData.map(p => ({
                 id: p.lesson_id,
                 lesson_name: p.lesson_name,
@@ -114,7 +103,10 @@ const TeacherLessonProgressScreen = ({ route, navigation }) => {
             setSyllabus({ ...syllabusData, lessons: lessonsWithStatus });
 
         } catch (error) {
-            Alert.alert("Error", error.message);
+            const message = error.response?.status === 404
+                ? "Syllabus has not been created for this subject yet."
+                : error.response?.data?.message || "Failed to load data.";
+            Alert.alert("Error", message);
         } finally {
             setIsLoading(false);
         }
@@ -136,24 +128,17 @@ const TeacherLessonProgressScreen = ({ route, navigation }) => {
                     text: "Confirm", 
                     onPress: async () => {
                         try {
-                            const response = await fetch(`${API_BASE_URL}/api/syllabus/lesson-status`, {
-                                method: 'PATCH',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                    class_group: classGroup,
-                                    lesson_id: lessonId,
-                                    status: newStatus,
-                                    teacher_id: teacher.id
-                                }),
+                            // ★★★ 4. USE apiClient ★★★
+                            const response = await apiClient.patch('/syllabus/lesson-status', {
+                                class_group: classGroup,
+                                lesson_id: lessonId,
+                                status: newStatus,
+                                teacher_id: teacher.id
                             });
-                            const resData = await response.json();
-                            if (!response.ok) throw new Error(resData.message || "Failed to update status.");
-                            
-                            Alert.alert("Success", resData.message);
-                            // After a successful update, refetch all data.
+                            Alert.alert("Success", response.data.message);
                             fetchData();
                         } catch (error) {
-                            Alert.alert("Error", error.message);
+                            Alert.alert("Error", error.response?.data?.message || "Failed to update status.");
                         }
                     } 
                 }
@@ -245,6 +230,7 @@ const ProgressItem = ({ count, label, color }) => (
     </View>
 );
 
+// Styles remain the same
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#f4f7fa' },
     centered: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f4f7fa' },

@@ -3888,7 +3888,7 @@ app.post('/api/gallery/upload', galleryUpload.single('media'), async (req, res) 
         await connection.beginTransaction();
 
         const file_type = file.mimetype.startsWith('image') ? 'photo' : 'video';
-        const file_path = file.path.replace(/\\/g, "/"); 
+        const file_path = `/uploads/${file.filename}`; 
         const query = 'INSERT INTO gallery_items (title, event_date, file_path, file_type, uploaded_by) VALUES (?, ?, ?, ?, ?)';
         const [result] = await connection.query(query, [title, event_date, file_path, file_type, adminId]);
         const newGalleryItemId = result.insertId;

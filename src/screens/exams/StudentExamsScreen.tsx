@@ -1,7 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
+// 📂 File: src/screens/exams/StudentExamsScreen.tsx (MODIFIED & CORRECTED)
+
+import React, { useState, useEffect, useCallback }  from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert, ScrollView, TextInput, Modal } from 'react-native';
+// ★★★ 1. IMPORT apiClient AND REMOVE API_BASE_URL ★★★
+import apiClient from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
-import { API_BASE_URL } from '../../../apiConfig';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { useIsFocused } from '@react-navigation/native';
 
@@ -24,19 +27,9 @@ const StudentExamsScreen = () => {
     const [selectedExam, setSelectedExam] = useState(null);
     const [selectedAttemptId, setSelectedAttemptId] = useState(null);
 
-    const handleStartExam = (exam) => {
-        setSelectedExam(exam);
-        setView('taking');
-    };
-    const handleViewResult = (attemptId) => {
-        setSelectedAttemptId(attemptId);
-        setView('result');
-    };
-    const backToList = () => {
-        setSelectedExam(null);
-        setSelectedAttemptId(null);
-        setView('list');
-    };
+    const handleStartExam = (exam) => { setSelectedExam(exam); setView('taking'); };
+    const handleViewResult = (attemptId) => { setSelectedAttemptId(attemptId); setView('result'); };
+    const backToList = () => { setSelectedExam(null); setSelectedAttemptId(null); setView('list'); };
 
     if (view === 'list') {
         return <ExamList onStartExam={handleStartExam} onViewResult={handleViewResult} />;
@@ -61,11 +54,11 @@ const ExamList = ({ onStartExam, onViewResult }) => {
         if (!user?.id || !user.class_group) return;
         setIsLoading(true);
         try {
-            const response = await fetch(`${API_BASE_URL}/api/exams/student/${user.id}/${user.class_group}`);
-            if (!response.ok) throw new Error('Failed to fetch exams.');
-            setExams(await response.json());
+            // ★★★ 2. USE apiClient ★★★
+            const response = await apiClient.get(`/exams/student/${user.id}/${user.class_group}`);
+            setExams(response.data);
         } catch (e: any) {
-            Alert.alert('Error', e.message);
+            Alert.alert('Error', e.response?.data?.message || 'Failed to fetch exams.');
         } finally {
             setIsLoading(false);
         }
@@ -115,7 +108,7 @@ const ExamList = ({ onStartExam, onViewResult }) => {
     );
 };
 
-// Take Exam View (FIXED)
+// Take Exam View
 const TakeExamView = ({ exam, onFinish }) => {
     const { user } = useAuth();
     const [questions, setQuestions] = useState([]);
@@ -128,22 +121,20 @@ const TakeExamView = ({ exam, onFinish }) => {
         const startAndFetch = async () => {
             if (!user?.id) return;
             try {
-                const startRes = await fetch(`${API_BASE_URL}/api/exams/${exam.exam_id}/start`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ student_id: user.id }) });
-                if (!startRes.ok) throw new Error('Could not start exam.');
-                const { attempt_id } = await startRes.json();
+                // ★★★ 3. USE apiClient FOR ALL CALLS ★★★
+                const startRes = await apiClient.post(`/exams/${exam.exam_id}/start`, { student_id: user.id });
+                const { attempt_id } = startRes.data;
                 setAttemptId(attempt_id);
 
-                const qRes = await fetch(`${API_BASE_URL}/api/exams/take/${exam.exam_id}`);
-                if (!qRes.ok) throw new Error('Could not fetch questions.');
-                const data = await qRes.json();
-                // Ensure options are parsed if they are strings
+                const qRes = await apiClient.get(`/exams/take/${exam.exam_id}`);
+                const data = qRes.data;
                 const parsedQuestions = data.map(q => ({
                     ...q,
                     options: (typeof q.options === 'string') ? JSON.parse(q.options) : q.options,
                 }));
                 setQuestions(parsedQuestions);
             } catch (e: any) {
-                Alert.alert('Error', e.message);
+                Alert.alert('Error', e.response?.data?.message || 'Could not start exam.');
                 onFinish();
             } finally {
                 setIsLoading(false);
@@ -163,12 +154,11 @@ const TakeExamView = ({ exam, onFinish }) => {
                 onPress: async () => {
                     setIsSubmitting(true);
                     try {
-                        const response = await fetch(`${API_BASE_URL}/api/attempts/${attemptId}/submit`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ answers, student_id: user.id }) });
-                        if (!response.ok) throw new Error((await response.json()).message);
+                        await apiClient.post(`/attempts/${attemptId}/submit`, { answers, student_id: user.id });
                         Alert.alert('Success', 'Your exam has been submitted!');
                         onFinish();
                     } catch (e: any) {
-                        Alert.alert('Error', e.message);
+                        Alert.alert('Error', e.response?.data?.message || e.message);
                     } finally {
                         setIsSubmitting(false);
                     }
@@ -187,7 +177,6 @@ const TakeExamView = ({ exam, onFinish }) => {
                     <Text style={styles.marksText}>{q.marks} Marks</Text>
                     {q.question_type === 'multiple_choice' ? (
                         <View>
-                            {/* ✅ CRITICAL FIX: Removed JSON.parse and added safety check */}
                             {q.options && Object.entries(q.options).map(([key, value]) => (
                                 <CustomRadioButton
                                     key={key}
@@ -208,7 +197,7 @@ const TakeExamView = ({ exam, onFinish }) => {
     );
 };
 
-// Result View (FIXED)
+// Result View
 const ResultView = ({ attemptId, onBack }) => {
     const { user } = useAuth();
     const [result, setResult] = useState(null);
@@ -218,10 +207,9 @@ const ResultView = ({ attemptId, onBack }) => {
         const fetchResult = async () => {
             if (!user?.id) return;
             try {
-                const response = await fetch(`${API_BASE_URL}/api/attempts/${attemptId}/result?student_id=${user.id}`);
-                if (!response.ok) throw new Error('Could not fetch results.');
-                const data = await response.json();
-                // Ensure options are parsed if they are strings
+                // ★★★ 4. USE apiClient ★★★
+                const response = await apiClient.get(`/attempts/${attemptId}/result?student_id=${user.id}`);
+                const data = response.data;
                  if (data.details) {
                     data.details = data.details.map(item => ({
                         ...item,
@@ -230,7 +218,7 @@ const ResultView = ({ attemptId, onBack }) => {
                 }
                 setResult(data);
             } catch (e: any) {
-                Alert.alert('Error', e.message);
+                Alert.alert('Error', e.response?.data?.message || 'Could not fetch results.');
                 onBack();
             } finally {
                 setIsLoading(false);
@@ -252,7 +240,6 @@ const ResultView = ({ attemptId, onBack }) => {
                 <View key={item.question_id} style={styles.questionBox}>
                     <Text style={styles.questionText}>{index + 1}. {item.question_text}</Text>
                     <Text style={styles.yourAnswer}>Your Answer: {item.answer_text || 'Not Answered'}</Text>
-                    {/* ✅ CRITICAL FIX: Removed JSON.parse and added safety check */}
                     {item.question_type === 'multiple_choice' && item.options && <Text style={styles.correctAnswer}>Correct Answer: {item.options[item.correct_answer]}</Text>}
                     <Text style={styles.marksAwarded}>Marks Awarded: {item.marks_awarded} / {item.marks}</Text>
                 </View>
@@ -261,6 +248,7 @@ const ResultView = ({ attemptId, onBack }) => {
     );
 };
 
+// Styles remain the same
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#f4f6f8', padding: 10 },
     centered: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
