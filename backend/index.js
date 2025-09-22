@@ -35,6 +35,7 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/public', express.static(path.join(__dirname, 'public')));
 
 const storage = multer.diskStorage({
     destination: (req, file, cb) => { cb(null, 'uploads/'); },
@@ -54,6 +55,7 @@ const galleryStorage = multer.diskStorage({
         cb(null, `gallery-media-${Date.now()}${path.extname(file.originalname)}`);
     }
 });
+
 
 const galleryUpload = multer({ storage: galleryStorage });
 
