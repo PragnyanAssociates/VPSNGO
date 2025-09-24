@@ -1,16 +1,16 @@
-// 📂 File: src/screens/StudentDashboard.tsx (COMPLETE AND RESTYLED)
+// 📂 File: src/components/StudentDashboard.tsx (MODIFIED & CORRECTED)
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, SafeAreaView, Dimensions, Image, Platform, TextInput } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-
-// --- FUNCTIONALITY IMPORTS ---
+// ★★★ 1. CORRECT IMPORTS: Add apiClient and SERVER_URL ★★★
 import { useAuth } from '../context/AuthContext';
-import { API_BASE_URL } from '../../apiConfig';
+import apiClient from '../api/client';
+import { SERVER_URL } from '../../apiConfig';
 
-// --- COMPONENT IMPORTS ---
+// --- COMPONENT IMPORTS (No changes needed here) ---
 import NotificationsScreen from '../screens/NotificationsScreen';
 import AcademicCalendar from './AcademicCalendar';
 import StudentResultsScreen from '../screens/results/StudentResultsScreen';
@@ -36,14 +36,12 @@ import GroupChatScreen from '../screens/chat/GroupChatScreen';
 import GalleryScreen from '../screens/gallery/GalleryScreen';
 import OnlineClassScreen from '../screens/Online_Class/OnlineClassScreen';
 
-// --- TYPE DEFINITION for profile data from API ---
 interface ProfileData {
   full_name: string;
   profile_image_url?: string;
   role: string;
 }
 
-// --- CONSTANTS & COLORS ---
 const { width: windowWidth } = Dimensions.get('window');
 const CARD_GAP = 12;
 const CONTENT_HORIZONTAL_PADDING = 15;
@@ -59,43 +57,44 @@ const DANGER_COLOR = '#E53935';
 
 const StudentDashboard = ({ navigation }) => {
   const [activeTab, setActiveTab] = useState('home');
-  const [searchQuery, setSearchQuery] = useState(''); // ★ 1. STATE FOR SEARCH INPUT
-  const { user, token, logout } = useAuth();
+  const [searchQuery, setSearchQuery] = useState('');
+  const { user, logout } = useAuth();
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
   const isFocused = useIsFocused();
 
-   useEffect(() => {
+  // ★★★ 2. FIX a. USE apiClient to fetch profile data ★★★
+  useEffect(() => {
     const fetchProfile = async () => {
       if (!user) return;
       try {
-        const response = await fetch(`${API_BASE_URL}/api/profiles/${user.id}`);
-        if (response.ok) setProfile(await response.json());
-      } catch (error) { console.error("Error fetching profile:", error); }
+        const response = await apiClient.get(`/profiles/${user.id}`);
+        setProfile(response.data);
+      } catch (error: any) { 
+        console.error("Error fetching profile:", error);
+        Alert.alert("Error", error.response?.data?.message || "Could not load profile data.");
+      }
     };
     if (isFocused) {
         fetchProfile();
     }
   }, [user, isFocused]);
 
+  // ★★★ 2. FIX b. USE SERVER_URL to display profile image ★★★
   const profileImageSource = profile?.profile_image_url
-    ? { uri: `${API_BASE_URL}${profile.profile_image_url}` }
-    : require('../assets/profile.png');
-
+    ? { uri: `${SERVER_URL}${profile.profile_image_url}` }
+    : { uri: 'default_avatar' };
+    
+  // ★★★ 2. FIX c. USE apiClient to fetch notifications ★★★
   const fetchUnreadCount = useCallback(async () => {
-    if (!user || !token) return;
+    if (!user) return;
     try {
-      const response = await fetch(`${API_BASE_URL}/api/notifications`, {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setUnreadNotificationsCount(data.filter(n => !n.is_read).length);
-      }
+      const response = await apiClient.get('/notifications');
+      setUnreadNotificationsCount(response.data.filter(n => !n.is_read).length);
     } catch (error) {
       console.error("Error fetching initial unread count:", error);
     }
-  }, [user, token]);
+  }, [user]);
 
   useEffect(() => {
     if (isFocused) {
@@ -103,7 +102,7 @@ const StudentDashboard = ({ navigation }) => {
     }
   }, [isFocused, fetchUnreadCount]); 
 
-  // ★ 2. UPDATED ICONS AND ORDER TO MATCH SCREENSHOT
+  // --- Quick Access Items (No changes needed here) ---
   const allQuickAccessItems = [
     { id: 'qa-ads-create', title: 'Create Ad', imageSource: 'https://cdn-icons-png.flaticon.com/128/4944/4944482.png', navigateTo: 'CreateAdScreen' },
     { id: 'qa2', title: 'Timetable', imageSource: 'https://cdn-icons-png.flaticon.com/128/1254/1254275.png', navigateToTab: 'Timetable' },
@@ -124,26 +123,22 @@ const StudentDashboard = ({ navigation }) => {
     { id: 'qa12', title: 'Help Desk', imageSource: 'https://cdn-icons-png.flaticon.com/128/4961/4961736.png', navigateToTab: 'UserHelpDeskScreen' },
     { id: 'qa18', title: 'Gallery', imageSource: 'https://cdn-icons-png.flaticon.com/128/8418/8418513.png', navigateTo: 'Gallery' },
     { id: 'qa19', title: 'About Us', imageSource: 'https://cdn-icons-png.flaticon.com/128/3815/3815523.png', navigateToTab: 'AboutUs' },
-    { id: 'qa20', title: 'Chat AI', imageSource: 'https://cdn-icons-png.flaticon.com/128/6028/6028616.png', navigateToTab: 'ChatAI' },
+    // { id: 'qa20', title: 'Chat AI', imageSource: 'https://cdn-icons-png.flaticon.com/128/6028/6028616.png', navigateToTab: 'ChatAI' },
     { id: 'qa25', title: 'Food', imageSource: 'https://cdn-icons-png.flaticon.com/128/2276/2276931.png', navigateToTab: 'FoodScreen' },
     { id: 'qa26', title: 'Group Chat', imageSource: 'https://cdn-icons-png.flaticon.com/128/745/745205.png', navigateToTab: 'GroupChatScreen' },
   ];
-
   
-  const [filteredItems, setFilteredItems] = useState(allQuickAccessItems); // ★ 3. STATE FOR FILTERED ITEMS
+  const [filteredItems, setFilteredItems] = useState(allQuickAccessItems);
 
-  // ★ 4. EFFECT TO FILTER ITEMS BASED ON SEARCH QUERY
   useEffect(() => {
     if (searchQuery.trim() === '') {
       setFilteredItems(allQuickAccessItems);
     } else {
       const lowercasedQuery = searchQuery.toLowerCase();
-      const filtered = allQuickAccessItems.filter(item =>
-        item.title.toLowerCase().includes(lowercasedQuery)
-      );
+      const filtered = allQuickAccessItems.filter(item => item.title.toLowerCase().includes(lowercasedQuery));
       setFilteredItems(filtered);
     }
-  }, [searchQuery]); // Runs only when searchQuery changes
+  }, [searchQuery]);
 
   const handleLogout = () => { Alert.alert("Logout", "Are you sure you want to log out?", [{ text: "Cancel", style: "cancel" }, { text: "Logout", onPress: logout, style: "destructive" }], { cancelable: true }); };
   const handleBellIconClick = () => setActiveTab('allNotifications');
@@ -152,25 +147,17 @@ const StudentDashboard = ({ navigation }) => {
   const ContentScreenHeader = ({ title, onBack = () => setActiveTab('home') }) => ( <View style={styles.contentHeader}><TouchableOpacity onPress={onBack} style={styles.backButtonGlobal}><MaterialIcons name="arrow-back" size={24} color={PRIMARY_COLOR} /></TouchableOpacity><Text style={styles.contentHeaderTitle}>{title}</Text><View style={{ width: 30 }} /></View> );
 
   const renderContent = () => {
+    // ... renderContent logic remains exactly the same, no changes needed here ...
     switch (activeTab) {
       case 'home':
         return ( 
             <>
-              {/* ★ 5. SEARCH BAR UI */}
               <View style={styles.searchContainer}>
                 <MaterialIcons name="search" size={22} color={TEXT_COLOR_MEDIUM} style={styles.searchIcon} />
-                <TextInput
-                  style={styles.searchInput}
-                  placeholder="Search modules..."
-                  placeholderTextColor={TEXT_COLOR_MEDIUM}
-                  value={searchQuery}
-                  onChangeText={setSearchQuery}
-                  clearButtonMode="while-editing"
-                />
+                <TextInput style={styles.searchInput} placeholder="Search modules..." placeholderTextColor={TEXT_COLOR_MEDIUM} value={searchQuery} onChangeText={setSearchQuery} clearButtonMode="while-editing" />
               </View>
               <ScrollView contentContainerStyle={styles.contentScrollViewContainer}>
                   <View style={styles.dashboardGrid}>
-                      {/* ★ 6. RENDER FILTERED ITEMS */}
                       {filteredItems.map(item => ( 
                           <DashboardSectionCard 
                               key={item.id} 
@@ -184,7 +171,6 @@ const StudentDashboard = ({ navigation }) => {
                           /> 
                       ))}
                   </View>
-                  {/* ★ 7. SHOW MESSAGE IF NO RESULTS FOUND */}
                   {filteredItems.length === 0 && (
                     <View style={styles.noResultsContainer}>
                         <Text style={styles.noResultsText}>No modules found for "{searchQuery}"</Text>
@@ -243,11 +229,7 @@ const StudentDashboard = ({ navigation }) => {
           </View>
         </View>
       )}
-
-      <View style={styles.mainContent}>
-        {renderContent()}
-      </View>
-
+      <View style={styles.mainContent}>{renderContent()}</View>
       <View style={styles.bottomNav}>
         <BottomNavItem icon="home" label="Home" isActive={activeTab === 'home'} onPress={() => setActiveTab('home')} />
         <BottomNavItem icon="calendar" label="Calendar" isActive={activeTab === 'calendar'} onPress={() => setActiveTab('calendar')} />
@@ -257,7 +239,6 @@ const StudentDashboard = ({ navigation }) => {
   );
 };
 
-// --- Helper Components ---
 const BottomNavItem = ({ icon, label, isActive, onPress }) => (
     <TouchableOpacity style={styles.navItem} onPress={onPress}>
         <Icon name={icon} size={24} color={isActive ? PRIMARY_COLOR : TEXT_COLOR_MEDIUM} />
@@ -265,58 +246,6 @@ const BottomNavItem = ({ icon, label, isActive, onPress }) => (
     </TouchableOpacity>
 );
 
-// --- STYLES ---
-const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: TERTIARY_COLOR },
-  mainContent: { flex: 1 },
-  topBar: {
-    backgroundColor: SECONDARY_COLOR,
-    paddingHorizontal: 15,
-    paddingVertical: Platform.OS === 'ios' ? 12 : 15,
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    shadowColor: '#455A64',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 3,
-    borderBottomWidth: 1,
-    borderBottomColor: BORDER_COLOR,
-  },
-  profileContainer: { flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 10 },
-  profileImage: { width: 45, height: 45, borderRadius: 22.5, borderWidth: 2, borderColor: PRIMARY_COLOR, backgroundColor: '#e0e0e0' },
-  profileTextContainer: { marginLeft: 12, flex: 1 },
-  profileNameText: { color: PRIMARY_COLOR, fontSize: 18, fontWeight: 'bold' },
-  profileRoleText: { color: TEXT_COLOR_MEDIUM, fontSize: 14 },
-  topBarActions: { flexDirection: 'row', alignItems: 'center' },
-  iconButton: { position: 'relative', padding: 8 },
-  notificationCountBubble: { position: 'absolute', top: 3, right: 3, backgroundColor: DANGER_COLOR, borderRadius: 10, minWidth: 20, height: 20, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 5 },
-  notificationCountText: { color: WHITE, fontSize: 11, fontWeight: 'bold' },
-  contentHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 15, paddingVertical: 12, backgroundColor: SECONDARY_COLOR, borderBottomWidth: 1, borderBottomColor: BORDER_COLOR },
-  backButtonGlobal: { padding: 5 },
-  contentHeaderTitle: { fontSize: 20, fontWeight: 'bold', color: PRIMARY_COLOR, textAlign: 'center', flex: 1 },
-  // ★ 8. NEW STYLES FOR SEARCH BAR
-  searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: WHITE, borderRadius: 12, marginHorizontal: CONTENT_HORIZONTAL_PADDING, marginTop: 15, marginBottom: 5, borderColor: BORDER_COLOR, borderWidth: 1, elevation: 2 },
-  searchIcon: { marginLeft: 15 },
-  searchInput: { flex: 1, height: 48, paddingLeft: 10, fontSize: 16, color: TEXT_COLOR_DARK },
-  noResultsContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', marginTop: 50, paddingHorizontal: 20 },
-  noResultsText: { fontSize: 16, color: TEXT_COLOR_MEDIUM, textAlign: 'center' },
-  contentScrollViewContainer: { paddingHorizontal: CONTENT_HORIZONTAL_PADDING, paddingTop: 10, paddingBottom: 20, flexGrow: 1, },
-  dashboardGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
-  dashboardCard: { width: (windowWidth - (CONTENT_HORIZONTAL_PADDING * 2) - (CARD_GAP * 2)) / 3, borderRadius: 10, paddingVertical: 15, marginBottom: CARD_GAP, alignItems: 'center', justifyContent: 'center', height: 115, backgroundColor: WHITE, shadowColor: '#455A64', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 3, elevation: 3, borderWidth: 1, borderColor: BORDER_COLOR },
-  cardIconContainer: { width: 45, height: 45, justifyContent: 'center', alignItems: 'center', marginBottom: 8 },
-  cardImage: { width: 38, height: 38, resizeMode: 'contain' },
-  cardTitle: { fontSize: 11, fontWeight: '600', color: TEXT_COLOR_DARK, textAlign: 'center', lineHeight: 14, paddingHorizontal: 4 },
-  bottomNav: { flexDirection: 'row', backgroundColor: SECONDARY_COLOR, borderTopWidth: 1, borderTopColor: BORDER_COLOR, paddingVertical: Platform.OS === 'ios' ? 10 : 8, paddingBottom: Platform.OS === 'ios' ? 20 : 8, minHeight: BOTTOM_NAV_HEIGHT },
-  navItem: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 5 },
-  navText: { fontSize: 10, color: TEXT_COLOR_MEDIUM, marginTop: 3 },
-  navTextActive: { color: PRIMARY_COLOR, fontWeight: 'bold' },
-  fallbackContent: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20, backgroundColor: TERTIARY_COLOR },
-  fallbackText: { fontSize: 16, color: TEXT_COLOR_MEDIUM, textAlign: 'center', marginBottom: 10 },
-  fallbackLink: { fontSize: 16, color: PRIMARY_COLOR, fontWeight: 'bold' }
-});
+const styles = StyleSheet.create({ safeArea: { flex: 1, backgroundColor: TERTIARY_COLOR }, mainContent: { flex: 1 }, topBar: { backgroundColor: SECONDARY_COLOR, paddingHorizontal: 15, paddingVertical: Platform.OS === 'ios' ? 12 : 15, borderBottomLeftRadius: 20, borderBottomRightRadius: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', shadowColor: '#455A64', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 3, elevation: 3, borderBottomWidth: 1, borderBottomColor: BORDER_COLOR, }, profileContainer: { flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 10 }, profileImage: { width: 45, height: 45, borderRadius: 22.5, borderWidth: 2, borderColor: PRIMARY_COLOR, backgroundColor: '#e0e0e0' }, profileTextContainer: { marginLeft: 12, flex: 1 }, profileNameText: { color: PRIMARY_COLOR, fontSize: 18, fontWeight: 'bold' }, profileRoleText: { color: TEXT_COLOR_MEDIUM, fontSize: 14 }, topBarActions: { flexDirection: 'row', alignItems: 'center' }, iconButton: { position: 'relative', padding: 8 }, notificationCountBubble: { position: 'absolute', top: 3, right: 3, backgroundColor: DANGER_COLOR, borderRadius: 10, minWidth: 20, height: 20, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 5 }, notificationCountText: { color: WHITE, fontSize: 11, fontWeight: 'bold' }, contentHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 15, paddingVertical: 12, backgroundColor: SECONDARY_COLOR, borderBottomWidth: 1, borderBottomColor: BORDER_COLOR }, backButtonGlobal: { padding: 5 }, contentHeaderTitle: { fontSize: 20, fontWeight: 'bold', color: PRIMARY_COLOR, textAlign: 'center', flex: 1 }, searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: WHITE, borderRadius: 12, marginHorizontal: CONTENT_HORIZONTAL_PADDING, marginTop: 15, marginBottom: 5, borderColor: BORDER_COLOR, borderWidth: 1, elevation: 2 }, searchIcon: { marginLeft: 15 }, searchInput: { flex: 1, height: 48, paddingLeft: 10, fontSize: 16, color: TEXT_COLOR_DARK }, noResultsContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', marginTop: 50, paddingHorizontal: 20 }, noResultsText: { fontSize: 16, color: TEXT_COLOR_MEDIUM, textAlign: 'center' }, contentScrollViewContainer: { paddingHorizontal: CONTENT_HORIZONTAL_PADDING, paddingTop: 10, paddingBottom: 20, flexGrow: 1, }, dashboardGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' }, dashboardCard: { width: (windowWidth - (CONTENT_HORIZONTAL_PADDING * 2) - (CARD_GAP * 2)) / 3, borderRadius: 10, paddingVertical: 15, marginBottom: CARD_GAP, alignItems: 'center', justifyContent: 'center', height: 115, backgroundColor: WHITE, shadowColor: '#455A64', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 3, elevation: 3, borderWidth: 1, borderColor: BORDER_COLOR }, cardIconContainer: { width: 45, height: 45, justifyContent: 'center', alignItems: 'center', marginBottom: 8 }, cardImage: { width: 38, height: 38, resizeMode: 'contain' }, cardTitle: { fontSize: 11, fontWeight: '600', color: TEXT_COLOR_DARK, textAlign: 'center', lineHeight: 14, paddingHorizontal: 4 }, bottomNav: { flexDirection: 'row', backgroundColor: SECONDARY_COLOR, borderTopWidth: 1, borderTopColor: BORDER_COLOR, paddingVertical: Platform.OS === 'ios' ? 10 : 8, paddingBottom: Platform.OS === 'ios' ? 20 : 8, minHeight: BOTTOM_NAV_HEIGHT }, navItem: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 5 }, navText: { fontSize: 10, color: TEXT_COLOR_MEDIUM, marginTop: 3 }, navTextActive: { color: PRIMARY_COLOR, fontWeight: 'bold' }, fallbackContent: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20, backgroundColor: TERTIARY_COLOR }, fallbackText: { fontSize: 16, color: TEXT_COLOR_MEDIUM, textAlign: 'center', marginBottom: 10 }, fallbackLink: { fontSize: 16, color: PRIMARY_COLOR, fontWeight: 'bold' }});
 
 export default StudentDashboard;

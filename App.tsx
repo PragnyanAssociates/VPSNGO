@@ -30,14 +30,13 @@ import NotificationsScreen from './src/screens/NotificationsScreen';
 import AdminDashboard from './src/components/AdminDashboard';
 import TeacherDashboard from './src/components/TeacherDashboard';
 import StudentDashboard from './src/components/StudentDashboard';
-import DonorDashboard from './src/components/DonorDashboard';
+
 
 // Shared Authenticated Sub-screens
 import ProfileScreen from './src/screens/ProfileScreen';
 import AcademicCalendar from './src/components/AcademicCalendar';
 import TimetableScreen from './src/screens/TimetableScreen';
 import AttendanceScreen from './src/screens/AttendanceScreen';
-import PhysicsSyllabus from './src/components/PhysicsSyllabus';
 import TransportScreen from './src/screens/transport/TransportScreen';
 import GalleryScreen from './src/screens/gallery/GalleryScreen';
 import AlbumDetailScreen from './src/screens/gallery/AlbumDetailScreen';
@@ -46,7 +45,6 @@ import GroupChatScreen from './src/screens/chat/GroupChatScreen';
 // Admin-Specific Screens
 // import AdminNotifications from './src/components/AdminNotifications';
 import AdminLM from './src/components/AdminLM';
-import AdminForgotPasswordScreen from './src/components/AdminForgotPasswordScreen';
 import AdminHelpDeskScreen from './src/screens/helpdesk/AdminHelpDeskScreen';
 import AdminEventsScreen from './src/screens/events/AdminEventsScreen';
 import TeacherAdminPTMScreen from './src/screens/ptm/TeacherAdminPTMScreen';
@@ -62,13 +60,6 @@ import AlumniScreen from './src/screens/Alumni/AlumniScreen';
 import PreAdmissionsScreen from './src/screens/Pre-Admissions/PreAdmissionsScreen';
 
 // Teacher-Specific Screens
-// import TeacherNotifications from './src/components/TeacherNotifications';
-import TeacherTB from './src/components/TeacherTB';
-import TeacherPTM from './src/components/TeacherPTM';
-import TeacherHomework from './src/components/TeacherHomework';
-// import TeacherSyllabus from './src/components/TeacherSyllabus';
-import TeacherAttendance from './src/components/TeacherAttendance';
-import TeacherResults from './src/components/TeacherResults';
 import TeacherHealthAdminScreen from './src/screens/health/TeacherHealthAdminScreen';
 import TeacherAdminLabsScreen from './src/screens/labs/TeacherAdminLabsScreen';
 import TeacherAdminMaterialsScreen from './src/screens/study-materials/TeacherAdminMaterialsScreen';
@@ -77,13 +68,6 @@ import TeacherSyllabusScreen from './src/screens/syllabus/TeacherSyllabusScreen'
 // Student-Specific Screens
 // import StudentNotifications from './src/components/StudentNotifications';
 import StudentHealthScreen from './src/screens/health/StudentHealthScreen';
-import StudentHelpdesk from './src/components/StudentHelpdesk';
-import StudentPTM from './src/components/StudentPTM';
-import StudentLabs from './src/components/StudentLabs';
-import StudentHomework from './src/components/StudentHomework';
-import StudentAttendance from './src/components/StudentAttendance';
-import StudentHistory from './src/components/StudentHistory';
-import StudentTB from './src/components/StudentTB';
 
 import StudentResultsScreen from './src/screens/results/StudentResultsScreen';
 import StudentSyllabusScreen from './src/screens/syllabus/StudentSyllabusScreen';
@@ -100,11 +84,7 @@ import OnlineClassScreen from './src/screens/Online_Class/OnlineClassScreen';
 
 // Donor-Specific Screens
 // import DonorNotifications from './src/components/DonorNotifications';
-import DonorSuggestions from './src/components/DonorSuggestions';
-import DonorReceipts from './src/components/DonorReceipts';
-import DonorPayments from './src/components/DonorPayments';
 
-import DonorSI from './src/components/DonorSI';
 import DonorSuggestionsScreen from './src/screens/suggestions/DonorSuggestionsScreen';
 import DonorSponsorScreen from './src/screens/sponsorship/DonorSponsorScreen';
 import DonorPaymentScreen from './src/screens/payments/DonorPaymentScreen';
@@ -175,7 +155,7 @@ const AuthenticatedStack = () => {
     switch (user?.role) {
       case 'admin':   return 'AdminDashboard';
       case 'teacher': return 'TeacherDashboard';
-      case 'donor':   return 'DonorDashboard';
+      // case 'driver':   return 'driverDashboard';
       case 'student': return 'StudentDashboard';
       default:        return 'StudentDashboard';
     }
@@ -186,47 +166,39 @@ const AuthenticatedStack = () => {
       <Stack.Screen name="AdminDashboard" component={AdminDashboard} />
       <Stack.Screen name="TeacherDashboard" component={TeacherDashboard} />
       <Stack.Screen name="StudentDashboard" component={StudentDashboard} />
-      <Stack.Screen name="DonorDashboard" component={DonorDashboard} />
+      {/* <Stack.Screen name="DonorDashboard" component={DonorDashboard} /> */}
       <Stack.Screen name="Profile" component={ProfileScreen} />
       <Stack.Screen name="AcademicCalendar" component={AcademicCalendar} />
       <Stack.Screen name="Timetable" component={TimetableScreen} />
       <Stack.Screen name="Attendance" component={AttendanceScreen} />
-      <Stack.Screen name="PhysicsSyllabus" component={PhysicsSyllabus} />
+      
       <Stack.Screen name="UserHelpDesk" component={UserHelpDeskScreen} />
-      {/* <Stack.Screen name="AdminNotifications" component={AdminNotifications} /> */}
+      
       <Stack.Screen name="AdminLM" component={AdminLM} />
-      <Stack.Screen name="AdminForgotPasswordScreen" component={AdminForgotPasswordScreen} />
+      
       <Stack.Screen name="AdminHelpDeskScreen" component={AdminHelpDeskScreen} />
       <Stack.Screen name="AdminEventsScreen" component={AdminEventsScreen} />
       <Stack.Screen name="NotificationsScreen" component={NotificationsScreen} />
-      <Stack.Screen name="TeacherTB" component={TeacherTB} />
-      <Stack.Screen name="TeacherPTM" component={TeacherPTM} />
-      <Stack.Screen name="TeacherHomework" component={TeacherHomework} />
+      
+      
       <Stack.Screen name="TeacherSyllabusScreen" component={TeacherSyllabusScreen} />
-      <Stack.Screen name="TeacherAttendance" component={TeacherAttendance} />
+      
       <Stack.Screen name="TeacherHealthAdminScreen" component={TeacherHealthAdminScreen} />
-      <Stack.Screen name="TeacherResults" component={TeacherResults} />
-      {/* <Stack.Screen name="StudentNotifications" component={StudentNotifications} /> */}
+      
       <Stack.Screen name="StudentHealthScreen" component={StudentHealthScreen} />
-      <Stack.Screen name="StudentHelpdesk" component={StudentHelpdesk} />
+      
       <Stack.Screen name="StudentSportsScreen" component={StudentSportsScreen} />
       <Stack.Screen name="StudentEventsScreen" component={StudentEventsScreen} />
-      <Stack.Screen name="StudentPTM" component={StudentPTM} />
-      <Stack.Screen name="StudentLabs" component={StudentLabs} />
-      <Stack.Screen name="StudentHomework" component={StudentHomework} />
+      
+      
+      
       <Stack.Screen name="StudentExamScreen" component={StudentExamScreen} />
       <Stack.Screen name="StudentMaterialsScreen" component={StudentMaterialsScreen} />
-      <Stack.Screen name="StudentAttendance" component={StudentAttendance} />
-      <Stack.Screen name="StudentHistory" component={StudentHistory} />
-      <Stack.Screen name="StudentTB" component={StudentTB} />
+      
       <Stack.Screen name="StudentSyllabusScreen" component={StudentSyllabusScreen} />
       <Stack.Screen name="StudentExamsScreen" component={StudentExamsScreen} />
-      {/* <Stack.Screen name="DonorNotifications" component={DonorNotifications} /> */}
-      <Stack.Screen name="DonorSuggestions" component={DonorSuggestions} />
-      <Stack.Screen name="DonorReceipts" component={DonorReceipts} />
-      <Stack.Screen name="DonorPayments" component={DonorPayments} />
       
-      <Stack.Screen name="DonorSI" component={DonorSI} />
+      
       <Stack.Screen name="TeacherAdminPTMScreen" component={TeacherAdminPTMScreen} />
       <Stack.Screen name="StudentPTMScreen" component={StudentPTMScreen} />
       <Stack.Screen name="TeacherAdminLabsScreen" component={TeacherAdminLabsScreen} />

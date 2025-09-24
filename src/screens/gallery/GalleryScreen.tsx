@@ -1,4 +1,4 @@
-// 📂 File: src/screens/gallery/GalleryScreen.tsx (FINAL, CORRECTED VERSION)
+// 📂 File: src/screens/gallery/GalleryScreen.tsx (MODIFIED & CORRECTED)
 
 import React, { useState, useEffect, FC, useCallback } from 'react';
 import {
@@ -13,17 +13,34 @@ import { launchImageLibrary, Asset } from 'react-native-image-picker';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useAuth } from '../../context/AuthContext'; 
-// ★★★ 1. CORRECT IMPORTS ★★★
+// ★★★ 1. IMPORT apiClient AND SERVER_URL, REMOVE axios & API_BASE_URL ★★★
 import apiClient from '../../api/client';
 import { SERVER_URL } from '../../../apiConfig';
 
 // --- Type Definitions ---
-type GalleryItemType = { id: number; title: string; event_date: string; file_path: string; file_type: 'photo' | 'video'; uploader_name: string; };
-type AlbumSection = { title: string; date: string; items: GalleryItemType[]; };
-type RootStackParamList = { AlbumDetail: { title: string; items: GalleryItemType[] }; };
+type GalleryItemType = {
+    id: number;
+    title: string;
+    event_date: string;
+    file_path: string;
+    file_type: 'photo' | 'video';
+    uploader_name: string;
+};
+
+type AlbumSection = {
+    title: string;
+    date: string;
+    items: GalleryItemType[];
+};
+
+type RootStackParamList = {
+    AlbumDetail: { title: string; items: GalleryItemType[] };
+};
 type GalleryScreenNavigationProp = StackNavigationProp<RootStackParamList>;
+
 const { width } = Dimensions.get('window');
 
+// --- AlbumCover Component ---
 const AlbumCover: FC<{ 
     section: AlbumSection, 
     onPress: () => void,
@@ -35,7 +52,7 @@ const AlbumCover: FC<{
 
     return (
         <TouchableOpacity style={styles.albumContainer} onPress={onPress}>
-            {/* ★★★ 2. CORRECT IMAGE URL CONSTRUCTION ★★★ */}
+            {/* ★★★ 2. USE SERVER_URL for images ★★★ */}
             <Image
                 source={{ uri: `${SERVER_URL}${coverItem.file_path}` }}
                 style={styles.albumImage}
@@ -47,7 +64,10 @@ const AlbumCover: FC<{
             </View>
             <View style={styles.iconContainer}>
                 {isAdmin && (
-                    <TouchableOpacity style={[styles.iconButton, styles.deleteButton]} onPress={(e) => { e.stopPropagation(); onDelete(); }}>
+                    <TouchableOpacity 
+                        style={[styles.iconButton, styles.deleteButton]} 
+                        onPress={(e) => { e.stopPropagation(); onDelete(); }}
+                    >
                         <Icon name="trash" size={20} color="white" />
                     </TouchableOpacity>
                 )}
@@ -56,16 +76,20 @@ const AlbumCover: FC<{
     );
 };
 
+// --- Main GalleryScreen Component ---
 const GalleryScreen: FC = () => {
     const { user } = useAuth(); 
     const navigation = useNavigation<GalleryScreenNavigationProp>();
     const isAdmin = user?.role === 'admin';
+
     const [index, setIndex] = useState<number>(0);
     const [routes] = useState<Route[]>([ { key: 'photos', title: 'Photos' }, { key: 'videos', title: 'Videos' } ]);
+    
     const [photoAlbums, setPhotoAlbums] = useState<AlbumSection[]>([]);
     const [videoAlbums, setVideoAlbums] = useState<AlbumSection[]>([]);
     const [loading, setLoading] = useState<boolean>(true);
     const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+
     const [isUploadModalVisible, setUploadModalVisible] = useState<boolean>(false);
     const [title, setTitle] = useState<string>('');
     const [eventDate, setEventDate] = useState<Date>(new Date());
@@ -85,7 +109,7 @@ const GalleryScreen: FC = () => {
     const fetchData = useCallback(async (): Promise<void> => {
         setLoading(true);
         try {
-            // ★★★ 3. USE apiClient FOR ALL DATA OPERATIONS ★★★
+            // ★★★ 3. USE apiClient for all data fetching ★★★
             const response = await apiClient.get<GalleryItemType[]>('/gallery');
             const allItems = response.data;
             const allAlbums = groupDataByTitle(allItems);
@@ -94,6 +118,7 @@ const GalleryScreen: FC = () => {
             setPhotoAlbums(photoData);
             setVideoAlbums(videoData);
         } catch (error: any) { 
+            console.error('Failed to fetch gallery items:', error); 
             Alert.alert("Error", error.response?.data?.message || "Failed to load gallery items.");
         } finally { 
             setLoading(false); 
@@ -102,10 +127,12 @@ const GalleryScreen: FC = () => {
 
     useFocusEffect(useCallback(() => { fetchData(); }, [fetchData]));
 
-    const handleAlbumPress = (section: AlbumSection) => navigation.navigate('AlbumDetail', { title: section.title, items: section.items });
+    const handleAlbumPress = (section: AlbumSection) => {
+        navigation.navigate('AlbumDetail', { title: section.title, items: section.items });
+    };
 
     const handleDeleteAlbum = (albumTitle: string) => {
-        Alert.alert("Delete Album", `Are you sure you want to permanently delete the "${albumTitle}"?`,
+        Alert.alert("Delete Album", `Are you sure you want to permanently delete the "${albumTitle}" album? This cannot be undone.`,
             [ { text: "Cancel", style: "cancel" },
               { text: "Delete", style: "destructive",
                 onPress: async () => {
@@ -114,7 +141,8 @@ const GalleryScreen: FC = () => {
                         Alert.alert("Success", `Album "${albumTitle}" has been deleted.`);
                         fetchData();
                     } catch (error: any) {
-                        Alert.alert("Error", error.response?.data?.message || "Could not delete album.");
+                        console.error("Failed to delete album:", error);
+                        Alert.alert("Error", error.response?.data?.message || "An error occurred while deleting the album.");
                     }
                 },
               },
@@ -122,7 +150,12 @@ const GalleryScreen: FC = () => {
         );
     };
 
-    const handleOpenUploadModal = (): void => { setTitle(''); setEventDate(new Date()); setMediaAsset(null); setUploadModalVisible(true); };
+    const handleOpenUploadModal = (): void => {
+        setTitle('');
+        setEventDate(new Date());
+        setMediaAsset(null);
+        setUploadModalVisible(true);
+    };
 
     const handleUpload = async (): Promise<void> => { 
         if (!user || !title.trim() || !eventDate || !mediaAsset) {

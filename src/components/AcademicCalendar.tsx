@@ -1,10 +1,13 @@
-import React, { useState, useMemo, useEffect } from 'react';
+// 📂 File: src/components/AcademicCalendar.tsx (MODIFIED & CORRECTED)
+
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView, SafeAreaView,
   Dimensions, Modal, TextInput, Alert, Platform, ActivityIndicator
 } from 'react-native';
 import { useAuth } from '../context/AuthContext';
-import { API_BASE_URL } from '../../apiConfig';
+// ★★★ 1. IMPORT apiClient AND REMOVE API_BASE_URL ★★★
+import apiClient from '../api/client';
 
 // --- Type Definitions ---
 interface EventItem {
@@ -30,7 +33,6 @@ const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const { width: windowWidth } = Dimensions.get('window');
 const DAY_BOX_SIZE = (windowWidth - 20 - (6 * 1)) / 7;
 
-// Correctly formats a date to YYYY-MM-DD string, avoiding timezone issues.
 const formatDateKey = (date: Date) => {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -41,7 +43,6 @@ const formatDateKey = (date: Date) => {
 const AcademicCalendar = () => {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
-
   const [isLoading, setIsLoading] = useState(true);
   const [events, setEvents] = useState<EventsData>({});
   const [currentDisplayDate, setCurrentDisplayDate] = useState(new Date());
@@ -49,7 +50,6 @@ const AcademicCalendar = () => {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [editingEvent, setEditingEvent] = useState<EventItem | null>(null);
   const [eventDetails, setEventDetails] = useState({ name: '', time: '', description: '', type: DEFAULT_EVENT_TYPE });
-
   const today = useMemo(() => new Date(), []);
   const month = currentDisplayDate.getMonth();
   const year = currentDisplayDate.getFullYear();
@@ -57,12 +57,11 @@ const AcademicCalendar = () => {
   const fetchEvents = async () => {
     try {
       if (!isLoading) setIsLoading(true);
-      const response = await fetch(`${API_BASE_URL}/api/calendar`);
-      if (!response.ok) throw new Error('Failed to fetch calendar data.');
-      const data: EventsData = await response.json();
-      setEvents(data);
+      // ★★★ 2. USE apiClient ★★★
+      const response = await apiClient.get('/calendar');
+      setEvents(response.data);
     } catch (error: any) {
-      Alert.alert("Error", error.message);
+      Alert.alert("Error", error.response?.data?.message || 'Failed to fetch calendar data.');
     } finally {
       setIsLoading(false);
     }
@@ -80,43 +79,24 @@ const AcademicCalendar = () => {
     return grid;
   }, [month, year]);
 
-  const changeMonth = (offset: number) => setCurrentDisplayDate(d => {
-    const newDate = new Date(d);
-    newDate.setMonth(d.getMonth() + offset);
-    return newDate;
-  });
+  const changeMonth = (offset: number) => setCurrentDisplayDate(d => { const newDate = new Date(d); newDate.setMonth(d.getMonth() + offset); return newDate; });
 
-  const openModalForNew = (dateKey: string) => {
-    setEditingEvent(null);
-    setSelectedDate(dateKey);
-    setEventDetails({ name: '', time: '', description: '', type: DEFAULT_EVENT_TYPE });
-    setIsModalVisible(true);
-  };
-  
-  const openModalForEdit = (event: EventItem) => {
-    setEditingEvent(event);
-    setSelectedDate(event.event_date);
-    setEventDetails({ name: event.name, time: event.time || '', description: event.description || '', type: event.type });
-    setIsModalVisible(true);
-  };
+  const openModalForNew = (dateKey: string) => { setEditingEvent(null); setSelectedDate(dateKey); setEventDetails({ name: '', time: '', description: '', type: DEFAULT_EVENT_TYPE }); setIsModalVisible(true); };
+  const openModalForEdit = (event: EventItem) => { setEditingEvent(event); setSelectedDate(event.event_date); setEventDetails({ name: event.name, time: event.time || '', description: event.description || '', type: event.type }); setIsModalVisible(true); };
 
   const handleSaveEvent = async () => {
     if (!eventDetails.name.trim() || !selectedDate) return Alert.alert("Error", "Title is required.");
     const isEditing = !!editingEvent;
-    const url = isEditing ? `${API_BASE_URL}/api/calendar/${editingEvent!.id}` : `${API_BASE_URL}/api/calendar`;
-    const method = isEditing ? 'PUT' : 'POST';
+    const url = isEditing ? `/calendar/${editingEvent!.id}` : '/calendar';
+    const method = isEditing ? 'put' : 'post';
     const body = { ...eventDetails, event_date: selectedDate, adminId: user?.id };
-
     try {
-      const response = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.message || 'Failed to save event.');
-      
-      Alert.alert("Success", result.message || `Event ${isEditing ? 'updated' : 'created'} successfully!`);
+      const response = await apiClient[method](url, body);
+      Alert.alert("Success", response.data.message || `Event ${isEditing ? 'updated' : 'created'} successfully!`);
       setIsModalVisible(false);
       await fetchEvents();
     } catch (error: any) {
-      Alert.alert("Save Failed", error.message);
+      Alert.alert("Save Failed", error.response?.data?.message || 'Failed to save event.');
     }
   };
   
@@ -125,11 +105,11 @@ const AcademicCalendar = () => {
       { text: "Cancel", style: "cancel" },
       { text: "Delete", style: "destructive", onPress: async () => {
         try {
-          const response = await fetch(`${API_BASE_URL}/api/calendar/${eventId}`, { method: 'DELETE' });
-          if (!response.ok) throw new Error('Failed to delete event.');
+          // ★★★ 3. USE apiClient ★★★
+          await apiClient.delete(`/calendar/${eventId}`);
           await fetchEvents();
         } catch (error: any) {
-          Alert.alert("Delete Failed", error.message);
+          Alert.alert("Delete Failed", error.response?.data?.message || 'Failed to delete event.');
         }
       }}
     ]);
@@ -169,40 +149,20 @@ const AcademicCalendar = () => {
           <View style={styles.calendarGrid}>
             {calendarGrid.map((day, i) => {
               if (day === null) return <View key={`e-${i}`} style={styles.dayBox} />;
-
-              // ★★★ START: THIS IS THE NEW LOGIC ★★★
               const dateKey = formatDateKey(new Date(year, month, day));
               const dayItems = events[dateKey] || [];
               const isToday = day === today.getDate() && month === today.getMonth() && year === today.getFullYear();
-
-              // Base styles
               const dayBoxStyle: any[] = [styles.dayBox];
               const dayTextStyle: any[] = [styles.dayNumber];
-
-              // Apply highlight for today
-              if (isToday) {
-                dayBoxStyle.push(styles.todayHighlight);
-              }
-              
-              // If there are events, color the background and the text
+              if (isToday) dayBoxStyle.push(styles.todayHighlight);
               if (dayItems.length > 0) {
                 const primaryEventColor = eventTypesConfig[dayItems[0].type]?.color;
-                if (primaryEventColor) {
-                  dayBoxStyle.push({ backgroundColor: primaryEventColor });
-                  dayTextStyle.push(styles.coloredDayNumber); // Use white text for readability
-                }
+                if (primaryEventColor) { dayBoxStyle.push({ backgroundColor: primaryEventColor }); dayTextStyle.push(styles.coloredDayNumber); }
               }
-
-              // Color Sundays red if they don't have another event
-              if (dayItems.length === 0 && new Date(year, month, day).getDay() === 0) {
-                dayTextStyle.push({ color: eventTypesConfig['Holiday (General)'].color });
-              }
-              // ★★★ END: NEW LOGIC ★★★
-
+              if (dayItems.length === 0 && new Date(year, month, day).getDay() === 0) { dayTextStyle.push({ color: eventTypesConfig['Holiday (General)'].color }); }
               return (
                 <TouchableOpacity key={dateKey} style={dayBoxStyle} onPress={isAdmin ? () => openModalForNew(dateKey) : undefined} activeOpacity={isAdmin ? 0.7 : 1}>
                   <Text style={dayTextStyle}>{day}</Text>
-                  {/* ★★★ The event dots have been removed from here. ★★★ */}
                 </TouchableOpacity>
               );
             })}
@@ -257,19 +217,6 @@ const AcademicCalendar = () => {
   );
 };
 
-const styles = StyleSheet.create({
-    safeArea: { flex: 1, backgroundColor: PAGE_BACKGROUND }, scrollView: { flex: 1 }, scrollContentContainer: { padding: 10, paddingBottom: 100 }, titleHeader: { marginBottom: 15, alignItems: 'center' }, mainTitle: { fontSize: 24, fontWeight: '600', color: TEXT_PRIMARY_COLOR }, legendContainer: { flexDirection: 'row', paddingVertical: 10, paddingHorizontal: 5, marginBottom: 15, backgroundColor: CARD_BACKGROUND, borderRadius: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 1 }, legendItem: { flexDirection: 'row', alignItems: 'center', marginRight: 15, paddingVertical: 3 }, legendColorBox: { width: 14, height: 14, marginRight: 6, borderRadius: 3 }, legendText: { fontSize: 12, color: TEXT_SECONDARY_COLOR }, calendarCard: { backgroundColor: CARD_BACKGROUND, borderRadius: 12, marginBottom: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 5, elevation: 3, overflow: 'hidden' }, monthHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: MONTH_HEADER_BG, paddingVertical: 14, paddingHorizontal: 15 }, navButton: { padding: 10 }, navArrow: { fontSize: 22, color: MONTH_HEADER_TEXT, fontWeight: 'bold' }, monthYearText: { fontSize: 20, fontWeight: 'bold', color: MONTH_HEADER_TEXT }, dayOfWeekHeader: { flexDirection: 'row', backgroundColor: '#e9ecef' }, dayOfWeekText: { flex: 1, textAlign: 'center', paddingVertical: 12, fontSize: 14, fontWeight: '500', color: '#495057' }, calendarGrid: { flexDirection: 'row', flexWrap: 'wrap' },
-    dayBox: { width: DAY_BOX_SIZE, height: DAY_BOX_SIZE, justifyContent: 'center', alignItems: 'center', borderWidth: 0.5, borderColor: '#ced4da' }, // ★★★ Centered text and adjusted height
-    todayHighlight: { borderColor: '#0ea5e9', borderWidth: 2 },
-    dayNumber: { fontSize: 15, fontWeight: '500', color: '#343a40' },
-    // ★★★ New name for the style for colored days for better clarity
-    coloredDayNumber: { color: LIGHT_DAY_TEXT_COLOR, fontWeight: 'bold' }, 
-    // ★★★ Dots styles are no longer needed, so they are removed
-    eventListCard: { backgroundColor: CARD_BACKGROUND, borderRadius: 12, padding: 15, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 4, elevation: 2, marginBottom: 20 }, eventListTitle: { fontSize: 20, fontWeight: '600', color: TEXT_PRIMARY_COLOR, marginBottom: 12, borderBottomWidth: 1, borderBottomColor: '#e9ecef', paddingBottom: 10 }, eventListItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#f1f3f5' }, eventIndicator: { width: 8, minHeight: 20, marginRight: 12, borderRadius: 4, marginTop: 2 }, eventItemTextContainer: { flex: 1 }, eventDateText: { fontSize: 14, fontWeight: 'bold', marginBottom: 3 }, eventNameText: { fontSize: 16, fontWeight: '500', color: TEXT_PRIMARY_COLOR, marginBottom: 3 }, eventTypeInList: { fontSize: 12, color: TEXT_SECONDARY_COLOR, fontStyle: 'italic' }, eventDescriptionText: { fontSize: 13, color: TEXT_SECONDARY_COLOR }, addEventButtonFixed: { position: 'absolute', bottom: 20, right: 20, backgroundColor: ACCENT_COLOR, width: 56, height: 56, borderRadius: 28, justifyContent: 'center', alignItems: 'center', shadowColor: "#000", shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.3, shadowRadius: 4, elevation: 6 }, addEventButtonText: { color: LIGHT_DAY_TEXT_COLOR, fontSize: 28, lineHeight: Platform.OS === 'ios' ? 30 : 32 }, modalOverlay: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.5)', justifyContent: 'center', alignItems: 'center' }, modalContent: { width: '90%', backgroundColor: CARD_BACKGROUND, borderRadius: 12, padding: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 4, elevation: 5 }, modalTitle: { fontSize: 20, fontWeight: 'bold', color: TEXT_PRIMARY_COLOR, marginBottom: 5, textAlign: 'center' }, modalDateLabel: { fontSize: 15, color: TEXT_SECONDARY_COLOR, marginBottom: 15, textAlign: 'center' }, modalInputLabel: { fontSize: 14, color: TEXT_SECONDARY_COLOR, marginBottom: 4, marginTop: 8 }, eventTypeSelectorContainer: { marginBottom: 10, maxHeight: 50 }, eventTypeButton: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: '#ced4da', marginRight: 8, backgroundColor: '#f8f9fa' }, eventTypeButtonText: { fontSize: 14, color: TEXT_PRIMARY_COLOR }, modalInput: { backgroundColor: '#f8f9fa', borderWidth: 1, borderColor: '#ced4da', borderRadius: 8, paddingHorizontal: 15, paddingVertical: 10, fontSize: 16, marginBottom: 10 }, modalDescriptionInput: { height: 70, textAlignVertical: 'top' }, modalButtonContainer: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 15 }, modalButton: { flex: 1, paddingVertical: 12, borderRadius: 8, alignItems: 'center', marginHorizontal: 5 }, saveButton: { backgroundColor: ACCENT_COLOR }, cancelButton: { backgroundColor: '#6c757d' }, modalButtonText: { color: LIGHT_DAY_TEXT_COLOR, fontSize: 16, fontWeight: 'bold' },
-    adminActionButtons: { flexDirection: 'row', alignItems: 'center', marginLeft: 'auto' },
-    editButton: { backgroundColor: '#3498db', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 5, marginRight: 8 },
-    deleteButton: { backgroundColor: '#e74c3c', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 5 },
-    actionButtonText: { color: LIGHT_DAY_TEXT_COLOR, fontSize: 12, fontWeight: 'bold' }
-});
-
+// Styles remain unchanged
+const styles = StyleSheet.create({ safeArea: { flex: 1, backgroundColor: PAGE_BACKGROUND }, scrollView: { flex: 1 }, scrollContentContainer: { padding: 10, paddingBottom: 100 }, titleHeader: { marginBottom: 15, alignItems: 'center' }, mainTitle: { fontSize: 24, fontWeight: '600', color: TEXT_PRIMARY_COLOR }, legendContainer: { flexDirection: 'row', paddingVertical: 10, paddingHorizontal: 5, marginBottom: 15, backgroundColor: CARD_BACKGROUND, borderRadius: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 1 }, legendItem: { flexDirection: 'row', alignItems: 'center', marginRight: 15, paddingVertical: 3 }, legendColorBox: { width: 14, height: 14, marginRight: 6, borderRadius: 3 }, legendText: { fontSize: 12, color: TEXT_SECONDARY_COLOR }, calendarCard: { backgroundColor: CARD_BACKGROUND, borderRadius: 12, marginBottom: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 5, elevation: 3, overflow: 'hidden' }, monthHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: MONTH_HEADER_BG, paddingVertical: 14, paddingHorizontal: 15 }, navButton: { padding: 10 }, navArrow: { fontSize: 22, color: MONTH_HEADER_TEXT, fontWeight: 'bold' }, monthYearText: { fontSize: 20, fontWeight: 'bold', color: MONTH_HEADER_TEXT }, dayOfWeekHeader: { flexDirection: 'row', backgroundColor: '#e9ecef' }, dayOfWeekText: { flex: 1, textAlign: 'center', paddingVertical: 12, fontSize: 14, fontWeight: '500', color: '#495057' }, calendarGrid: { flexDirection: 'row', flexWrap: 'wrap' }, dayBox: { width: DAY_BOX_SIZE, height: DAY_BOX_SIZE, justifyContent: 'center', alignItems: 'center', borderWidth: 0.5, borderColor: '#ced4da' }, todayHighlight: { borderColor: '#0ea5e9', borderWidth: 2 }, dayNumber: { fontSize: 15, fontWeight: '500', color: '#343a40' }, coloredDayNumber: { color: LIGHT_DAY_TEXT_COLOR, fontWeight: 'bold' }, eventListCard: { backgroundColor: CARD_BACKGROUND, borderRadius: 12, padding: 15, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 4, elevation: 2, marginBottom: 20 }, eventListTitle: { fontSize: 20, fontWeight: '600', color: TEXT_PRIMARY_COLOR, marginBottom: 12, borderBottomWidth: 1, borderBottomColor: '#e9ecef', paddingBottom: 10 }, eventListItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#f1f3f5' }, eventIndicator: { width: 8, minHeight: 20, marginRight: 12, borderRadius: 4, marginTop: 2 }, eventItemTextContainer: { flex: 1 }, eventDateText: { fontSize: 14, fontWeight: 'bold', marginBottom: 3 }, eventNameText: { fontSize: 16, fontWeight: '500', color: TEXT_PRIMARY_COLOR, marginBottom: 3 }, eventTypeInList: { fontSize: 12, color: TEXT_SECONDARY_COLOR, fontStyle: 'italic' }, eventDescriptionText: { fontSize: 13, color: TEXT_SECONDARY_COLOR }, addEventButtonFixed: { position: 'absolute', bottom: 20, right: 20, backgroundColor: ACCENT_COLOR, width: 56, height: 56, borderRadius: 28, justifyContent: 'center', alignItems: 'center', shadowColor: "#000", shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.3, shadowRadius: 4, elevation: 6 }, addEventButtonText: { color: LIGHT_DAY_TEXT_COLOR, fontSize: 28, lineHeight: Platform.OS === 'ios' ? 30 : 32 }, modalOverlay: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.5)', justifyContent: 'center', alignItems: 'center' }, modalContent: { width: '90%', backgroundColor: CARD_BACKGROUND, borderRadius: 12, padding: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 4, elevation: 5 }, modalTitle: { fontSize: 20, fontWeight: 'bold', color: TEXT_PRIMARY_COLOR, marginBottom: 5, textAlign: 'center' }, modalDateLabel: { fontSize: 15, color: TEXT_SECONDARY_COLOR, marginBottom: 15, textAlign: 'center' }, modalInputLabel: { fontSize: 14, color: TEXT_SECONDARY_COLOR, marginBottom: 4, marginTop: 8 }, eventTypeSelectorContainer: { marginBottom: 10, maxHeight: 50 }, eventTypeButton: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: '#ced4da', marginRight: 8, backgroundColor: '#f8f9fa' }, eventTypeButtonText: { fontSize: 14, color: TEXT_PRIMARY_COLOR }, modalInput: { backgroundColor: '#f8f9fa', borderWidth: 1, borderColor: '#ced4da', borderRadius: 8, paddingHorizontal: 15, paddingVertical: 10, fontSize: 16, marginBottom: 10 }, modalDescriptionInput: { height: 70, textAlignVertical: 'top' }, modalButtonContainer: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 15 }, modalButton: { flex: 1, paddingVertical: 12, borderRadius: 8, alignItems: 'center', marginHorizontal: 5 }, saveButton: { backgroundColor: ACCENT_COLOR }, cancelButton: { backgroundColor: '#6c757d' }, modalButtonText: { color: LIGHT_DAY_TEXT_COLOR, fontSize: 16, fontWeight: 'bold' }, adminActionButtons: { flexDirection: 'row', alignItems: 'center', marginLeft: 'auto' }, editButton: { backgroundColor: '#3498db', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 5, marginRight: 8 }, deleteButton: { backgroundColor: '#e74c3c', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 5 }, actionButtonText: { color: LIGHT_DAY_TEXT_COLOR, fontSize: 12, fontWeight: 'bold' }});
 export default AcademicCalendar;

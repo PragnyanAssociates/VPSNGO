@@ -1,5 +1,3 @@
-// 📂 File: src/screens/ProfileScreen.tsx (FINAL & CORRECTED)
-
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Image,
@@ -42,29 +40,23 @@ const TEXT_COLOR_MEDIUM = '#555555';
 const BORDER_COLOR = '#b2ebf2';
 
 const ProfileScreen = ({ onBackPress, staticProfileData, onStaticSave, onProfileUpdate }: ProfileScreenProps) => {
-  // ★★★ 1. GET THE NEW isLoading FLAG FROM useAuth ★★★
-  // We rename it to 'isAuthLoading' to avoid confusion with local loading states.
   const { user, isLoading: isAuthLoading } = useAuth();
   
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [profileData, setProfileData] = useState<ProfileData | null>(null);
-  // This state is for the API call itself, separate from the initial auth loading.
   const [isProfileLoading, setIsProfileLoading] = useState(true);
 
-  // ★★★ 2. THE useEffect NOW WAITS FOR isAuthLoading TO BE false ★★★
   useEffect(() => {
     const loadProfile = async () => {
-      // If static data is provided, use it immediately and ignore the rest.
       if (staticProfileData) {
         setProfileData(staticProfileData);
         setIsProfileLoading(false);
         return;
       }
       
-      // We only proceed if authentication is finished AND there is a logged-in user.
       if (!isAuthLoading && user) {
-        setIsProfileLoading(true); // Start loading the profile
+        setIsProfileLoading(true);
         try {
           const response = await apiClient.get(`/profiles/${user.id}`);
           setProfileData(response.data);
@@ -72,20 +64,18 @@ const ProfileScreen = ({ onBackPress, staticProfileData, onStaticSave, onProfile
           Alert.alert('Error', error.response?.data?.message || 'Could not fetch profile.');
           setProfileData(null);
         } finally {
-          setIsProfileLoading(false); // Finish loading the profile
+          setIsProfileLoading(false);
         }
       } else if (!isAuthLoading && !user) {
-        // Auth is finished, but no user is logged in. Stop loading.
         setIsProfileLoading(false);
         setProfileData(null);
       }
     };
 
     loadProfile();
-  }, [user, isAuthLoading, staticProfileData]); // The hook now depends on isAuthLoading
+  }, [user, isAuthLoading, staticProfileData]);
 
   const handleSave = async (editedData: ProfileData, newImage: Asset | null) => {
-    // ... handleSave logic remains exactly the same, no changes needed here ...
     setIsSaving(true);
     try {
       if (onStaticSave) {
@@ -131,12 +121,10 @@ const ProfileScreen = ({ onBackPress, staticProfileData, onStaticSave, onProfile
     }
   };
 
-  // ★★★ 3. SHOW A SPINNER IF AUTH IS LOADING OR IF THE PROFILE IS LOADING ★★★
   if (isAuthLoading || isProfileLoading) {
     return <View style={styles.centered}><ActivityIndicator size="large" color={PRIMARY_COLOR} /></View>;
   }
 
-  // If loading is finished but there's no profile data, show the message.
   if (!profileData) {
     return <View style={styles.centered}><Text>Profile not available.</Text></View>;
   }
@@ -146,8 +134,6 @@ const ProfileScreen = ({ onBackPress, staticProfileData, onStaticSave, onProfile
     : <DisplayProfileView userProfile={profileData} onEditPress={() => setIsEditing(true)} onBackPress={onBackPress} />;
 };
 
-// --- NO CHANGES BELOW THIS LINE ---
-// The DisplayProfileView, EditProfileView, and styles remain the same.
 
 const DisplayProfileView = ({ userProfile, onEditPress, onBackPress }: { userProfile: ProfileData, onEditPress: () => void, onBackPress?: () => void }) => {
   let profileImageSource;
@@ -157,7 +143,9 @@ const DisplayProfileView = ({ userProfile, onEditPress, onBackPress }: { userPro
     const fullUri = (imageUri.startsWith('http') || imageUri.startsWith('file')) ? imageUri : `${SERVER_URL}${imageUri}`;
     profileImageSource = { uri: fullUri };
   } else {
-    profileImageSource = require('../assets/profile.png');
+    // ★★★ 1. CORRECTED PATH ★★★
+    // Use the native drawable resource syntax
+    profileImageSource = { uri: 'default_avatar' };
   }
 
   const showAcademicDetails = userProfile.role !== 'donor';
@@ -242,7 +230,9 @@ const EditProfileView = ({ userProfile, onSave, onCancel, isSaving }: { userProf
     ? { uri: newImage.uri }
     : (editedData.profile_image_url
       ? (editedData.profile_image_url.startsWith('http') || editedData.profile_image_url.startsWith('file') ? { uri: editedData.profile_image_url } : { uri: `${SERVER_URL}${editedData.profile_image_url}` })
-      : require('../assets/profile.png'));
+      // ★★★ 2. CORRECTED PATH ★★★
+      // Use the native drawable resource syntax here as well
+      : { uri: 'default_avatar' });
 
   const showAcademicFields = userProfile.role !== 'donor';
 

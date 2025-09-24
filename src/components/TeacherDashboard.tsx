@@ -1,12 +1,12 @@
-// 📂 File: TeacherDashboard.js (CORRECTED & FINAL)
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, SafeAreaView, Dimensions, Image, Platform, TextInput } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+// ★★★ 1. CORRECT IMPORTS: Use apiClient and SERVER_URL for consistency ★★★
 import { useAuth } from '../context/AuthContext';
-import { API_BASE_URL } from '../../apiConfig';
+import apiClient from '../api/client';
+import { SERVER_URL } from '../../apiConfig';
 
 // --- Component Imports ---
 import NotificationsScreen from '../screens/NotificationsScreen';
@@ -35,7 +35,13 @@ import GalleryScreen from '../screens/gallery/GalleryScreen';
 import OnlineClassScreen from '../screens/Online_Class/OnlineClassScreen';
 
 // --- Type Definitions ---
-interface ProfileData { fullName: string; class_group: string; profile_image_url?: string; role: string; }
+// ★★★ 2. FIX a. Update ProfileData interface to use snake_case for consistency ★★★
+interface ProfileData { 
+  full_name: string; 
+  class_group: string; 
+  profile_image_url?: string; 
+  role: string; 
+}
 
 // --- Constants & Colors ---
 const { width: windowWidth } = Dimensions.get('window');
@@ -54,42 +60,43 @@ const DANGER_COLOR = '#E53935';
 // --- Main Component ---
 const TeacherDashboard = ({ navigation }) => {
   const [activeTab, setActiveTab] = useState('home');
-  const [searchQuery, setSearchQuery] = useState(''); // ★ 1. STATE FOR SEARCH INPUT
-  const { user, token, logout } = useAuth();
+  const [searchQuery, setSearchQuery] = useState('');
+  const { user, logout } = useAuth();
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
   const isFocused = useIsFocused();
 
+  // ★★★ 2. FIX b. USE apiClient to fetch profile data ★★★
   useEffect(() => {
     const fetchProfile = async () => {
-      if (!user?.id) return;
+      if (!user) return;
       try {
-        const response = await fetch(`${API_BASE_URL}/api/profiles/${user.id}`);
-        if (response.ok) setProfile(await response.json());
-      } catch (error) { console.error("Dashboard: Error fetching profile:", error); }
+        const response = await apiClient.get(`/profiles/${user.id}`);
+        setProfile(response.data);
+      } catch (error: any) { 
+        console.error("Error fetching profile:", error);
+        Alert.alert("Error", error.response?.data?.message || "Could not load profile data.");
+      }
     };
     if (isFocused) {
         fetchProfile();
     }
-  }, [user?.id, isFocused]);
+  }, [user, isFocused]);
 
   const capitalize = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : '');
-  const profileImageSource = profile?.profile_image_url ? { uri: `${API_BASE_URL}${profile.profile_image_url}` } : require('../assets/profile.png');
+  // ★★★ 2. FIX c. USE SERVER_URL to display profile image ★★★
+  const profileImageSource = profile?.profile_image_url ? { uri: `${SERVER_URL}${profile.profile_image_url}` } : { uri: 'default_avatar' };
   
+  // ★★★ 2. FIX d. USE apiClient to fetch notifications ★★★
   const fetchUnreadCount = useCallback(async () => {
-    if (!user || !token) return;
+    if (!user) return;
     try {
-      const response = await fetch(`${API_BASE_URL}/api/notifications`, {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setUnreadNotificationsCount(data.filter(n => !n.is_read).length);
-      }
+      const response = await apiClient.get('/notifications');
+      setUnreadNotificationsCount(response.data.filter(n => !n.is_read).length);
     } catch (error) {
       console.error("Error fetching initial unread count:", error);
     }
-  }, [user, token]);
+  }, [user]);
 
   useEffect(() => {
     if (isFocused) {
@@ -99,7 +106,7 @@ const TeacherDashboard = ({ navigation }) => {
 
   const handleLogout = () => { Alert.alert("Logout", "Are you sure you want to log out?", [ { text: "Cancel", style: "cancel" }, { text: "Logout", onPress: logout, style: "destructive" } ]); };
 
-  // ★ 2. UPDATED ICONS AND ORDER TO MATCH SCREENSHOT
+  // --- Quick Access Items (No changes needed here) ---
   const allQuickAccessItems = [
     { id: 'qa-ads-create', title: 'Create Ad', imageSource: 'https://cdn-icons-png.flaticon.com/128/4944/4944482.png', navigateTo: 'CreateAdScreen' },
     { id: 'qa2', title: 'Timetable', imageSource: 'https://cdn-icons-png.flaticon.com/128/1254/1254275.png', navigateToTab: 'Timetable' },
@@ -120,14 +127,13 @@ const TeacherDashboard = ({ navigation }) => {
     { id: 'qa16', title: 'Help Desk', imageSource: 'https://cdn-icons-png.flaticon.com/128/4961/4961736.png', navigateToTab: 'UserHelpDeskScreen' },
     { id: 'qa18', title: 'Gallery', imageSource: 'https://cdn-icons-png.flaticon.com/128/8418/8418513.png', navigateTo: 'Gallery' },
     { id: 'qa21', title: 'About Us', imageSource: 'https://cdn-icons-png.flaticon.com/128/3815/3815523.png', navigateToTab: 'AboutUs' },
-    { id: 'qa20', title: 'Chat AI', imageSource: 'https://cdn-icons-png.flaticon.com/128/6028/6028616.png', navigateToTab: 'ChatAI' },
+    // { id: 'qa20', title: 'Chat AI', imageSource: 'https://cdn-icons-png.flaticon.com/128/6028/6028616.png', navigateToTab: 'ChatAI' },
     { id: 'qa25', title: 'Food', imageSource: 'https://cdn-icons-png.flaticon.com/128/2276/2276931.png', navigateToTab: 'FoodScreen' },
     { id: 'qa26', title: 'Group Chat', imageSource: 'https://cdn-icons-png.flaticon.com/128/745/745205.png', navigateToTab: 'GroupChatScreen' },
   ];
 
-  const [filteredItems, setFilteredItems] = useState(allQuickAccessItems); // ★ 3. STATE FOR FILTERED ITEMS
+  const [filteredItems, setFilteredItems] = useState(allQuickAccessItems);
 
-  // ★ 4. EFFECT TO FILTER ITEMS BASED ON SEARCH QUERY
   useEffect(() => {
     if (searchQuery.trim() === '') {
       setFilteredItems(allQuickAccessItems);
@@ -147,7 +153,6 @@ const TeacherDashboard = ({ navigation }) => {
       case 'home':
         return ( 
             <>
-              {/* ★ 5. SEARCH BAR UI */}
               <View style={styles.searchContainer}>
                 <MaterialIcons name="search" size={22} color={TEXT_COLOR_MEDIUM} style={styles.searchIcon} />
                 <TextInput
@@ -161,7 +166,6 @@ const TeacherDashboard = ({ navigation }) => {
               </View>
               <ScrollView contentContainerStyle={styles.contentScrollViewContainer}>
                   <View style={styles.dashboardGrid}>
-                      {/* ★ 6. RENDER FILTERED ITEMS */}
                       {filteredItems.map(item => ( 
                           <DashboardSectionCard 
                               key={item.id} 
@@ -179,7 +183,6 @@ const TeacherDashboard = ({ navigation }) => {
                           /> 
                       ))}
                   </View>
-                  {/* ★ 7. SHOW MESSAGE IF NO RESULTS FOUND */}
                   {filteredItems.length === 0 && (
                     <View style={styles.noResultsContainer}>
                         <Text style={styles.noResultsText}>No modules found for "{searchQuery}"</Text>
@@ -224,6 +227,7 @@ const TeacherDashboard = ({ navigation }) => {
           <View style={styles.profileContainer}>
             <Image source={profileImageSource} style={styles.profileImage} />
             <View style={styles.profileTextContainer}>
+              {/* ★★★ 2. FIX e. Use profile.full_name to display the name ★★★ */}
               <Text style={styles.profileNameText} numberOfLines={1}>{profile?.full_name || user?.username || 'Teacher'}</Text>
               <Text style={styles.profileRoleText}>{profile?.class_group || capitalize(profile?.role || user?.role || '')}</Text>
             </View>
@@ -267,7 +271,6 @@ const styles = StyleSheet.create({
     contentHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 15, paddingVertical: 12, backgroundColor: SECONDARY_COLOR, borderBottomWidth: 1, borderBottomColor: BORDER_COLOR, },
     backButtonGlobal: { padding: 5 },
     contentHeaderTitle: { fontSize: 20, fontWeight: 'bold', color: PRIMARY_COLOR, textAlign: 'center', flex: 1, },
-    // ★ 8. NEW STYLES FOR SEARCH BAR
     searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: WHITE, borderRadius: 12, marginHorizontal: CONTENT_HORIZONTAL_PADDING, marginTop: 15, marginBottom: 5, borderColor: BORDER_COLOR, borderWidth: 1, elevation: 2 },
     searchIcon: { marginLeft: 15 },
     searchInput: { flex: 1, height: 48, paddingLeft: 10, fontSize: 16, color: TEXT_COLOR_DARK },

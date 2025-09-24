@@ -1,5 +1,3 @@
-// 📂 File: src/screens/ads/CreateAdScreen.tsx (FINAL & VERIFIED)
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, TextInput, Button, StyleSheet, Alert, Image, ActivityIndicator, TouchableOpacity, ScrollView, SafeAreaView } from 'react-native';
 import { launchImageLibrary, Asset } from 'react-native-image-picker';
@@ -153,8 +151,9 @@ const CreateAdScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
             return (
                 <ScrollView contentContainerStyle={styles.tabContentContainer}>
                     <View style={styles.detailsCard}>
+                        {/* ★★★ CORRECTED: Use native drawable resource for placeholder ★★★ */}
                         <Image 
-                            source={newQrImage?.uri ? { uri: newQrImage.uri } : (dbPaymentDetails.qr_code_url ? { uri: `${SERVER_URL}${dbPaymentDetails.qr_code_url}` } : require('../../assets/placeholder.png'))}
+                            source={newQrImage?.uri ? { uri: newQrImage.uri } : (dbPaymentDetails.qr_code_url ? { uri: `${SERVER_URL}${dbPaymentDetails.qr_code_url}` } : { uri: 'image_placeholder' })}
                             style={styles.qrImage}
                         />
                         <Button title="Change QR Code" onPress={() => launchImageLibrary({ mediaType: 'photo' }, r => r.assets && setNewQrImage(r.assets[0]))} />
