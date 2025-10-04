@@ -5483,52 +5483,75 @@ app.put('/api/notifications/:notificationId/read', verifyToken, async (req, res)
 
 
 
-// ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
+// ==========================================================
 // ★★★ START: ONLINE CLASS MODULE API ROUTES (CORRECTED & FINAL) ★★★
-// ★★★ Logic now mirrors the PTM API pattern exactly ★★★
-// ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
+// ==========================================================
 
-// GET all online classes. No middleware, fetches all entries like the PTM route.
-app.get('/api/online-classes', async (req, res) => {
+// GET all online classes (NOW WITH ROLE-AWARE FILTERING)
+app.get('/api/online-classes', verifyToken, async (req, res) => {
+    const userId = req.user.id;
+    const userRole = req.user.role;
+
     try {
-        const query = 'SELECT * FROM online_classes ORDER BY class_datetime DESC';
-        const [classes] = await db.query(query);
-        res.status(200).json(classes);
+        // Admins and teachers see all online classes
+        if (userRole === 'admin' || userRole === 'teacher') {
+            const query = 'SELECT * FROM online_classes ORDER BY class_datetime DESC';
+            const [classes] = await db.query(query);
+            return res.status(200).json(classes);
+        }
+
+        // Students only see classes for their group or for 'All' classes
+        if (userRole === 'student') {
+            const [[user]] = await db.query('SELECT class_group FROM users WHERE id = ?', [userId]);
+            if (!user || !user.class_group) {
+                const query = `SELECT * FROM online_classes WHERE class_group = 'All' ORDER BY class_datetime DESC`;
+                const [classes] = await db.query(query);
+                return res.status(200).json(classes);
+            }
+
+            const studentClassGroup = user.class_group;
+            const query = `
+                SELECT * FROM online_classes 
+                WHERE class_group = ? OR class_group = 'All' 
+                ORDER BY class_datetime DESC
+            `;
+            const [classes] = await db.query(query, [studentClassGroup]);
+            return res.status(200).json(classes);
+        }
+        
+        // Deny access for other roles
+        res.status(403).json({ message: "You do not have permission to view online classes." });
+
     } catch (error) {
         console.error("GET /api/online-classes Error:", error);
         res.status(500).json({ message: 'Error fetching online classes.' });
     }
 });
 
-app.get('/api/student-classes', async (req, res) => {
+// GET list of classes for the form
+app.get('/api/student-classes', verifyToken, async (req, res) => {
     try {
-        // This query specifically targets users with the 'student' role.
         const query = "SELECT DISTINCT class_group FROM users WHERE role = 'student' AND class_group IS NOT NULL AND class_group != '' ORDER BY class_group ASC";
         const [results] = await db.query(query);
         const classes = results.map(item => item.class_group);
         res.status(200).json(classes);
     } catch (error) {
         console.error("GET /api/student-classes Error:", error);
-        res.status(500).json({ message: 'Could not fetch the list of student classes.' });
+        res.status(500).json({ message: 'Could not fetch student classes.' });
     }
 });
 
-// POST a new online class. Corrected to match PTM logic and fix date format.
-app.post('/api/online-classes', async (req, res) => {
-    const { title, class_group, subject, teacher_id, class_datetime, meet_link, description, created_by } = req.body;
+// POST a new online class (NOW WITH CORRECT NOTIFICATION LOGIC)
+app.post('/api/online-classes', verifyToken, async (req, res) => {
+    const { title, class_group, subject, teacher_id, class_datetime, meet_link, description } = req.body;
+    const created_by = req.user.id;
     
     if (!title || !class_group || !subject || !teacher_id || !class_datetime || !meet_link) {
         return res.status(400).json({ message: 'All required fields must be filled.' });
     }
 
-    // ★★★★★★★★★★★★★★★★★★★★ START OF FIX ★★★★★★★★★★★★★★★★★★★★
-    // 1. Convert the incoming ISO date string into a JavaScript Date object.
     const jsDate = new Date(class_datetime);
-
-    // 2. Format the JavaScript Date into the 'YYYY-MM-DD HH:MI:SS' format that MySQL understands.
     const formattedMysqlDatetime = jsDate.toISOString().slice(0, 19).replace('T', ' ');
-    // ★★★★★★★★★★★★★★★★★★★★ END OF FIX ★★★★★★★★★★★★★★★★★★★★
-
 
     const connection = await db.getConnection();
     try {
@@ -5541,25 +5564,26 @@ app.post('/api/online-classes', async (req, res) => {
         }
 
         const query = `INSERT INTO online_classes (title, class_group, subject, teacher_id, teacher_name, class_datetime, meet_link, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
-        
-        // 3. Use the newly formatted date in the query.
         await connection.query(query, [title, class_group, subject, teacher_id, teacher.full_name, formattedMysqlDatetime, meet_link, description]);
 
-        // --- Notification Logic ---
-        const [students] = await connection.query("SELECT id FROM users WHERE role = 'student' AND class_group = ?", [class_group]);
+        // --- Corrected Notification Logic ---
+        let studentsQuery = "SELECT id FROM users WHERE role = 'student'";
+        const queryParams = [];
+        if (class_group !== 'All') {
+            studentsQuery += " AND class_group = ?";
+            queryParams.push(class_group);
+        }
+
+        const [students] = await connection.query(studentsQuery, queryParams);
         const studentIds = students.map(s => s.id);
         const recipientIds = [...new Set([parseInt(teacher_id, 10), ...studentIds])];
 
         if (recipientIds.length > 0) {
-            let senderName = "School Administration";
-            if (created_by) {
-                const [[creator]] = await connection.query("SELECT full_name FROM users WHERE id = ?", [created_by]);
-                if (creator) senderName = creator.full_name;
-            }
-
+            const senderName = req.user.full_name || "School Administration";
+            const displayClass = class_group === 'All' ? 'all classes' : class_group;
             const notificationTitle = `New Online Class: ${subject}`;
             const eventDate = new Date(class_datetime).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
-            const notificationMessage = `A class on "${title}" with ${teacher.full_name} is scheduled for ${eventDate}.`;
+            const notificationMessage = `A class on "${title}" for ${displayClass} with ${teacher.full_name} is scheduled for ${eventDate}.`;
 
             await createBulkNotifications(connection, recipientIds, senderName, notificationTitle, notificationMessage, '/online-class');
         }
@@ -5576,10 +5600,9 @@ app.post('/api/online-classes', async (req, res) => {
     }
 });
 
-// PUT (update) an existing class. Mirrors the limited update logic of the PTM route.
-app.put('/api/online-classes/:id', async (req, res) => {
+// PUT (update) an existing class
+app.put('/api/online-classes/:id', verifyToken, async (req, res) => {
     const { id } = req.params;
-    // Core details are NOT updated. Only supplementary info.
     const { title, meet_link, description } = req.body;
 
     try {
@@ -5596,9 +5619,8 @@ app.put('/api/online-classes/:id', async (req, res) => {
     }
 });
 
-
-// DELETE a class. No middleware, consistent with the PTM route.
-app.delete('/api/online-classes/:id', async (req, res) => {
+// DELETE a class
+app.delete('/api/online-classes/:id', verifyToken, async (req, res) => {
     const { id } = req.params;
     try {
         const query = 'DELETE FROM online_classes WHERE id = ?';
@@ -5613,6 +5635,7 @@ app.delete('/api/online-classes/:id', async (req, res) => {
         res.status(500).json({ message: 'Failed to delete class.' });
     }
 });
+
 // ==========================================================
 // --- DYNAMIC FORM DATA API ROUTES ---
 // ==========================================================
