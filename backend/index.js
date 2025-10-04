@@ -1633,12 +1633,45 @@ app.put('/api/admin/donor-query/status', async (req, res) => {
 // --- PARENT-TEACHER MEETING (PTM) API ROUTES (CORRECTED) --
 // ==========================================================
 
-// GET all meetings
-app.get('/api/ptm', async (req, res) => {
+// GET meetings (role-aware filtering)
+// ★★★ This is the main fix for the student view ★★★
+app.get('/api/ptm', verifyToken, async (req, res) => {
+    const userId = req.user.id;
+    const userRole = req.user.role;
+
     try {
-        const query = `SELECT * FROM ptm_meetings ORDER BY meeting_datetime DESC`;
-        const [meetings] = await db.query(query);
-        res.status(200).json(meetings);
+        // Admins and teachers see all meetings
+        if (userRole === 'admin' || userRole === 'teacher') {
+            const query = `SELECT * FROM ptm_meetings ORDER BY meeting_datetime DESC`;
+            const [meetings] = await db.query(query);
+            return res.status(200).json(meetings);
+        }
+
+        // Students (and parents, if applicable) only see meetings for their class or for 'All' classes
+        if (userRole === 'student' || userRole === 'parent') {
+            // First, get the student's class_group from the database using their ID from the token
+            const [[user]] = await db.query('SELECT class_group FROM users WHERE id = ?', [userId]);
+            
+            if (!user || !user.class_group) {
+                 // If a student has no class, they should still see school-wide meetings
+                 const query = `SELECT * FROM ptm_meetings WHERE class_group = 'All' ORDER BY meeting_datetime DESC`;
+                 const [meetings] = await db.query(query);
+                 return res.status(200).json(meetings);
+            }
+
+            const studentClassGroup = user.class_group;
+            const query = `
+                SELECT * FROM ptm_meetings 
+                WHERE class_group = ? OR class_group = 'All' 
+                ORDER BY meeting_datetime DESC
+            `;
+            const [meetings] = await db.query(query, [studentClassGroup]);
+            return res.status(200).json(meetings);
+        }
+        
+        // Deny access for any other roles by default
+        res.status(403).json({ message: "You do not have permission to view PTM schedules." });
+
     } catch (error) {
         console.error("GET /api/ptm Error:", error);
         res.status(500).json({ message: 'Error fetching PTM schedules.' });
@@ -1646,7 +1679,7 @@ app.get('/api/ptm', async (req, res) => {
 });
 
 // GET list of all teachers for the form
-app.get('/api/ptm/teachers', async (req, res) => {
+app.get('/api/ptm/teachers', verifyToken, async (req, res) => {
     try {
         const [teachers] = await db.query("SELECT id, full_name FROM users WHERE role = 'teacher' ORDER BY full_name ASC");
         res.status(200).json(teachers);
@@ -1657,7 +1690,7 @@ app.get('/api/ptm/teachers', async (req, res) => {
 });
 
 // GET a unique list of all classes for the form
-app.get('/api/ptm/classes', async (req, res) => {
+app.get('/api/ptm/classes', verifyToken, async (req, res) => {
     try {
         const query = "SELECT DISTINCT class_group FROM users WHERE class_group IS NOT NULL AND class_group != '' ORDER BY class_group ASC";
         const [results] = await db.query(query);
@@ -1670,9 +1703,11 @@ app.get('/api/ptm/classes', async (req, res) => {
 });
 
 
-// POST a new meeting (This is the single, correct version)
-app.post('/api/ptm', async (req, res) => {
-    const { meeting_datetime, teacher_id, class_group, subject_focus, notes, meeting_link, created_by } = req.body; 
+// POST a new meeting
+// ★★★ This is the fix for notifications when selecting "All Classes" ★★★
+app.post('/api/ptm', verifyToken, async (req, res) => {
+    const { meeting_datetime, teacher_id, class_group, subject_focus, notes, meeting_link } = req.body; 
+    const created_by = req.user.id; // Get creator's ID securely from the token
     
     if (!meeting_datetime || !teacher_id || !subject_focus || !class_group) {
         return res.status(400).json({ message: 'Meeting Date, Teacher, Class, and Subject are required.' });
@@ -1691,26 +1726,29 @@ app.post('/api/ptm', async (req, res) => {
         const query = `INSERT INTO ptm_meetings (meeting_datetime, teacher_id, teacher_name, class_group, subject_focus, notes, meeting_link) VALUES (?, ?, ?, ?, ?, ?, ?)`;
         await connection.query(query, [meeting_datetime, teacher_id, teacher.full_name, class_group, subject_focus, notes || null, meeting_link || null]);
 
-        // ★★★★★ START: MODIFIED NOTIFICATION LOGIC ★★★★★
+        // --- MODIFIED NOTIFICATION LOGIC ---
         
-        const [students] = await connection.query("SELECT id FROM users WHERE role = 'student' AND class_group = ?", [class_group]);
+        let studentsQuery = "SELECT id FROM users WHERE role = 'student'";
+        const queryParams = [];
+        
+        if (class_group !== 'All') {
+            studentsQuery += " AND class_group = ?";
+            queryParams.push(class_group);
+        }
+        // If class_group is 'All', the query selects all students.
+
+        const [students] = await connection.query(studentsQuery, queryParams);
+        
         const studentIds = students.map(s => s.id);
         const allRecipientIds = [...new Set([parseInt(teacher_id, 10), ...studentIds])]; 
 
         if (allRecipientIds.length > 0) {
-            
-            // ✅ MODIFIED: Safely get the admin's name to prevent server crash
-            let senderName = "School Administration"; // Default value
-            if (created_by) {
-                const [adminRows] = await connection.query("SELECT full_name FROM users WHERE id = ?", [created_by]);
-                if (adminRows.length > 0) {
-                    senderName = adminRows[0].full_name;
-                }
-            }
+            const senderName = req.user.full_name || "School Administration";
 
-            const notificationTitle = `New PTM: ${class_group}`;
+            const displayClass = class_group === 'All' ? 'all classes' : class_group;
+            const notificationTitle = `New PTM: ${class_group === 'All' ? 'All Classes' : class_group}`;
             const eventDate = new Date(meeting_datetime).toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
-            const notificationMessage = `A PTM for ${class_group} regarding "${subject_focus}" with ${teacher.full_name} has been scheduled for ${eventDate}.`;
+            const notificationMessage = `A PTM for ${displayClass} regarding "${subject_focus}" with ${teacher.full_name} has been scheduled for ${eventDate}.`;
 
             await createBulkNotifications(
                 connection,
@@ -1721,8 +1759,6 @@ app.post('/api/ptm', async (req, res) => {
                 '/ptm'
             );
         }
-
-        // ★★★★★ END: MODIFIED NOTIFICATION LOGIC ★★★★★
         
         await connection.commit();
         res.status(201).json({ message: 'Meeting scheduled and users notified successfully!' });
@@ -1737,7 +1773,7 @@ app.post('/api/ptm', async (req, res) => {
 });
 
 // PUT (update) an existing meeting
-app.put('/api/ptm/:id', async (req, res) => {
+app.put('/api/ptm/:id', verifyToken, async (req, res) => {
     const { id } = req.params;
     const { status, notes, meeting_link } = req.body;
 
@@ -1759,7 +1795,7 @@ app.put('/api/ptm/:id', async (req, res) => {
 });
 
 // DELETE a meeting
-app.delete('/api/ptm/:id', async (req, res) => {
+app.delete('/api/ptm/:id', verifyToken, async (req, res) => {
     const { id } = req.params;
     try {
         const query = 'DELETE FROM ptm_meetings WHERE id = ?';

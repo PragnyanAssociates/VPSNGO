@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, StyleSheet, Image, TouchableOpacity } from "react-native";
+import { View, Text, StyleSheet, Image, TouchableOpacity, SafeAreaView, StatusBar } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 
 type NavigationProp = {
@@ -16,7 +16,7 @@ export default function HomeScreen() {
     { id: 5, name: "Driver",    icon: "https://cdn-icons-png.flaticon.com/128/2798/2798177.png", type: 'login',    target: 'Driver' },
   ];
 
- const handleRolePress = (item: typeof roles[0]) => {
+  const handleRolePress = (item: typeof roles[0]) => {
     if (item.type === 'login') {
       navigation.navigate('Login', { role: item.target });
     } else if (item.type === 'navigate') {
@@ -25,14 +25,19 @@ export default function HomeScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    // SafeAreaView ensures content doesn't overlap with the status bar or notches
+    <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor="#e0f2f7" />
       <View style={styles.header}>
-        {/* The source for the logo image */}
-        <Image source={require("../assets/pragnyan-logo.png")} style={styles.logo} resizeMode="contain" />
-        <Text style={styles.schoolqt}>Knowledge is light</Text>
+        <Image 
+          source={require("../assets/pragnyan-logo.png")} 
+          style={styles.logo} 
+          resizeMode="contain" 
+        />
+        <Text style={styles.tagline}>Empowering Easy Institutional Management</Text>
       </View>
+      
       <View style={styles.content}>
-        
         <View style={styles.grid}>
           {roles.map((roleItem) => (
             <TouchableOpacity key={roleItem.id} style={styles.card} onPress={() => handleRolePress(roleItem)}>
@@ -42,46 +47,83 @@ export default function HomeScreen() {
           ))}
         </View>
       </View>
+
       <View style={styles.footer}>
         <Text style={styles.footerText}>© 2025 Pragnyan</Text>
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f8f8ff" },
-  // ✅ THE FIX IS HERE: Updated header styles for a more classic look
+  container: { 
+    flex: 1, 
+    backgroundColor: "#f7f9fc" // Slightly cleaner background color
+  },
   header: { 
     backgroundColor: "#e0f2f7", 
-    paddingTop: 80, // Increased top padding
-    paddingBottom: 40, // Increased bottom padding
+    paddingVertical: 30, // Balanced vertical padding
     alignItems: "center", 
-    justifyContent: "center", 
-    borderBottomWidth: 1, 
-    borderBottomColor: "#b2ebf2" 
+    justifyContent: "center",
+    borderBottomLeftRadius: 30, // Added curve to the header
+    borderBottomRightRadius: 30,
   },
-  // ✅ THE FIX IS HERE: Increased logo size for better visibility
+  // KEY CHANGE: Corrected the logo size to be proportional and not oversized.
   logo: { 
-    width: 500, // Increased width
-    height: 170, // Increased height
-    marginBottom: 3, // Adjusted margin
+    width: 200,
+    height: 200,
+    marginBottom: 10, 
   },
-  schoolName: { fontSize: 22, fontWeight: "bold", color: "#008080" },
-  schoolSubName: { fontSize: 15, fontWeight: "300", color: "#008080" },
-  // ✅ THE FIX IS HERE: Enhanced the tagline text style
-  schoolqt: { 
-    fontSize: 22, // Increased font size
-    color: "#491979ff", // Slightly darker color for better contrast
-    fontStyle: 'italic', // Added italic style for a classic motto look
-    marginTop: 1,
+  // KEY CHANGE: Better styling for the tagline for good hierarchy.
+  tagline: { 
+    fontSize: 18, 
+    color: "#005662", // A darker, more professional color
+    textAlign: 'center',
   },
-  content: { flex: 1, alignItems: "center", justifyContent: 'center', paddingHorizontal: 20 },
-  grid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", alignItems: "center", width: "100%" },
-  card: { width: "40%", backgroundColor: "#fff", borderRadius: 10, paddingVertical: 20, alignItems: "center", margin: 15, borderWidth: 1, borderColor: "#ddd", elevation: 2 },
-  cardIcon: { width: 45, height: 45, marginBottom: 10 },
-  cardText: { fontSize: 17, fontWeight: "600", color: "#333", textAlign: "center" },
-  footer: { backgroundColor: "#e0f2f7", paddingVertical: 20, alignItems: "center", borderTopWidth: 1, borderTopColor: "#b2ebf2" },
-  footerText: { color: "#080808ff", fontSize: 16, fontStyle: "italic" },
-  tagline: { fontSize: 18, fontStyle: "italic", color: "#777", marginBottom: 30 },
+  content: { 
+    flex: 1, // This makes the content area take up all available space
+    justifyContent: 'center', // This centers the grid vertically in the content area
+    paddingHorizontal: 10,
+  },
+  grid: { 
+    flexDirection: "row", 
+    flexWrap: "wrap", 
+    // KEY CHANGE: This distributes the cards evenly with space around them
+    justifyContent: "space-around", 
+    alignItems: "center", 
+  },
+  // KEY CHANGE: Adjusted card styling for better spacing.
+  card: { 
+    width: "42%", // Slightly increased width
+    backgroundColor: "#fff", 
+    borderRadius: 15, // Softer corners
+    padding: 20, 
+    alignItems: "center", 
+    // Replaced generic margin with marginBottom for consistent vertical spacing
+    marginBottom: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 5,
+    elevation: 4,
+  },
+  cardIcon: { 
+    width: 50, 
+    height: 50, 
+    marginBottom: 12 
+  },
+  cardText: { 
+    fontSize: 16, 
+    fontWeight: "600", 
+    color: "#333", 
+  },
+  footer: { 
+    backgroundColor: "#e0f2f7", 
+    paddingVertical: 15, 
+    alignItems: "center", 
+  },
+  footerText: { 
+    color: "#005662", 
+    fontSize: 14,
+  },
 });

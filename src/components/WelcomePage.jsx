@@ -1,5 +1,5 @@
 import React from 'react';
-// Make sure ImageBackground is imported
+// Make sure ImageBackground and Text are imported
 import { View, Text, TouchableOpacity, StyleSheet, Image, ImageBackground } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/AntDesign';
@@ -12,18 +12,20 @@ const WelcomePage = () => {
   };
 
   return (
-    // Use require() for local images
     <ImageBackground
-      source={require('../assets/school-background.jpg')} // <-- KEY CHANGE HERE
+      source={require('../assets/school-background.jpg')} // Make sure this path is correct
       style={styles.backgroundImage}
       resizeMode="cover"
     >
       <View style={styles.container}>
         <Image
-          source={require("../assets/pragnyan-logo.png")}
+          source={require("../assets/pragnyan-logo.png")} // Make sure this path is correct
           style={styles.logo}
           resizeMode="contain"
         />
+        <Text style={styles.tagline}>
+          The unified platform to manage your institution's resources and operations.
+        </Text>
         <TouchableOpacity style={styles.button} onPress={handleGetStarted}>
           <View style={styles.buttonContent}>
             <Text style={styles.buttonText}>Get Started</Text>
@@ -43,25 +45,39 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    justifyContent: 'center',
+    // KEY CHANGE: This will center the entire content block vertically on the screen.
+    justifyContent: 'center', 
     alignItems: 'center',
-    // backgroundColor: 'rgba(255, 255, 255, 0.85)', 
     paddingHorizontal: 20,
   },
   logo: {
     width: 250,
-    height: 250,
-    marginBottom: 10,
+    height: 200,
+    // Space between logo and tagline
+    marginBottom: 20, 
+  },
+  tagline: {
+    fontSize: 17,
+    color: '#0f0e0eff',
+    textAlign: 'center',
+    // KEY CHANGE: This is the main space between the text and the button. 
+    // Reduced from 100 to a more reasonable 40.
+    marginBottom: 40, 
+    paddingHorizontal: 15,
+    fontStyle:"italic",
   },
   button: {
     backgroundColor: '#007BFF',
     paddingVertical: 12,
     paddingHorizontal: 30,
-    borderRadius: 25,
+    borderRadius: 20,
     elevation: 5,
     flexDirection: 'row',
     alignItems: 'center',
+    marginBottom: 0,
+    marginTop: 10,
   },
+
   buttonContent: {
     flexDirection: 'row',
     alignItems: 'center',
