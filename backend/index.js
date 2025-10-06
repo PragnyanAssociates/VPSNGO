@@ -2186,7 +2186,7 @@ app.put('/api/homework/grade/:submissionId', async (req, res) => {
 
 // --- STUDENT ROUTES ---
 
-// Get all assignments for a student's class
+// Get all assignments for a student's class (NO CHANGES)
 app.get('/api/homework/student/:studentId/:classGroup', async (req, res) => {
     const { studentId, classGroup } = req.params;
     try {
@@ -2203,7 +2203,6 @@ app.get('/api/homework/student/:studentId/:classGroup', async (req, res) => {
             WHERE a.class_group = ? 
             ORDER BY a.due_date DESC, a.id DESC`;
         const [assignments] = await db.query(query, [studentId, classGroup]);
-        // Process status to be more reliable
         const processedAssignments = assignments.map(a => ({
             ...a,
             status: a.submission_id ? (a.status || 'Submitted') : 'Pending'
@@ -2215,9 +2214,7 @@ app.get('/api/homework/student/:studentId/:classGroup', async (req, res) => {
     }
 });
 
-// ✅ --- NEW ROUTE ADDED TO FIX THE SUBMISSION ERROR --- ✅
-// Student submits a homework file
-
+// Student submits a homework file (NO CHANGES)
 app.post('/api/homework/submit/:assignmentId', upload.single('submission'), async (req, res) => {
     const { assignmentId } = req.params;
     const { student_id } = req.body;
@@ -2234,30 +2231,24 @@ app.post('/api/homework/submit/:assignmentId', upload.single('submission'), asyn
         
         const [existing] = await connection.query( 'SELECT id FROM homework_submissions WHERE assignment_id = ? AND student_id = ?', [assignmentId, student_id]);
         if (existing.length > 0) {
-            await connection.rollback(); // No changes needed, but good practice
+            await connection.rollback(); 
             return res.status(409).json({ message: 'You have already submitted this homework.' });
         }
 
-        // Step 1: Insert the submission
         const query = `INSERT INTO homework_submissions (assignment_id, student_id, submission_path, status) VALUES (?, ?, ?, 'Submitted')`;
         await connection.query(query, [assignmentId, student_id, submission_path]);
         
-        // Step 2: Find assignment and student details
         const [[assignment]] = await connection.query('SELECT teacher_id, title FROM homework_assignments WHERE id = ?', [assignmentId]);
         const [[student]] = await connection.query('SELECT full_name, class_group FROM users WHERE id = ?', [student_id]);
 
         if (assignment && student) {
-            // ★ 2. CONSTRUCT THE NEW MESSAGE ★
-            // Create the new, more descriptive message string.
             const notificationMessage = `${student.full_name} (${student.class_group}) has submitted their homework.`;
-
-             // Step 3: Create the notification with the new message
              await createNotification(
                 connection,
                 assignment.teacher_id,
                 student.full_name,
                 `Submission for: ${assignment.title}`,
-                notificationMessage, // Use the new message here
+                notificationMessage,
                 `/submissions/${assignmentId}`
             );
         }
@@ -2274,6 +2265,63 @@ app.post('/api/homework/submit/:assignmentId', upload.single('submission'), asyn
     }
 });
 
+
+// ★★★ 2. ADD THIS NEW ROUTE TO DELETE A SUBMISSION ★★★
+app.delete('/api/homework/submission/:submissionId', async (req, res) => {
+    const { submissionId } = req.params;
+    const { student_id } = req.body; // Sent from frontend to verify ownership
+
+    if (!student_id) {
+        return res.status(400).json({ message: 'Student ID is required for verification.' });
+    }
+    
+    const connection = await db.getConnection();
+    try {
+        await connection.beginTransaction();
+
+        // Step 1: Find the submission and verify the owner
+        const [[submission]] = await connection.query(
+            'SELECT * FROM homework_submissions WHERE id = ?', [submissionId]
+        );
+
+        if (!submission) {
+            await connection.rollback();
+            return res.status(404).json({ message: 'Submission not found.' });
+        }
+
+        // SECURITY CHECK: Ensure the person deleting is the owner
+        if (submission.student_id != student_id) {
+            await connection.rollback();
+            return res.status(403).json({ message: 'You are not authorized to delete this submission.' });
+        }
+
+        // Step 2: Delete the database record
+        await connection.query('DELETE FROM homework_submissions WHERE id = ?', [submissionId]);
+
+        // Step 3: Delete the physical file from the server
+        if (submission.submission_path) {
+            const filePath = path.join(__dirname, '..', submission.submission_path); // Adjust path if needed
+            fs.unlink(filePath, (err) => {
+                if (err) {
+                    // Log error but don't fail the request, as the DB entry is more critical
+                    console.error(`Failed to delete submission file: ${filePath}`, err);
+                } else {
+                    console.log(`Successfully deleted file: ${filePath}`);
+                }
+            });
+        }
+        
+        await connection.commit();
+        res.status(200).json({ message: 'Submission deleted successfully.' });
+
+    } catch (error) {
+        await connection.rollback();
+        console.error('Error deleting submission:', error);
+        res.status(500).json({ message: 'Error deleting submission.' });
+    } finally {
+        connection.release();
+    }
+});
 
 // ==========================================================
 // --- EXAM SCHEDULE API ROUTES ---

@@ -5,7 +5,6 @@ import { View, Text, FlatList, StyleSheet, ActivityIndicator, TouchableOpacity, 
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { pick, types, isCancel } from '@react-native-documents/picker';
 import { useAuth } from '../../context/AuthContext';
-// ★★★ 1. IMPORT apiClient AND SERVER_URL, REMOVE API_BASE_URL ★★★
 import apiClient from '../../api/client';
 import { SERVER_URL } from '../../../apiConfig';
 
@@ -13,13 +12,13 @@ const StudentHomeworkScreen = () => {
     const { user } = useAuth();
     const [assignments, setAssignments] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
+    // This state will now handle loading for both submitting and deleting
     const [isSubmitting, setIsSubmitting] = useState(null);
 
     const fetchAssignments = useCallback(async () => {
         if (!user) return;
         setIsLoading(true);
         try {
-            // ★★★ 2. USE apiClient ★★★
             const response = await apiClient.get(`/homework/student/${user.id}/${user.class_group}`);
             const data = response.data;
             
@@ -56,7 +55,6 @@ const StudentHomeworkScreen = () => {
                 name: fileToUpload.name,
             });
 
-            // ★★★ 3. USE apiClient FOR FILE UPLOAD ★★★
             await apiClient.post(`/homework/submit/${assignmentId}`, formData, {
                 headers: { 'Content-Type': 'multipart/form-data' }
             });
@@ -76,6 +74,37 @@ const StudentHomeworkScreen = () => {
         }
     };
     
+    // ★ 1. ADD a function to handle deleting a submission
+    const handleDeleteSubmission = async (submissionId, assignmentId) => {
+        if (!user) return;
+        Alert.alert(
+            "Delete Submission",
+            "Are you sure you want to delete your submission? This action cannot be undone.",
+            [
+                { text: "Cancel", style: "cancel" },
+                {
+                    text: "Delete",
+                    style: "destructive",
+                    onPress: async () => {
+                        setIsSubmitting(assignmentId); // Reuse loading state for visual feedback
+                        try {
+                            // The body for a DELETE request in axios is passed in a 'data' object
+                            await apiClient.delete(`/homework/submission/${submissionId}`, {
+                                data: { student_id: user.id }
+                            });
+                            Alert.alert("Success", "Your submission has been deleted.");
+                            fetchAssignments(); // Refresh the list to show the "Submit" button again
+                        } catch (err: any) {
+                            Alert.alert("Error", err.response?.data?.message || "Could not delete submission.");
+                        } finally {
+                            setIsSubmitting(null);
+                        }
+                    },
+                },
+            ]
+        );
+    };
+
     if (isLoading && assignments.length === 0) {
         return <View style={styles.centered}><ActivityIndicator size="large" color="#FF7043" /></View>;
     }
@@ -85,7 +114,15 @@ const StudentHomeworkScreen = () => {
             <FlatList
                 data={assignments}
                 keyExtractor={(item) => item.id.toString()}
-                renderItem={({ item }) => <AssignmentCard item={item} onSubmit={handleSubmission} isSubmitting={isSubmitting === item.id} />}
+                // ★ 2. PASS the new delete handler to the AssignmentCard
+                renderItem={({ item }) => (
+                    <AssignmentCard 
+                        item={item} 
+                        onSubmit={handleSubmission} 
+                        onDelete={handleDeleteSubmission}
+                        isSubmitting={isSubmitting === item.id} 
+                    />
+                )}
                 ListHeaderComponent={<Header />}
                 ListEmptyComponent={<Text style={styles.emptyText}>No homework assigned yet.</Text>}
                 onRefresh={fetchAssignments}
@@ -108,7 +145,8 @@ const Header = () => (
     </View>
 );
 
-const AssignmentCard = ({ item, onSubmit, isSubmitting }) => {
+// ★ 3. UPDATE AssignmentCard to accept 'onDelete' and render the correct button
+const AssignmentCard = ({ item, onSubmit, onDelete, isSubmitting }) => {
     const getStatusInfo = () => {
         const statusText = item.submission_id ? (item.status || 'Submitted') : 'Pending';
         switch (statusText) {
@@ -119,7 +157,6 @@ const AssignmentCard = ({ item, onSubmit, isSubmitting }) => {
     };
 
     const status = getStatusInfo();
-    // ★★★ 4. USE SERVER_URL for attachments ★★★
     const handleViewAttachment = () => { if(item.attachment_path) Linking.openURL(`${SERVER_URL}${item.attachment_path}`); };
 
     return (
@@ -147,18 +184,32 @@ const AssignmentCard = ({ item, onSubmit, isSubmitting }) => {
             )}
             
             <View style={styles.buttonRow}>
-                {item.attachment_path && <TouchableOpacity style={styles.detailsButton} onPress={handleViewAttachment}>
-                    <MaterialIcons name="attachment" size={18} color="#42a5f5" />
-                    <Text style={styles.detailsButtonText}>View Attachment</Text>
-                </TouchableOpacity>}
-                {!item.submission_id && (
-                  <TouchableOpacity style={styles.submitButton} onPress={() => onSubmit(item.id)} disabled={isSubmitting}>
-                      {isSubmitting ? 
-                          <ActivityIndicator size="small" color="#fff" /> : 
-                          <><MaterialIcons name="upload-file" size={18} color="#fff" /><Text style={styles.submitButtonText}>Submit Homework</Text></>
-                      }
-                  </TouchableOpacity>
+                {item.attachment_path && (
+                    <TouchableOpacity style={styles.detailsButton} onPress={handleViewAttachment}>
+                        <MaterialIcons name="attachment" size={18} color="#42a5f5" />
+                        <Text style={styles.detailsButtonText}>View Attachment</Text>
+                    </TouchableOpacity>
                 )}
+
+                {/* ★ 4. MODIFY BUTTON LOGIC to show submit, delete, or nothing */}
+                {item.submission_id && status.text !== 'Graded' ? (
+                    // If submitted but NOT graded, show the delete button
+                    <TouchableOpacity style={styles.deleteButton} onPress={() => onDelete(item.submission_id, item.id)} disabled={isSubmitting}>
+                        {isSubmitting ? 
+                            <ActivityIndicator size="small" color="#fff" /> : 
+                            <><MaterialIcons name="delete" size={18} color="#fff" /><Text style={styles.submitButtonText}>Delete Submission</Text></>
+                        }
+                    </TouchableOpacity>
+                ) : !item.submission_id && (
+                    // If not submitted, show the submit button
+                    <TouchableOpacity style={styles.submitButton} onPress={() => onSubmit(item.id)} disabled={isSubmitting}>
+                        {isSubmitting ? 
+                            <ActivityIndicator size="small" color="#fff" /> : 
+                            <><MaterialIcons name="upload-file" size={18} color="#fff" /><Text style={styles.submitButtonText}>Submit Homework</Text></>
+                        }
+                    </TouchableOpacity>
+                )}
+                {/* If the assignment is graded, no action button will appear, which is correct. */}
             </View>
         </View>
     );
@@ -172,7 +223,6 @@ const DetailRow = ({ icon, label, value }) => (
     </View>
 );
 
-// Styles remain the same
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#f4f6f8' },
     centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
@@ -197,6 +247,8 @@ const styles = StyleSheet.create({
     detailsButton: { flexDirection: 'row', alignItems: 'center', padding: 8, marginRight: 'auto' },
     detailsButtonText: { color: '#42a5f5', marginLeft: 5, fontWeight: 'bold' },
     submitButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#66bb6a', paddingVertical: 10, paddingHorizontal: 15, borderRadius: 20, elevation: 2 },
+    // ★ 5. ADD the new style for the delete button
+    deleteButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#ef5350', paddingVertical: 10, paddingHorizontal: 15, borderRadius: 20, elevation: 2 },
     submitButtonText: { color: '#fff', marginLeft: 8, fontWeight: 'bold' },
     emptyText: { textAlign: 'center', marginTop: 50, fontSize: 16, color: '#777' },
 });
