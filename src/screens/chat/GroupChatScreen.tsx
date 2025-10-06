@@ -3,10 +3,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
     View, Text, StyleSheet, SafeAreaView, FlatList, TextInput,
+    // ★ 1. ADD Alert TO IMPORTS
     TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, Alert, Image, Keyboard
 } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
-// ★★★ 1. IMPORT apiClient, SERVER_URL, AND REMOVE API_BASE_URL ★★★
 import apiClient from '../../api/client';
 import { SERVER_URL } from '../../../apiConfig';
 import { io, Socket } from 'socket.io-client';
@@ -30,7 +30,6 @@ const GroupChatScreen = () => {
     useEffect(() => {
         const fetchHistory = async () => {
             try {
-                // ★★★ 2. USE apiClient ★★★
                 const response = await apiClient.get('/group-chat/history');
                 setMessages(response.data);
             } catch (error: any) {
@@ -41,15 +40,23 @@ const GroupChatScreen = () => {
         };
 
         fetchHistory();
-        // ★★★ 3. USE SERVER_URL FOR SOCKET CONNECTION ★★★
         socketRef.current = io(SERVER_URL);
         socketRef.current.on('connect', () => console.log('Connected to chat server'));
         socketRef.current.on('newMessage', (receivedMessage) => {
             setMessages(prevMessages => [...prevMessages, receivedMessage]);
         });
 
+        // ★ 2. ADD listener to remove a message when the 'messageDeleted' event is received
+        socketRef.current.on('messageDeleted', (deletedMessageId) => {
+            setMessages(prevMessages => prevMessages.filter(message => message.id !== deletedMessageId));
+        });
+
         return () => {
-            if (socketRef.current) socketRef.current.disconnect();
+            if (socketRef.current) {
+                // ★ 3. CLEAN UP the new listener on component unmount
+                socketRef.current.off('messageDeleted');
+                socketRef.current.disconnect();
+            }
         };
     }, []);
 
@@ -95,7 +102,6 @@ const GroupChatScreen = () => {
             formData.append('media', { uri: image.uri, type: image.type, name: image.fileName });
 
             try {
-                // ★★★ 4. USE apiClient for file uploads ★★★
                 const res = await apiClient.post('/group-chat/upload-media', formData, {
                     headers: { 'Content-Type': 'multipart/form-data' },
                 });
@@ -106,6 +112,27 @@ const GroupChatScreen = () => {
                 setIsUploading(false);
             }
         });
+    };
+
+    // ★ 4. ADD function to handle message deletion request
+    const handleDeleteMessage = (messageId: number) => {
+        Alert.alert(
+            "Delete Message",
+            "Are you sure you want to permanently delete this message for everyone?",
+            [
+                { text: "Cancel", style: "cancel" },
+                {
+                    text: "Delete",
+                    style: "destructive",
+                    onPress: () => {
+                        if (socketRef.current && user) {
+                            // Emit event to the server to perform deletion
+                            socketRef.current.emit('deleteMessage', { messageId, userId: user.id });
+                        }
+                    },
+                },
+            ]
+        );
     };
 
     const handleEmojiSelect = (emoji: EmojiType) => {
@@ -126,24 +153,28 @@ const GroupChatScreen = () => {
         const renderContent = () => {
             switch (item.message_type) {
                 case 'image':
-                    return (
-                        // ★★★ 5. USE SERVER_URL for images ★★★
-                        <Image source={{ uri: `${SERVER_URL}${item.file_url}` }} style={styles.imageMessage} resizeMode="cover" />
-                    );
+                    return <Image source={{ uri: `${SERVER_URL}${item.file_url}` }} style={styles.imageMessage} resizeMode="cover" />;
                 case 'text':
                 default:
                     return <Text style={styles.messageText}>{item.message_text}</Text>;
             }
         };
 
+        // ★ 5. WRAP the message view in a TouchableOpacity to detect long presses
         return (
-            <View style={[styles.messageContainer, isMyMessage ? styles.myMessageContainer : styles.otherMessageContainer]}>
-                <View style={[styles.messageBubble, isMyMessage ? styles.myMessageBubble : styles.otherMessageBubble, item.message_type === 'image' && styles.imageBubble]}>
-                    {!isMyMessage && ( <Text style={[styles.senderName, { color: getRoleColor(item.role) }]}>{item.full_name} ({item.role})</Text> )}
-                    {renderContent()}
-                    <Text style={[styles.messageTime, item.message_type === 'image' && styles.imageTime]}>{messageTime}</Text>
+            <TouchableOpacity 
+                activeOpacity={0.8}
+                onLongPress={isMyMessage ? () => handleDeleteMessage(item.id) : undefined}
+                delayLongPress={400} // Standard delay for long press
+            >
+                <View style={[styles.messageContainer, isMyMessage ? styles.myMessageContainer : styles.otherMessageContainer]}>
+                    <View style={[styles.messageBubble, isMyMessage ? styles.myMessageBubble : styles.otherMessageBubble, item.message_type === 'image' && styles.imageBubble]}>
+                        {!isMyMessage && ( <Text style={[styles.senderName, { color: getRoleColor(item.role) }]}>{item.full_name} ({item.role})</Text> )}
+                        {renderContent()}
+                        <Text style={[styles.messageTime, item.message_type === 'image' && styles.imageTime]}>{messageTime}</Text>
+                    </View>
                 </View>
-            </View>
+            </TouchableOpacity>
         );
     };
 
@@ -180,16 +211,8 @@ const GroupChatScreen = () => {
     );
 };
 
-const getRoleColor = (role: string) => {
-    switch (role) {
-        case 'admin': return '#d9534f';
-        case 'teacher': return '#5cb85c';
-        case 'student': return '#0275d8';
-        default: return THEME.muted;
-    }
-};
-
-// Styles remain unchanged
+// Styles and getRoleColor function remain unchanged
+const getRoleColor = (role: string) => { switch (role) { case 'admin': return '#d9534f'; case 'teacher': return '#5cb85c'; case 'student': return '#0275d8'; default: return THEME.muted; }};
 const styles = StyleSheet.create({ container: { flex: 1, backgroundColor: THEME.background }, header: { padding: 15, borderBottomWidth: 1, borderBottomColor: THEME.border, alignItems: 'center', backgroundColor: '#fff' }, headerTitle: { fontSize: 22, fontWeight: 'bold' }, messageList: { padding: 10 }, messageContainer: { marginVertical: 5, maxWidth: '80%' }, myMessageContainer: { alignSelf: 'flex-end' }, otherMessageContainer: { alignSelf: 'flex-start' }, messageBubble: { borderRadius: 15, padding: 12, elevation: 1, shadowColor: '#000', shadowOffset: { width: 0, height: 1}, shadowOpacity: 0.1, shadowRadius: 2 }, myMessageBubble: { backgroundColor: THEME.myMessageBg, borderBottomRightRadius: 2 }, otherMessageBubble: { backgroundColor: THEME.otherMessageBg, borderBottomLeftRadius: 2 }, senderName: { fontWeight: 'bold', marginBottom: 4, fontSize: 14 }, messageText: { fontSize: 16, color: THEME.text }, messageTime: { fontSize: 11, color: THEME.muted, alignSelf: 'flex-end', marginTop: 5 }, inputContainer: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 8, borderTopWidth: 1, borderTopColor: THEME.border, backgroundColor: '#fff' }, input: { flex: 1, maxHeight: 100, backgroundColor: '#f0f0f0', borderRadius: 20, paddingHorizontal: 15, paddingVertical: Platform.OS === 'ios' ? 12 : 8, fontSize: 16, marginHorizontal: 5, }, sendButton: { backgroundColor: THEME.primary, width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center', marginLeft: 5, }, iconButton: { padding: 5, }, imageMessage: { width: 200, height: 200, borderRadius: 15 }, imageBubble: { padding: 5, backgroundColor: 'transparent' }, imageTime: { position: 'absolute', bottom: 10, right: 10, color: 'white', backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 10, fontSize: 10 },});
 
 export default GroupChatScreen;

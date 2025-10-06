@@ -5330,47 +5330,36 @@ app.post('/api/admin/ad-payment-details', [verifyToken, isAdmin], paymentUpload.
 // --- GROUP CHAT API & REAL-TIME ROUTES (WITH MEDIA) ---
 // ==========================================================
 
-// ★★★ NEW: Multer storage configuration for chat media ★★★
+// ★★★ Multer storage configuration for chat media (NO CHANGES) ★★★
 const chatStorage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, 'uploads/'); // Use your existing uploads folder
-    },
-    filename: (req, file, cb) => {
-        // Creates a unique filename like 'chat-media-1678886400000.jpg'
-        cb(null, `chat-media-${Date.now()}${path.extname(file.originalname)}`);
-    }
+    destination: (req, file, cb) => { cb(null, 'uploads/'); },
+    filename: (req, file, cb) => { cb(null, `chat-media-${Date.now()}${path.extname(file.originalname)}`); }
 });
 const chatUpload = multer({ storage: chatStorage });
 
-// We create an HTTP server from the Express app, then attach Socket.IO to it.
 const server = http.createServer(app);
-const io = new Server(server, {
-    cors: { origin: "*", methods: ["GET", "POST"] }
-});
+const io = new Server(server, { cors: { origin: "*", methods: ["GET", "POST"] } });
 
 
-// --- 1. NEW API ROUTE TO UPLOAD CHAT MEDIA ---
+// --- 1. API ROUTE TO UPLOAD CHAT MEDIA (NO CHANGES) ---
 app.post('/api/group-chat/upload-media', chatUpload.single('media'), (req, res) => {
-    if (!req.file) {
-        return res.status(400).json({ message: 'No file uploaded.' });
-    }
-    // Return the URL path that the client can use
+    if (!req.file) return res.status(400).json({ message: 'No file uploaded.' });
     const fileUrl = `/uploads/${req.file.filename}`;
     res.status(201).json({ fileUrl: fileUrl });
 });
 
 
-// --- 2. API ROUTE TO GET MESSAGE HISTORY (MODIFIED) ---
+// --- 2. API ROUTE TO GET MESSAGE HISTORY (NO CHANGES) ---
 app.get('/api/group-chat/history', async (req, res) => {
     try {
         const query = `
             SELECT 
                 m.id, m.message_text, m.timestamp, m.user_id,
-                m.message_type, m.file_url, -- ★ Fetch new columns
+                m.message_type, m.file_url,
                 COALESCE(u.full_name, 'Deleted User') as full_name, u.role
             FROM group_chat_messages m
             LEFT JOIN users u ON m.user_id = u.id
-            ORDER BY m.timestamp ASC -- ★ Changed to ASC, no need to reverse
+            ORDER BY m.timestamp ASC 
             LIMIT 100; 
         `;
         const [messages] = await db.query(query);
@@ -5388,43 +5377,60 @@ io.on('connection', (socket) => {
     socket.join('school-group-chat');
 
     socket.on('sendMessage', async (data) => {
-        // ★ Data payload is now more complex
         const { userId, messageType, messageText, fileUrl } = data;
-        
-        if (!userId || !messageType) return;
-        if (messageType === 'text' && (!messageText || !messageText.trim())) return;
-        if (messageType !== 'text' && !fileUrl) return;
+        if (!userId || !messageType || (messageType === 'text' && !messageText?.trim()) || (messageType !== 'text' && !fileUrl)) return;
 
         const connection = await db.getConnection();
         try {
             await connection.beginTransaction();
-
-            // ★ STEP A: Insert the new message with its type
-            const [result] = await connection.query(
-    'INSERT INTO group_chat_messages (user_id, message_type, message_text, file_url) VALUES (?, ?, ?, ?)',
-    // If messageText is null or undefined, use '' instead
-    [userId, messageType, messageText || '', fileUrl]
-);
+            const [result] = await connection.query('INSERT INTO group_chat_messages (user_id, message_type, message_text, file_url) VALUES (?, ?, ?, ?)', [userId, messageType, messageText || null, fileUrl || null]);
             const newMessageId = result.insertId;
-
-            // ★ STEP B: Get full message details for broadcasting
             const [[broadcastMessage]] = await connection.query(`
-                SELECT m.id, m.message_text, m.timestamp, m.user_id,
-                       m.message_type, m.file_url, -- ★ Fetch new columns
-                       u.full_name, u.role
-                FROM group_chat_messages m 
-                JOIN users u ON m.user_id = u.id
-                WHERE m.id = ?
-            `, [newMessageId]);
-
+                SELECT m.id, m.message_text, m.timestamp, m.user_id, m.message_type, m.file_url, u.full_name, u.role
+                FROM group_chat_messages m JOIN users u ON m.user_id = u.id WHERE m.id = ?`, [newMessageId]);
             await connection.commit();
-
-            // ★ STEP C: Broadcast to everyone EXCEPT the sender
             socket.broadcast.to('school-group-chat').emit('newMessage', broadcastMessage);
-
         } catch (error) {
             await connection.rollback();
             console.error('❌ CRITICAL ERROR: Failed to save and broadcast message.', error);
+        } finally {
+            connection.release();
+        }
+    });
+
+    // ★★★ NEW: Listen for delete message events ★★★
+    socket.on('deleteMessage', async (data) => {
+        const { messageId, userId } = data;
+        if (!messageId || !userId) {
+            console.warn('⚠️ Delete request missing messageId or userId.');
+            return;
+        }
+
+        const connection = await db.getConnection();
+        try {
+            // STEP A: Verify the user requesting deletion is the actual owner
+            const [[message]] = await connection.query(
+                'SELECT user_id FROM group_chat_messages WHERE id = ?',
+                [messageId]
+            );
+
+            if (!message) return; // Message already deleted or never existed
+
+            // STEP B: SECURITY CHECK - If not the owner, deny the request
+            if (message.user_id != userId) {
+                console.error(`🔒 SECURITY ALERT: User ${userId} tried to delete message ${messageId} owned by ${message.user_id}.`);
+                return;
+            }
+            
+            // STEP C: If authorized, delete the message from the database
+            await connection.query('DELETE FROM group_chat_messages WHERE id = ?', [messageId]);
+            
+            // STEP D: Broadcast the ID of the deleted message to ALL clients in the room
+            io.to('school-group-chat').emit('messageDeleted', messageId);
+            console.log(`🗑️ Message ${messageId} deleted by user ${userId}.`);
+
+        } catch (error) {
+            console.error(`❌ CRITICAL ERROR: Failed to delete message ${messageId}.`, error);
         } finally {
             connection.release();
         }
