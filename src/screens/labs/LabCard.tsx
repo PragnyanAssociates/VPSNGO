@@ -3,7 +3,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image, Linking, Alert } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-// ★★★ 1. IMPORT SERVER_URL AND REMOVE API_BASE_URL ★★★
 import { SERVER_URL } from '../../../apiConfig';
 
 export interface Lab {
@@ -11,6 +10,7 @@ export interface Lab {
   title: string;
   subject: string;
   lab_type: string;
+  class_group?: string | null;
   description: string;
   access_url: string | null;
   file_path: string | null;
@@ -37,7 +37,6 @@ export const LabCard = ({ lab, onEdit, onDelete }: LabCardProps) => {
 
   const handleOpenFile = async () => {
     if (!lab.file_path) return;
-    // ★★★ 2. USE SERVER_URL for file paths ★★★
     const fileUrl = `${SERVER_URL}${lab.file_path}`;
     try {
         const supported = await Linking.canOpenURL(fileUrl);
@@ -47,7 +46,7 @@ export const LabCard = ({ lab, onEdit, onDelete }: LabCardProps) => {
   };
 
   const imageSource = lab.cover_image_url 
-    ? { uri: `${SERVER_URL}${lab.cover_image_url}` } // ★★★ 3. USE SERVER_URL for images ★★★
+    ? { uri: `${SERVER_URL}${lab.cover_image_url}` }
     : require('../../assets/default-lab-icon.png');
 
   return (
@@ -72,7 +71,9 @@ export const LabCard = ({ lab, onEdit, onDelete }: LabCardProps) => {
           </View>
         )}
       </View>
-      <Text style={styles.subtitle}>Subject: {lab.subject} | Type: {lab.lab_type}</Text>
+      <Text style={styles.subtitle}>
+        Subject: {lab.subject} | For: {lab.class_group || 'All Classes'}
+      </Text>
       <Text style={styles.description}>{lab.description}</Text>
       <View style={styles.accessButtonsContainer}>
         {lab.file_path && (
@@ -92,7 +93,6 @@ export const LabCard = ({ lab, onEdit, onDelete }: LabCardProps) => {
   );
 };
 
-// Styles remain unchanged
 const styles = StyleSheet.create({
     cardContainer: { backgroundColor: '#fff', borderRadius: 15, marginHorizontal: 15, marginVertical: 10, padding: 20, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 5 },
     cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },

@@ -7,8 +7,8 @@ import { launchImageLibrary, ImagePickerResponse } from 'react-native-image-pick
 import { pick, types, isCancel } from '@react-native-documents/picker';
 import { LabCard, Lab } from './LabCard';
 import { useAuth } from '../../context/AuthContext';
-// ★★★ 1. IMPORT apiClient AND REMOVE API_BASE_URL ★★★
 import apiClient from '../../api/client';
+import { Picker } from '@react-native-picker/picker';
 
 const TeacherAdminLabsScreen = () => {
     const { user } = useAuth();
@@ -22,17 +22,32 @@ const TeacherAdminLabsScreen = () => {
     const [selectedImage, setSelectedImage] = useState<ImagePickerResponse | null>(null);
     const [selectedFile, setSelectedFile] = useState<any | null>(null);
 
+    const [studentClasses, setStudentClasses] = useState<string[]>([]);
+    const [selectedClass, setSelectedClass] = useState<string>('');
+
     const fetchLabs = useCallback(async () => {
+        if (!user) return;
         setIsLoading(true);
         try {
-            // ★★★ 2. USE apiClient ★★★
-            const response = await apiClient.get('/labs');
+            const response = await apiClient.get(`/labs/teacher/${user.id}`);
             setLabs(response.data);
         } catch (e: any) { Alert.alert("Error", e.response?.data?.message || 'Failed to fetch labs'); } 
         finally { setIsLoading(false); }
-    }, []);
+    }, [user]);
 
-    useEffect(() => { fetchLabs(); }, [fetchLabs]);
+    const fetchStudentClasses = async () => {
+        try {
+            const response = await apiClient.get('/student-classes');
+            setStudentClasses(response.data);
+        } catch (e) {
+            console.error("Error fetching student classes:", e);
+        }
+    };
+
+    useEffect(() => { 
+        fetchLabs();
+        fetchStudentClasses();
+    }, [fetchLabs]);
 
     const handleChoosePhoto = () => {
         launchImageLibrary({ mediaType: 'photo' }, (response) => {
@@ -58,8 +73,10 @@ const TeacherAdminLabsScreen = () => {
         setEditingLab(lab);
         if (lab) {
             setFormData({ title: lab.title, subject: lab.subject, lab_type: lab.lab_type, description: lab.description, access_url: lab.access_url || '' });
+            setSelectedClass(lab.class_group || '');
         } else {
             setFormData(initialFormState);
+            setSelectedClass('');
         }
         setSelectedImage(null); setSelectedFile(null); setIsModalOpen(true);
     };
@@ -75,6 +92,8 @@ const TeacherAdminLabsScreen = () => {
         const data = new FormData();
         Object.keys(formData).forEach(key => data.append(key, formData[key]));
         if (user) data.append('created_by', user.id.toString());
+        
+        data.append('class_group', selectedClass);
 
         if (selectedImage?.assets?.[0]) {
             data.append('coverImage', { uri: selectedImage.assets[0].uri, type: selectedImage.assets[0].type, name: selectedImage.assets[0].fileName });
@@ -84,7 +103,6 @@ const TeacherAdminLabsScreen = () => {
         }
         
         try {
-            // ★★★ 3. USE apiClient FOR SAVING/UPDATING ★★★
             if (editingLab) {
                 await apiClient.put(`/labs/${editingLab.id}`, data, { headers: { 'Content-Type': 'multipart/form-data' } });
             } else {
@@ -101,7 +119,6 @@ const TeacherAdminLabsScreen = () => {
             { text: "Cancel", style: "cancel" },
             { text: "Delete", style: "destructive", onPress: async () => {
                 try {
-                    // ★★★ 4. USE apiClient ★★★
                     await apiClient.delete(`/labs/${id}`);
                     Alert.alert("Success", "Lab deleted.");
                     fetchLabs();
@@ -135,6 +152,18 @@ const TeacherAdminLabsScreen = () => {
             <Modal visible={isModalOpen} onRequestClose={() => setIsModalOpen(false)} animationType="slide">
                 <ScrollView style={styles.modalContainer} contentContainerStyle={{ paddingBottom: 40 }}>
                     <Text style={styles.modalTitle}>{editingLab ? 'Edit Digital Lab' : 'Add New Digital Lab'}</Text>
+                    
+                    <View style={styles.pickerContainer}>
+                        <Picker
+                            selectedValue={selectedClass}
+                            onValueChange={(itemValue) => setSelectedClass(itemValue)}
+                        >
+                            <Picker.Item label="-- Assign to a Class (Optional) --" value="" />
+                            <Picker.Item label="All Classes" value="" />
+                            {studentClasses.map(c => <Picker.Item key={c} label={c} value={c} />)}
+                        </Picker>
+                    </View>
+
                     <TextInput style={styles.input} placeholder="Title (e.g., Virtual Chemistry Lab)" value={formData.title} onChangeText={t => setFormData({...formData, title: t})} />
                     <TextInput style={styles.input} placeholder="Subject (e.g., Science)" value={formData.subject} onChangeText={t => setFormData({...formData, subject: t})} />
                     <TextInput style={styles.input} placeholder="Type (e.g., Simulation, PDF, Video)" value={formData.lab_type} onChangeText={t => setFormData({...formData, lab_type: t})} />
@@ -156,7 +185,6 @@ const TeacherAdminLabsScreen = () => {
     );
 };
 
-// Styles remain unchanged
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#e8f5e9' },
     centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
@@ -180,6 +208,7 @@ const styles = StyleSheet.create({
     cancelButton: { backgroundColor: '#ddd' },
     saveButton: { backgroundColor: '#00796b' },
     saveButtonText: { color: '#fff', fontWeight: 'bold' },
+    pickerContainer: { borderWidth: 1, borderColor: '#ccc', borderRadius: 8, marginBottom: 15, backgroundColor: '#fff' },
 });
 
 export default TeacherAdminLabsScreen;

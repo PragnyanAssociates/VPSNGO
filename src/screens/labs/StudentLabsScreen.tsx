@@ -1,23 +1,29 @@
 // 📂 File: src/screens/labs/StudentLabsScreen.tsx (MODIFIED & CORRECTED)
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, FlatList, StyleSheet, ActivityIndicator, RefreshControl, Alert } from 'react-native';
+import { View, Text, FlatList, StyleSheet, ActivityIndicator, RefreshControl } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { LabCard, Lab } from './LabCard';
-// ★★★ 1. IMPORT apiClient AND REMOVE API_BASE_URL ★★★
 import apiClient from '../../api/client';
+import { useAuth } from '../../context/AuthContext';
 
 const StudentLabsScreen = () => {
+    const { user } = useAuth();
     const [labs, setLabs] = useState<Lab[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     const fetchLabs = useCallback(async () => {
+        if (!user || !user.class_group) {
+            setError('Could not determine your class. Please log in again.');
+            setIsLoading(false);
+            setIsRefreshing(false);
+            return;
+        }
         try {
             setError(null);
-            // ★★★ 2. USE apiClient ★★★
-            const response = await apiClient.get('/labs');
+            const response = await apiClient.get(`/labs/student/${user.class_group}`);
             setLabs(response.data);
         } catch (e: any) {
             setError(e.response?.data?.message || 'Failed to fetch Digital Labs.');
@@ -25,7 +31,7 @@ const StudentLabsScreen = () => {
             setIsLoading(false);
             setIsRefreshing(false);
         }
-    }, []);
+    }, [user]);
 
     useEffect(() => {
         fetchLabs();
@@ -71,7 +77,6 @@ const StudentLabsScreen = () => {
     );
 };
 
-// Styles remain unchanged
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#e8f5e9' },
     centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
