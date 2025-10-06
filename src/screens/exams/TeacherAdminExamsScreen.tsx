@@ -5,7 +5,7 @@ import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, 
 // ★★★ 1. IMPORT apiClient AND REMOVE API_BASE_URL ★★★
 import apiClient from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
-import MaterialIcons from 'react-native-vector-icons/MaterialIcons';0
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { Picker } from '@react-native-picker/picker';
 import { useIsFocused } from '@react-navigation/native';
 
@@ -192,7 +192,16 @@ const SubmissionsView = ({ exam, onBack }) => {
         setGradingSubmission(submission);
         try {
             const response = await apiClient.get(`/submissions/${submission.attempt_id}`);
-            const details = response.data;
+            let details = response.data;
+
+            // ★★★ MODIFICATION: Parse options if they are strings, just like in the student's result view ★★★
+            if (details) {
+                details = details.map(item => ({
+                    ...item,
+                    options: (item.options && typeof item.options === 'string') ? JSON.parse(item.options) : item.options,
+                }));
+            }
+
             setSubmissionDetails(details);
             const initialGrades = details.reduce((acc, item) => ({ ...acc, [item.question_id]: item.marks_awarded || '' }), {});
             setGradedAnswers(initialGrades);
@@ -242,14 +251,30 @@ const SubmissionsView = ({ exam, onBack }) => {
             <Modal visible={!!gradingSubmission} onRequestClose={() => setGradingSubmission(null)} animationType="slide">
                 <ScrollView style={styles.modalView}>
                     <Text style={styles.modalTitle}>Grading: {gradingSubmission?.student_name}</Text>
-                    {isLoading ? <ActivityIndicator size="large" /> : submissionDetails.map((item, index) => (
-                        <View key={item.question_id} style={styles.gradingItem}>
-                            <Text style={styles.questionText}>{index + 1}. {item.question_text}</Text>
-                            <Text style={styles.studentAnswer}>Student Answer: <Text style={{ fontWeight: 'normal' }}>{item.answer_text || 'Not answered'}</Text></Text>
-                            <Text style={styles.label}>Award Marks (out of {item.marks})</Text>
-                            <TextInput style={styles.input} keyboardType="number-pad" placeholder={`Max ${item.marks}`} value={String(gradedAnswers[item.question_id] ?? '')} onChangeText={text => handleGradeChange(item.question_id, text)} />
-                        </View>
-                    ))}
+                    {isLoading ? <ActivityIndicator size="large" /> : submissionDetails.map((item, index) => {
+                        // ★★★ MODIFICATION: Logic to determine and format the correct answer for display ★★★
+                        let correctAnswerDisplay = 'N/A';
+                        if (item.correct_answer) {
+                            if (item.question_type === 'multiple_choice' && item.options && item.options[item.correct_answer]) {
+                                correctAnswerDisplay = `${item.correct_answer}. ${item.options[item.correct_answer]}`;
+                            } else {
+                                correctAnswerDisplay = item.correct_answer;
+                            }
+                        }
+
+                        return (
+                            <View key={item.question_id} style={styles.gradingItem}>
+                                <Text style={styles.questionText}>{index + 1}. {item.question_text}</Text>
+                                <Text style={styles.studentAnswer}>Student Answer: <Text style={{ fontWeight: 'normal' }}>{item.answer_text || 'Not answered'}</Text></Text>
+                                
+                                {/* ★★★ NEW ELEMENT: Display the correct answer ★★★ */}
+                                <Text style={styles.correctAnswerText}>Correct Answer: <Text style={{ fontWeight: 'normal' }}>{correctAnswerDisplay}</Text></Text>
+                                
+                                <Text style={styles.label}>Award Marks (out of {item.marks})</Text>
+                                <TextInput style={styles.input} keyboardType="number-pad" placeholder={`Max ${item.marks}`} value={String(gradedAnswers[item.question_id] ?? '')} onChangeText={text => handleGradeChange(item.question_id, text)} />
+                            </View>
+                        );
+                    })}
                     <View style={styles.modalActions}>
                         <TouchableOpacity style={[styles.modalBtn, styles.cancelBtn]} onPress={() => setGradingSubmission(null)}><Text style={styles.modalBtnText}>Cancel</Text></TouchableOpacity>
                         <TouchableOpacity style={[styles.modalBtn, styles.saveButton]} onPress={submitGrade} disabled={isSubmittingGrade}>{isSubmittingGrade ? <ActivityIndicator color="#fff" /> : <Text style={styles.modalBtnText}>Submit Grades</Text>}</TouchableOpacity>
@@ -261,7 +286,7 @@ const SubmissionsView = ({ exam, onBack }) => {
 };
 
 
-// Styles remain the same
+// Styles
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#f4f6f8' },
     containerDark: { flex: 1, backgroundColor: '#eceff1' },
@@ -303,6 +328,8 @@ const styles = StyleSheet.create({
     gradingItem: { marginVertical: 10, borderBottomWidth: 1, borderBottomColor: '#eee', paddingBottom: 10 },
     questionText: { fontSize: 16, fontWeight: '500' },
     studentAnswer: { fontStyle: 'italic', color: '#333', marginVertical: 8, padding: 8, backgroundColor: '#f0f0f0', borderRadius: 5, fontWeight: 'bold' },
+    // ★★★ NEW STYLE ★★★
+    correctAnswerText: { fontStyle: 'italic', color: '#28a745', marginVertical: 8, padding: 8, backgroundColor: '#e9f5e9', borderRadius: 5, fontWeight: 'bold' },
     modalActions: { flexDirection: 'row', justifyContent: 'space-around', marginTop: 30, marginBottom: 50 },
     modalBtn: { flex: 1, paddingVertical: 12, borderRadius: 8, alignItems: 'center' },
     modalBtnText: { color: '#fff', fontWeight: 'bold' },

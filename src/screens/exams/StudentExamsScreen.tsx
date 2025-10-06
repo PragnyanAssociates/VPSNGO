@@ -116,6 +116,8 @@ const TakeExamView = ({ exam, onFinish }) => {
     const [isLoading, setIsLoading] = useState(true);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [attemptId, setAttemptId] = useState(null);
+    // ★★★ NEW: State for the countdown timer ★★★
+    const [timeLeft, setTimeLeft] = useState<number | null>(null);
 
     useEffect(() => {
         const startAndFetch = async () => {
@@ -125,6 +127,11 @@ const TakeExamView = ({ exam, onFinish }) => {
                 const startRes = await apiClient.post(`/exams/${exam.exam_id}/start`, { student_id: user.id });
                 const { attempt_id } = startRes.data;
                 setAttemptId(attempt_id);
+
+                // ★★★ NEW: Initialize timer based on exam details ★★★
+                if (exam.time_limit_mins > 0) {
+                    setTimeLeft(exam.time_limit_mins * 60);
+                }
 
                 const qRes = await apiClient.get(`/exams/take/${exam.exam_id}`);
                 const data = qRes.data;
@@ -141,36 +148,78 @@ const TakeExamView = ({ exam, onFinish }) => {
             }
         };
         startAndFetch();
-    }, [exam.exam_id, user?.id, onFinish]);
+    }, [exam.exam_id, user?.id, onFinish, exam.time_limit_mins]);
+
+    // ★★★ NEW: useEffect hook to handle the timer countdown and auto-submission ★★★
+    useEffect(() => {
+        if (timeLeft === null || isSubmitting) return;
+
+        if (timeLeft <= 0) {
+            performSubmit(true); // Auto-submit when time is up
+            return;
+        }
+
+        const intervalId = setInterval(() => {
+            setTimeLeft(prevTime => (prevTime ? prevTime - 1 : 0));
+        }, 1000);
+
+        return () => clearInterval(intervalId); // Cleanup interval on component unmount
+    }, [timeLeft, isSubmitting]);
 
     const handleAnswerChange = (questionId, value) => setAnswers(prev => ({ ...prev, [questionId]: value }));
 
-    const handleSubmit = async () => {
-        if (!user?.id) return;
+    // ★★★ NEW: Refactored submission logic to be reusable for both manual and auto-submit ★★★
+    const performSubmit = async (isAutoSubmit = false) => {
+        if (isSubmitting || !user?.id) return; // Prevent multiple submissions
+        
+        setIsSubmitting(true);
+        try {
+            await apiClient.post(`/attempts/${attemptId}/submit`, { answers, student_id: user.id });
+            Alert.alert(
+                'Success',
+                isAutoSubmit
+                    ? "Time's up! Your exam has been automatically submitted."
+                    : 'Your exam has been submitted!',
+                [{ text: 'OK', onPress: onFinish }] // Go back to list on success
+            );
+        } catch (e: any) {
+            Alert.alert('Error', e.response?.data?.message || e.message);
+            setIsSubmitting(false); // Allow user to try again on failure
+        }
+    };
+
+    const handleSubmit = () => {
         Alert.alert('Confirm Submission', 'Are you sure you want to submit your exam?', [
             { text: 'Cancel', style: 'cancel' },
             {
                 text: 'Submit',
-                onPress: async () => {
-                    setIsSubmitting(true);
-                    try {
-                        await apiClient.post(`/attempts/${attemptId}/submit`, { answers, student_id: user.id });
-                        Alert.alert('Success', 'Your exam has been submitted!');
-                        onFinish();
-                    } catch (e: any) {
-                        Alert.alert('Error', e.response?.data?.message || e.message);
-                    } finally {
-                        setIsSubmitting(false);
-                    }
-                }
+                onPress: () => performSubmit(false)
             }
         ]);
+    };
+    
+    // ★★★ NEW: Helper to format time for display ★★★
+    const formatTime = (seconds: number) => {
+        if (seconds < 0) return '00:00';
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
     };
 
     if (isLoading) return <View style={styles.centered}><ActivityIndicator size="large" /><Text>Preparing your exam...</Text></View>;
     return (
         <ScrollView style={styles.container}>
-            <Text style={styles.headerTitle}>{exam.title}</Text>
+             <View style={styles.examHeader}>
+                <Text style={styles.headerTitle}>{exam.title}</Text>
+                {/* ★★★ NEW: Timer Display ★★★ */}
+                {timeLeft !== null && (
+                    <View style={styles.timerContainer}>
+                        <MaterialIcons name="timer" size={20} color="#dc3545" />
+                        <Text style={styles.timerText}>{formatTime(timeLeft)}</Text>
+                    </View>
+                )}
+            </View>
+
             {questions.map((q, index) => (
                 <View key={q.question_id} style={styles.questionBox}>
                     <Text style={styles.questionText}>{index + 1}. {q.question_text}</Text>
@@ -248,11 +297,11 @@ const ResultView = ({ attemptId, onBack }) => {
     );
 };
 
-// Styles remain the same
+// Styles
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#f4f6f8', padding: 10 },
     centered: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
-    headerTitle: { fontSize: 24, fontWeight: 'bold', margin: 15, color: '#333' },
+    headerTitle: { fontSize: 22, fontWeight: 'bold', color: '#333', flex: 1 },
     card: { backgroundColor: '#fff', borderRadius: 12, padding: 20, marginHorizontal: 5, marginVertical: 10, elevation: 3, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 4 },
     pill: { backgroundColor: '#e8f5e9', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 15, alignSelf: 'flex-start', marginBottom: 10 },
     pillText: { color: '#4caf50', fontWeight: 'bold' },
@@ -283,6 +332,10 @@ const styles = StyleSheet.create({
     radioOuterCircleSelected: { borderColor: '#007bff', },
     radioInnerCircle: { height: 10, width: 10, borderRadius: 5, backgroundColor: '#007bff', },
     radioLabel: { fontSize: 16, color: '#333', },
+    // ★★★ NEW STYLES for Timer ★★★
+    examHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginHorizontal: 15, marginTop: 15, marginBottom: 5 },
+    timerContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f8d7da', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: '#dc3545', },
+    timerText: { fontSize: 16, fontWeight: 'bold', color: '#721c24', marginLeft: 5, },
 });
 
 export default StudentExamsScreen;
