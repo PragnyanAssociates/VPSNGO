@@ -670,27 +670,29 @@ const getAttendanceSummary = async (filters) => {
         `;
         [[overallSummary]] = await db.query(summaryQuery, queryParams);
     } else { // Monthly & Overall
-        // This more complex query calculates the new metrics for longer timeframes
         const summaryQuery = `
-            WITH StudentPercentages AS (
+            WITH StudentDaily AS (
                 SELECT
                     student_id,
-                    (SUM(CASE WHEN status = 'Present' THEN 1 ELSE 0 END) * 100 / COUNT(id)) AS percentage
+                    attendance_date,
+                    -- A student is present for a day if they attended at least one period
+                    MAX(CASE WHEN status = 'Present' THEN 1 ELSE 0 END) as is_present
                 ${baseQuery}
-                GROUP BY student_id
+                GROUP BY student_id, attendance_date
             ),
-            DailyPercentages AS (
-                SELECT
-                    (SUM(CASE WHEN status = 'Present' THEN 1 ELSE 0 END) * 100 / COUNT(id)) AS daily_perc
-                ${baseQuery}
-                GROUP BY attendance_date
+            StudentOverall AS (
+                SELECT 
+                    student_id,
+                    (SUM(is_present) * 100 / COUNT(attendance_date)) as overall_perc
+                FROM StudentDaily
+                GROUP BY student_id
             )
             SELECT
-                (SELECT COALESCE(AVG(daily_perc), 0) FROM DailyPercentages) AS avg_daily_attendance,
-                (SELECT COUNT(*) FROM StudentPercentages WHERE percentage < 75) AS students_below_threshold,
-                (SELECT COALESCE(SUM(CASE WHEN status = 'Present' THEN 1 ELSE 0 END) * 100 / NULLIF(COUNT(id), 0), 0) ${baseQuery}) as overall_percentage
+                COALESCE((SELECT (SUM(is_present) * 100 / COUNT(*)) FROM StudentDaily), 0) as avg_daily_attendance,
+                COALESCE((SELECT COUNT(*) FROM StudentOverall WHERE overall_perc < 75), 0) AS students_below_threshold,
+                COALESCE((SELECT (SUM(CASE WHEN status = 'Present' THEN 1 ELSE 0 END) * 100 / COUNT(id)) ${baseQuery}), 0) as overall_percentage
         `;
-         [[overallSummary]] = await db.query(summaryQuery, [...queryParams, ...queryParams, ...queryParams]);
+         [[overallSummary]] = await db.query(summaryQuery, [...queryParams, ...queryParams]);
     }
 
     // --- Student-by-Student Details Calculation (now using period counts) ---

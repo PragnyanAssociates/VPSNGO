@@ -207,9 +207,31 @@ const AdminStudentDetailView = ({ student, onBack }) => {
 
 // --- Generic Summary View (for Admin and Teacher) ---
 const GenericSummaryView = ({
-    picker1, picker2, onFetchSummary, listData,
+    picker1, picker2, listData,
     summaryData, isLoading, viewMode, setViewMode, onSelectStudent
 }) => {
+    const summary = summaryData?.overallSummary ?? {};
+
+    const renderSummaryCards = () => {
+        if (viewMode === 'daily') {
+            return (
+                <View style={styles.summaryContainer}>
+                    <SummaryCard label="Class Attendance %" value={`${Number(summary.overall_percentage ?? 0).toFixed(1)}%`} color={BLUE} />
+                    <SummaryCard label="Students Present" value={summary.students_present ?? 0} color={GREEN} />
+                    <SummaryCard label="Students Absent" value={summary.students_absent ?? 0} color={RED} />
+                </View>
+            );
+        } else { // Monthly & Overall view
+            return (
+                <View style={styles.summaryContainer}>
+                    <SummaryCard label="Class Attendance %" value={`${Number(summary.overall_percentage ?? 0).toFixed(1)}%`} color={BLUE} />
+                    <SummaryCard label="Avg. Daily Attendance" value={`${Number(summary.avg_daily_attendance ?? 0).toFixed(1)}%`} color={ORANGE} />
+                    <SummaryCard label="Students Below 75%" value={summary.students_below_threshold ?? 0} color={RED} />
+                </View>
+            );
+        }
+    };
+
     return (
         <SafeAreaView style={styles.container}>
             <View style={styles.pickerContainer}>
@@ -233,26 +255,7 @@ const GenericSummaryView = ({
                 <FlatList
                     data={listData}
                     keyExtractor={(item) => item.student_id.toString()}
-                    ListHeaderComponent={() => {
-                        const summary = summaryData?.overallSummary ?? {};
-                        if (viewMode === 'daily') {
-                            return (
-                                <View style={styles.summaryContainer}>
-                                    <SummaryCard label="Class Attendance %" value={`${(summary.overall_percentage ?? 0).toFixed(1)}%`} color={BLUE} />
-                                    <SummaryCard label="Students Present" value={summary.students_present ?? 0} color={GREEN} />
-                                    <SummaryCard label="Students Absent" value={summary.students_absent ?? 0} color={RED} />
-                                </View>
-                            );
-                        } else { // Monthly & Overall view
-                            return (
-                                <View style={styles.summaryContainer}>
-                                    <SummaryCard label="Class Attendance %" value={`${(summary.overall_percentage ?? 0).toFixed(1)}%`} color={BLUE} />
-                                    <SummaryCard label="Avg. Daily Attendance" value={`${(summary.avg_daily_attendance ?? 0).toFixed(1)}%`} color={ORANGE} />
-                                    <SummaryCard label="Students Below 75%" value={summary.students_below_threshold ?? 0} color={RED} />
-                                </View>
-                            );
-                        }
-                    }}
+                    ListHeaderComponent={renderSummaryCards}
                     renderItem={({ item }) => {
                         const studentPercentage = item.total_marked_periods > 0 ? (item.present_periods / item.total_marked_periods) * 100 : 0;
                         const percentageColor = studentPercentage >= 75 ? GREEN : studentPercentage >= 50 ? YELLOW : RED;
@@ -278,7 +281,6 @@ const GenericSummaryView = ({
         </SafeAreaView>
     );
 };
-
 
 // --- Teacher Attendance Summary View ---
 const TeacherSummaryView = ({ teacher }) => {
