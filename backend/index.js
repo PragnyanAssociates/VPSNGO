@@ -635,47 +635,77 @@ app.post('/api/timetable', async (req, res) => { const { class_group, day_of_wee
 app.get('/api/subjects/:class_group', async (req, res) => { try { const { class_group } = req.params; if (!class_group) { return res.status(400).json({ message: 'Class group is required.' }); } const query = `SELECT DISTINCT subject_name FROM timetables WHERE class_group = ? ORDER BY subject_name;`; const [subjects] = await db.query(query, [class_group]); res.status(200).json(subjects.map(s => s.subject_name)); } catch (error) { console.error("GET /api/subjects/:class_group Error:", error); res.status(500).json({ message: 'Could not fetch subjects for the class.' }); }});
 app.get('/api/teacher-assignments/:teacherId', async (req, res) => { try { const { teacherId } = req.params; if (!teacherId) { return res.status(400).json({ message: 'Teacher ID is required.' }); } const query = `SELECT DISTINCT class_group, subject_name FROM timetables WHERE teacher_id = ? ORDER BY class_group, subject_name;`; const [assignments] = await db.query(query, [teacherId]); res.status(200).json(assignments); } catch (error) { console.error("GET /api/teacher-assignments/:teacherId Error:", error); res.status(500).json({ message: 'Could not fetch teacher assignments.' }); }});
 
+// --- ★ MODIFIED: Teacher and Admin Summary Endpoints ---
+const getAttendanceSummary = async (filters, params) => {
+    let dateFilter = '';
+    const { viewMode } = filters;
+    if (viewMode === 'daily') {
+        dateFilter = 'AND ar.attendance_date = CURDATE()';
+    } else if (viewMode === 'monthly') {
+        dateFilter = 'AND MONTH(ar.attendance_date) = MONTH(CURDATE()) AND YEAR(ar.attendance_date) = YEAR(CURDATE())';
+    }
+
+    let whereClause = '';
+    let queryParams = [];
+
+    if (filters.teacherId) {
+        whereClause = 'ar.teacher_id = ? AND ar.class_group = ? AND ar.subject_name = ?';
+        queryParams = [filters.teacherId, filters.classGroup, filters.subjectName];
+    } else { // Admin
+        whereClause = 'ar.class_group = ? AND ar.subject_name = ?';
+        queryParams = [filters.classGroup, filters.subjectName];
+    }
+
+    const baseQuery = `FROM attendance_records ar WHERE ${whereClause} ${dateFilter}`;
+
+    // --- Overall Summary Calculations ---
+    const summaryQuery = `
+        SELECT
+            (SUM(CASE WHEN status = 'Present' THEN 1 ELSE 0 END) * 100 / COUNT(id)) as overall_percentage,
+            COUNT(DISTINCT CASE WHEN status = 'Present' THEN student_id END) as students_present,
+            COUNT(DISTINCT CASE WHEN status = 'Absent' THEN student_id END) as students_absent
+        ${baseQuery}
+    `;
+    const [[overallSummary]] = await db.query(summaryQuery, queryParams);
+
+    // --- Student Details Calculation (now using period counts) ---
+    const studentDetailsQuery = `
+        SELECT 
+            u.id AS student_id, 
+            u.full_name, 
+            SUM(CASE WHEN ar.status = 'Present' THEN 1 ELSE 0 END) as present_periods, 
+            COUNT(ar.id) as total_marked_periods
+        FROM users u 
+        LEFT JOIN attendance_records ar ON u.id = ar.student_id AND ${whereClause} ${dateFilter}
+        WHERE u.role = 'student' AND u.class_group = ?
+        GROUP BY u.id, u.full_name 
+        ORDER BY u.full_name;
+    `;
+    // Add classGroup to the end of params for the final WHERE clause
+    const studentDetailsParams = [...queryParams, filters.classGroup];
+    const [studentDetails] = await db.query(studentDetailsQuery, studentDetailsParams);
+
+    return {
+        overallSummary: {
+            overall_percentage: overallSummary?.overall_percentage || 0,
+            students_present: overallSummary?.students_present || 0,
+            students_absent: overallSummary?.students_absent || 0,
+        },
+        studentDetails,
+    };
+};
+
 app.get('/api/attendance/teacher-summary', async (req, res) => {
     try {
         const { teacherId, classGroup, subjectName, viewMode } = req.query;
         if (!teacherId || !classGroup || !subjectName) {
-            return res.status(400).json({ message: 'Teacher ID, Class Group, and Subject Name are required.' });
+            return res.status(400).json({ message: 'Teacher ID, Class Group, and Subject are required.' });
         }
-
-        let dateFilter = '';
-        if (viewMode === 'daily') {
-            dateFilter = 'AND attendance_date = CURDATE()';
-        } else if (viewMode === 'monthly') {
-            dateFilter = 'AND MONTH(attendance_date) = MONTH(CURDATE()) AND YEAR(attendance_date) = YEAR(CURDATE())';
-        }
-
-        const summaryQuery = `SELECT COUNT(id) as total_classes, SUM(CASE WHEN status = 'Present' THEN 1 ELSE 0 END) as total_present FROM attendance_records WHERE teacher_id = ? AND class_group = ? AND subject_name = ? ${dateFilter}`;
-        const [[overallSummary]] = await db.query(summaryQuery, [teacherId, classGroup, subjectName]);
-
-        const studentDetailsQuery = `
-            SELECT 
-                u.id AS student_id, 
-                u.full_name, 
-                SUM(CASE WHEN ar.status = 'Present' THEN 1 ELSE 0 END) as present_count, 
-                COUNT(ar.id) as total_marked_days 
-            FROM users u 
-            LEFT JOIN attendance_records ar ON u.id = ar.student_id AND ar.teacher_id = ? AND ar.subject_name = ? ${dateFilter}
-            WHERE u.role = 'student' AND u.class_group = ? 
-            GROUP BY u.id, u.full_name 
-            ORDER BY u.full_name;
-        `;
-        const [studentDetails] = await db.query(studentDetailsQuery, [teacherId, subjectName, classGroup]);
-        
-        res.status(200).json({
-            overallSummary: {
-                total_classes: overallSummary.total_classes || 0,
-                total_present: overallSummary.total_present || 0,
-            },
-            studentDetails,
-        });
+        const summary = await getAttendanceSummary({ teacherId, classGroup, subjectName, viewMode });
+        res.status(200).json(summary);
     } catch (error) {
         console.error("GET /api/attendance/teacher-summary Error:", error);
-        res.status(500).json({ message: 'Could not fetch attendance summary.' });
+        res.status(500).json({ message: 'Could not fetch teacher attendance summary.' });
     }
 });
 
@@ -685,49 +715,19 @@ app.get('/api/attendance/admin-summary', async (req, res) => {
         if (!classGroup || !subjectName) {
             return res.status(400).json({ message: 'Class Group and Subject Name are required.' });
         }
-
-        let dateFilter = '';
-        if (viewMode === 'daily') {
-            dateFilter = 'AND ar.attendance_date = CURDATE()';
-        } else if (viewMode === 'monthly') {
-            dateFilter = 'AND MONTH(ar.attendance_date) = MONTH(CURDATE()) AND YEAR(ar.attendance_date) = YEAR(CURDATE())';
-        }
-
-        const summaryQuery = `SELECT COUNT(id) as total_classes, SUM(CASE WHEN status = 'Present' THEN 1 ELSE 0 END) as total_present FROM attendance_records ar WHERE ar.class_group = ? AND ar.subject_name = ? ${dateFilter}`;
-        const [[overallSummary]] = await db.query(summaryQuery, [classGroup, subjectName]);
-        
-        const studentDetailsQuery = `
-            SELECT 
-                u.id AS student_id, 
-                u.full_name, 
-                SUM(CASE WHEN ar.status = 'Present' THEN 1 ELSE 0 END) as present_count, 
-                COUNT(ar.id) as total_marked_days 
-            FROM users u 
-            LEFT JOIN attendance_records ar ON u.id = ar.student_id AND ar.subject_name = ? ${dateFilter}
-            WHERE u.role = 'student' AND u.class_group = ? 
-            GROUP BY u.id, u.full_name 
-            ORDER BY u.full_name;
-        `;
-        const [studentDetails] = await db.query(studentDetailsQuery, [subjectName, classGroup]);
-        
-        res.status(200).json({
-            overallSummary: {
-                total_classes: overallSummary.total_classes || 0,
-                total_present: overallSummary.total_present || 0,
-            },
-            studentDetails,
-        });
+        const summary = await getAttendanceSummary({ classGroup, subjectName, viewMode });
+        res.status(200).json(summary);
     } catch (error) {
         console.error("GET /api/attendance/admin-summary Error:", error);
         res.status(500).json({ message: 'Could not fetch admin attendance summary.' });
     }
 });
 
+
 app.get('/api/attendance/sheet', async (req, res) => { const { class_group, date, period_number } = req.query; try { if (!class_group || !date || !period_number) { return res.status(400).json({ message: 'Class group, date, and period number are required.' }); } const periodNum = parseInt(period_number, 10); if (isNaN(periodNum) || periodNum < 1 || periodNum > 8) { return res.status(400).json({ message: 'Period number must be between 1 and 8.' }); } const query = `SELECT u.id, u.full_name, ar.status FROM users u LEFT JOIN attendance_records ar ON u.id = ar.student_id AND ar.attendance_date = ? AND ar.period_number = ? WHERE u.role = 'student' AND u.class_group = ? ORDER BY u.full_name;`; const [students] = await db.query(query, [date, periodNum, class_group]); res.status(200).json(students); } catch (error) { console.error("GET /api/attendance/sheet Error:", error); res.status(500).json({ message: 'Error fetching attendance sheet.' }); }});
 app.post('/api/attendance', async (req, res) => { const { class_group, subject_name, period_number, date, teacher_id, attendanceData } = req.body; const connection = await db.getConnection(); try { if (!class_group || !subject_name || !period_number || !date || !teacher_id || !Array.isArray(attendanceData)) { return res.status(400).json({ message: 'All fields are required, and attendanceData must be an array.' }); } const periodNum = parseInt(period_number, 10); if (isNaN(periodNum) || periodNum < 1 || periodNum > 8) { return res.status(400).json({ message: 'Period number must be between 1 and 8.' }); } if (attendanceData.some(record => !record.student_id || !['Present', 'Absent'].includes(record.status))) { return res.status(400).json({ message: 'Each attendance record must have a valid student_id and status (Present or Absent).' }); } const dayOfWeek = new Date(date).toLocaleString('en-US', { weekday: 'long' }); const validDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']; if (!validDays.includes(dayOfWeek)) { return res.status(400).json({ message: 'Attendance can only be marked on school days (Monday to Saturday).' }); } const [timetableSlot] = await connection.query( 'SELECT teacher_id FROM timetables WHERE class_group = ? AND day_of_week = ? AND period_number = ?', [class_group, dayOfWeek, periodNum] ); if (!timetableSlot.length || timetableSlot[0].teacher_id !== parseInt(teacher_id)) { return res.status(403).json({ message: 'You are not assigned to this class period.' }); } await connection.beginTransaction(); const query = `INSERT INTO attendance_records (student_id, teacher_id, class_group, subject_name, attendance_date, period_number, status) VALUES (?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE status = VALUES(status);`; for (const record of attendanceData) { await connection.execute(query, [ record.student_id, teacher_id, class_group, subject_name, date, periodNum, record.status ]); } await connection.commit(); res.status(201).json({ message: 'Attendance saved successfully!' }); } catch (error) { await connection.rollback(); console.error("POST /api/attendance Error:", error); res.status(500).json({ message: 'Error saving attendance.' }); } finally { connection.release(); }});
 
-
-// --- ★ MODIFIED: Student History Endpoints (for Student and Admin) ---
+// --- Student History Endpoints (for Student and Admin) ---
 const getStudentHistory = async (studentId, viewMode) => {
     let dateFilter = '';
     if (viewMode === 'daily') {
@@ -738,7 +738,6 @@ const getStudentHistory = async (studentId, viewMode) => {
 
     const queryBase = `FROM attendance_records WHERE student_id = ? ${dateFilter}`;
     
-    // Summary now counts PERIODS, not days
     const summaryQuery = `SELECT 
                             SUM(CASE WHEN status = 'Present' THEN 1 ELSE 0 END) as present_periods,
                             COUNT(*) as total_periods 
@@ -773,7 +772,6 @@ app.get('/api/attendance/my-history/:studentId', async (req, res) => {
 });
 
 app.get('/api/attendance/student-history-admin/:studentId', async (req, res) => {
-    // NOTE: Add admin authorization middleware in a real app
     try {
         const { studentId } = req.params;
         const { viewMode } = req.query;

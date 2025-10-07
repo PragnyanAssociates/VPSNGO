@@ -43,8 +43,7 @@ const SummaryCard = ({ label, value, color }) => (
 
 const capitalize = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
 
-
-// --- ★ NEW: Component for Rendering a Day's Attendance ---
+// --- Component for Rendering a Day's Attendance ---
 const HistoryDayCard = ({ item }) => {
     const { dayStatus, statusColor } = useMemo(() => {
         const total = item.periods.length;
@@ -105,7 +104,6 @@ const GenericStudentHistoryView = ({ studentId, headerTitle, onBack }) => {
             if (!studentId) return;
             setIsLoading(true);
             try {
-                // Use the correct endpoint based on whether onBack is provided (implying admin view)
                 const url = onBack 
                     ? `/attendance/student-history-admin/${studentId}?viewMode=${viewMode}`
                     : `/attendance/my-history/${studentId}?viewMode=${viewMode}`;
@@ -134,11 +132,9 @@ const GenericStudentHistoryView = ({ studentId, headerTitle, onBack }) => {
                 acc[date] = { date, periods: [] };
             }
             acc[date].periods.push(period);
-            // Sort periods within the day
             acc[date].periods.sort((a, b) => a.period_number - b.period_number);
             return acc;
         }, {});
-        // Convert object to array and sort by date descending
         return Object.values(groups).sort((a, b) => new Date(b.date) - new Date(a.date));
     }, [data.history]);
 
@@ -218,30 +214,10 @@ const TeacherSummaryView = ({ teacher }) => {
     const [isLoading, setIsLoading] = useState(true);
     const [viewMode, setViewMode] = useState('overall');
 
-    const fetchSummary = async (classGroup, subjectName) => {
-        if (!teacher?.id || !classGroup || !subjectName) {
-            setSummaryData(null);
-            setIsLoading(false);
-            return;
-        }
-        setIsLoading(true);
-        try {
-            const response = await apiClient.get(`/attendance/teacher-summary?teacherId=${teacher.id}&classGroup=${classGroup}&subjectName=${subjectName}&viewMode=${viewMode}`);
-            setSummaryData(response.data);
-        } catch (error: any) {
-            console.error("Fetch Summary Error:", error);
-            Alert.alert('Error', error.response?.data?.message || 'Could not retrieve attendance data.');
-            setSummaryData(null);
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
     useEffect(() => {
         const fetchAssignments = async () => {
             if (!teacher?.id) {
-                setIsLoading(false);
-                return;
+                setIsLoading(false); return;
             }
             try {
                 const response = await apiClient.get(`/teacher-assignments/${teacher.id}`);
@@ -256,8 +232,7 @@ const TeacherSummaryView = ({ teacher }) => {
                     setIsLoading(false);
                 }
             } catch (error: any) {
-                console.error("Fetch Assignments Error:", error);
-                Alert.alert('Error', error.response?.data?.message || 'Could not fetch your class assignments.');
+                Alert.alert('Error', error.response?.data?.message || 'Could not fetch assignments.');
                 setIsLoading(false);
             }
         };
@@ -265,22 +240,28 @@ const TeacherSummaryView = ({ teacher }) => {
     }, [teacher.id]);
     
     useEffect(() => {
-      if (selectedClass && selectedSubject) {
-        fetchSummary(selectedClass, selectedSubject);
-      }
+      const fetchSummary = async () => {
+        if (!teacher?.id || !selectedClass || !selectedSubject) {
+            setSummaryData(null);
+            return;
+        }
+        setIsLoading(true);
+        try {
+            const response = await apiClient.get(`/attendance/teacher-summary?teacherId=${teacher.id}&classGroup=${selectedClass}&subjectName=${selectedSubject}&viewMode=${viewMode}`);
+            setSummaryData(response.data);
+        } catch (error: any) {
+            Alert.alert('Error', error.response?.data?.message || 'Could not retrieve data.');
+            setSummaryData(null);
+        } finally {
+            setIsLoading(false);
+        }
+      };
+      fetchSummary();
     }, [selectedClass, selectedSubject, viewMode]);
 
     const uniqueClasses = useMemo(() => [...new Set(assignments.map(a => a.class_group))], [assignments]);
     const subjectsForSelectedClass = useMemo(() => assignments.filter(a => a.class_group === selectedClass).map(a => a.subject_name), [assignments, selectedClass]);
     
-    const { overallPercentage, absentCount } = useMemo(() => {
-        const totalClasses = summaryData?.overallSummary?.total_classes || 0;
-        const totalPresent = summaryData?.overallSummary?.total_present || 0;
-        const percentage = totalClasses > 0 ? (totalPresent / totalClasses) * 100 : 0;
-        const absent = totalClasses - totalPresent;
-        return { overallPercentage: percentage, absentCount: absent };
-    }, [summaryData]);
-
     const handleClassChange = (newClass) => {
         setSelectedClass(newClass);
         const newSubjects = assignments.filter(a => a.class_group === newClass).map(a => a.subject_name);
@@ -293,18 +274,12 @@ const TeacherSummaryView = ({ teacher }) => {
             <View style={styles.pickerContainer}>
                 <View style={styles.pickerWrapper}>
                     <Picker selectedValue={selectedClass} onValueChange={handleClassChange} enabled={uniqueClasses.length > 0}>
-                        {uniqueClasses.length > 0 ? 
-                            uniqueClasses.map(c => <Picker.Item key={c} label={c} value={c} />) :
-                            <Picker.Item label="No classes..." value="" enabled={false} />
-                        }
+                        {uniqueClasses.map(c => <Picker.Item key={c} label={c} value={c} />)}
                     </Picker>
                 </View>
                 <View style={styles.pickerWrapper}>
                     <Picker selectedValue={selectedSubject} onValueChange={(s) => setSelectedSubject(s)} enabled={subjectsForSelectedClass.length > 0}>
-                         {subjectsForSelectedClass.length > 0 ?
-                            subjectsForSelectedClass.map(s => <Picker.Item key={s} label={s} value={s} />) :
-                            <Picker.Item label="No subjects..." value="" enabled={false} />
-                        }
+                         {subjectsForSelectedClass.map(s => <Picker.Item key={s} label={s} value={s} />)}
                     </Picker>
                 </View>
             </View>
@@ -327,19 +302,19 @@ const TeacherSummaryView = ({ teacher }) => {
                     keyExtractor={(item) => item.student_id.toString()}
                     ListHeaderComponent={() => (
                         <View style={styles.summaryContainer}>
-                            <SummaryCard label="Overall %" value={`${overallPercentage.toFixed(1)}%`} color={BLUE} />
-                            <SummaryCard label="Total Present Periods" value={summaryData?.overallSummary.total_present || 0} color={GREEN} />
-                            <SummaryCard label="Total Absent Periods" value={absentCount} color={RED} />
+                            <SummaryCard label="Overall %" value={`${(summaryData?.overallSummary?.overall_percentage || 0).toFixed(1)}%`} color={BLUE} />
+                            <SummaryCard label="Students Present" value={summaryData?.overallSummary?.students_present || 0} color={GREEN} />
+                            <SummaryCard label="Students Absent" value={summaryData?.overallSummary?.students_absent || 0} color={RED} />
                         </View>
                     )}
                     renderItem={({ item }) => {
-                        const studentPercentage = item.total_marked_days > 0 ? (item.present_count / item.total_marked_days) * 100 : 0;
+                        const studentPercentage = item.total_marked_periods > 0 ? (item.present_periods / item.total_marked_periods) * 100 : 0;
                         const percentageColor = studentPercentage >= 75 ? GREEN : studentPercentage >= 50 ? YELLOW : RED;
                         return (
                             <View style={styles.summaryStudentRow}>
                                 <View style={{flex: 1}}>
                                     <Text style={styles.studentName}>{item.full_name}</Text>
-                                    <Text style={styles.studentDetailText}>Present: {item.present_count} / {item.total_marked_days}</Text>
+                                    <Text style={styles.studentDetailText}>Present: {item.present_periods} / {item.total_marked_periods}</Text>
                                 </View>
                                 <Text style={[styles.percentageText, { color: percentageColor }]}>{studentPercentage.toFixed(0)}%</Text>
                             </View>
@@ -385,7 +360,7 @@ const AdminAttendanceView = () => {
           setIsLoading(false);
         }
       } catch (error: any) {
-        Alert.alert('Error', error.response?.data?.message || 'Failed to fetch subjects for this class.');
+        Alert.alert('Error', 'Failed to fetch subjects.');
         setIsLoading(false);
       }
     };
@@ -403,7 +378,7 @@ const AdminAttendanceView = () => {
         const response = await apiClient.get(`/attendance/admin-summary?classGroup=${selectedClass}&subjectName=${selectedSubject}&viewMode=${viewMode}`);
         setSummaryData(response.data);
       } catch (error: any) {
-        Alert.alert('Error', error.response?.data?.message || 'Could not fetch attendance summary.');
+        Alert.alert('Error', 'Could not fetch summary.');
         setSummaryData(null);
       } finally {
         setIsLoading(false);
@@ -413,14 +388,6 @@ const AdminAttendanceView = () => {
         fetchSummary();
     }
   }, [selectedSubject, viewMode]);
-
-  const { overallPercentage, absentCount } = useMemo(() => {
-    const totalClasses = summaryData?.overallSummary?.total_classes || 0;
-    const totalPresent = summaryData?.overallSummary?.total_present || 0;
-    const percentage = totalClasses > 0 ? (totalPresent / totalClasses) * 100 : 0;
-    const absent = totalClasses - totalPresent;
-    return { overallPercentage: percentage, absentCount: absent };
-  }, [summaryData]);
 
   if (selectedStudent) {
     return <AdminStudentDetailView student={selectedStudent} onBack={() => setSelectedStudent(null)} />;
@@ -460,20 +427,20 @@ const AdminAttendanceView = () => {
           keyExtractor={(item) => item.student_id.toString()}
           ListHeaderComponent={() => (
             <View style={styles.summaryContainer}>
-              <SummaryCard label="Overall %" value={`${overallPercentage.toFixed(1)}%`} color={BLUE} />
-              <SummaryCard label="Total Present Periods" value={summaryData?.overallSummary.total_present || 0} color={GREEN} />
-              <SummaryCard label="Total Absent Periods" value={absentCount} color={RED} />
+                <SummaryCard label="Overall %" value={`${(summaryData?.overallSummary?.overall_percentage || 0).toFixed(1)}%`} color={BLUE} />
+                <SummaryCard label="Students Present" value={summaryData?.overallSummary?.students_present || 0} color={GREEN} />
+                <SummaryCard label="Students Absent" value={summaryData?.overallSummary?.students_absent || 0} color={RED} />
             </View>
           )}
           renderItem={({ item }) => {
-            const studentPercentage = item.total_marked_days > 0 ? (item.present_count / item.total_marked_days) * 100 : 0;
+            const studentPercentage = item.total_marked_periods > 0 ? (item.present_periods / item.total_marked_periods) * 100 : 0;
             const percentageColor = studentPercentage >= 75 ? GREEN : studentPercentage >= 50 ? YELLOW : RED;
             return (
               <TouchableOpacity onPress={() => setSelectedStudent(item)}>
                 <View style={styles.summaryStudentRow}>
                   <View style={{flex: 1}}>
                     <Text style={styles.studentName}>{item.full_name}</Text>
-                    <Text style={styles.studentDetailText}>Present: {item.present_count} / {item.total_marked_days}</Text>
+                    <Text style={styles.studentDetailText}>Present: {item.present_periods} / {item.total_marked_periods}</Text>
                   </View>
                   <Text style={[styles.percentageText, { color: percentageColor }]}>{studentPercentage.toFixed(0)}%</Text>
                 </View>
@@ -483,7 +450,7 @@ const AdminAttendanceView = () => {
           ListEmptyComponent={
             <View style={styles.loaderContainer}>
               <Text style={styles.noDataText}>
-                {subjects.length === 0 ? `No subjects scheduled for ${selectedClass}.` : `No attendance data for this subject in ${capitalize(viewMode)} view.`}
+                {subjects.length === 0 ? `No subjects for ${selectedClass}.` : `No data for this subject in ${capitalize(viewMode)} view.`}
               </Text>
             </View>
           }
@@ -505,16 +472,15 @@ const TeacherLiveAttendanceView = ({ route, teacher }) => {
   useEffect(() => {
     const fetchAttendanceSheet = async () => {
       if (!class_group || !date || !period_number) {
-        Alert.alert('Error', 'Missing required parameters to mark attendance.');
+        Alert.alert('Error', 'Missing parameters.');
         setIsLoading(false);
         return;
       }
       try {
         const response = await apiClient.get(`/attendance/sheet?class_group=${class_group}&date=${date}&period_number=${period_number}`);
-        const data = response.data;
-        const studentsWithStatus = data.map(s => ({ ...s, status: s.status || 'Present' }));
+        const studentsWithStatus = response.data.map(s => ({ ...s, status: s.status || 'Present' }));
         setStudents(studentsWithStatus);
-      } catch (error: any) { Alert.alert('Error', error.response?.data?.message || 'Failed to load students.'); } 
+      } catch (error: any) { Alert.alert('Error', 'Failed to load students.'); } 
       finally { setIsLoading(false); }
     };
     fetchAttendanceSheet();
@@ -529,16 +495,9 @@ const TeacherLiveAttendanceView = ({ route, teacher }) => {
     if (attendanceData.length === 0) return;
     setIsSaving(true);
     try {
-      await apiClient.post('/attendance', {
-        class_group,
-        subject_name,
-        period_number,
-        date,
-        teacher_id: teacher.id,
-        attendanceData,
-      });
-      Alert.alert('Success', 'Attendance saved successfully!');
-    } catch (error: any) { Alert.alert('Error', error.response?.data?.message || 'Failed to save attendance.'); }
+      await apiClient.post('/attendance', { class_group, subject_name, period_number, date, teacher_id: teacher.id, attendanceData });
+      Alert.alert('Success', 'Attendance saved!');
+    } catch (error: any) { Alert.alert('Error', 'Failed to save attendance.'); }
     finally { setIsSaving(false); }
   };
 
@@ -546,10 +505,12 @@ const TeacherLiveAttendanceView = ({ route, teacher }) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Mark Attendance</Text>
-        <Text style={styles.headerSubtitle}>{`${class_group} - ${subject_name}`}</Text>
-        <Text style={styles.headerSubtitleSmall}>{`Period ${period_number} (${periodTime}), ${date}`}</Text>
+      <View style={[styles.header, {alignItems: 'center'}]}>
+        <View>
+          <Text style={styles.headerTitle}>Mark Attendance</Text>
+          <Text style={styles.headerSubtitle}>{`${class_group} - ${subject_name}`}</Text>
+          <Text style={styles.headerSubtitleSmall}>{`Period ${period_number} (${periodTime}), ${date}`}</Text>
+        </View>
       </View>
       <FlatList
         data={students}
@@ -581,7 +542,7 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', paddingVertical: 15, paddingHorizontal: 20, backgroundColor: WHITE, borderBottomWidth: 1, borderBottomColor: BORDER_COLOR },
   headerTitle: { fontSize: 22, fontWeight: 'bold', color: TEXT_COLOR_DARK, textAlign: 'center' },
   headerSubtitle: { fontSize: 16, color: TEXT_COLOR_MEDIUM, marginTop: 4, textAlign: 'center' },
-  headerSubtitleSmall: { fontSize: 14, color: TEXT_COLOR_MEDIUM, marginTop: 2 },
+  headerSubtitleSmall: { fontSize: 14, color: TEXT_COLOR_MEDIUM, marginTop: 2, textAlign: 'center' },
   backButton: { position: 'absolute', left: 15, zIndex: 1, padding: 5 },
   pickerContainer: { flexDirection: 'row', padding: 10, backgroundColor: WHITE, borderBottomColor: BORDER_COLOR, borderBottomWidth: 1, alignItems: 'center' },
   pickerWrapper: { flex: 1, marginHorizontal: 5, backgroundColor: '#F0F4F8', borderWidth: 1, borderColor: BORDER_COLOR, borderRadius: 8, height: 50, justifyContent: 'center' },
@@ -607,7 +568,6 @@ const styles = StyleSheet.create({
   toggleButtonText: { color: TEXT_COLOR_DARK, fontWeight: '600' },
   toggleButtonTextActive: { color: WHITE },
   historyTitle: { fontSize: 18, fontWeight: 'bold', paddingHorizontal: 20, marginTop: 15, marginBottom: 10, color: TEXT_COLOR_DARK },
-  // Styles for the new day card
   historyDayCard: { backgroundColor: WHITE, marginHorizontal: 15, marginVertical: 8, borderRadius: 8, elevation: 2, shadowColor: '#999', shadowOpacity: 0.1, shadowRadius: 5 },
   historyDayHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 15, borderBottomWidth: 1, borderBottomColor: BORDER_COLOR },
   historyDate: { fontSize: 16, fontWeight: '600', color: TEXT_COLOR_DARK },
