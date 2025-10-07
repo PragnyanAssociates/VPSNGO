@@ -274,12 +274,18 @@ const TeacherSummaryView = ({ teacher }) => {
             <View style={styles.pickerContainer}>
                 <View style={styles.pickerWrapper}>
                     <Picker selectedValue={selectedClass} onValueChange={handleClassChange} enabled={uniqueClasses.length > 0}>
-                        {uniqueClasses.map(c => <Picker.Item key={c} label={c} value={c} />)}
+                        {uniqueClasses.length > 0 ? 
+                            uniqueClasses.map(c => <Picker.Item key={c} label={c} value={c} />) :
+                            <Picker.Item label="No classes..." value="" enabled={false} />
+                        }
                     </Picker>
                 </View>
                 <View style={styles.pickerWrapper}>
                     <Picker selectedValue={selectedSubject} onValueChange={(s) => setSelectedSubject(s)} enabled={subjectsForSelectedClass.length > 0}>
-                         {subjectsForSelectedClass.map(s => <Picker.Item key={s} label={s} value={s} />)}
+                         {subjectsForSelectedClass.length > 0 ?
+                            subjectsForSelectedClass.map(s => <Picker.Item key={s} label={s} value={s} />) :
+                            <Picker.Item label="No subjects..." value="" enabled={false} />
+                        }
                     </Picker>
                 </View>
             </View>
@@ -460,7 +466,7 @@ const AdminAttendanceView = () => {
   );
 };
 
-// --- Teacher Live Attendance View (UNCHANGED) ---
+// --- Teacher Live Attendance View ---
 const TeacherLiveAttendanceView = ({ route, teacher }) => {
   const { class_group, subject_name, period_number, date } = route?.params || {};
   const [students, setStudents] = useState([]);
@@ -505,12 +511,10 @@ const TeacherLiveAttendanceView = ({ route, teacher }) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={[styles.header, {alignItems: 'center'}]}>
-        <View>
-          <Text style={styles.headerTitle}>Mark Attendance</Text>
-          <Text style={styles.headerSubtitle}>{`${class_group} - ${subject_name}`}</Text>
-          <Text style={styles.headerSubtitleSmall}>{`Period ${period_number} (${periodTime}), ${date}`}</Text>
-        </View>
+      <View style={styles.centeredHeader}>
+        <Text style={styles.headerTitle}>Mark Attendance</Text>
+        <Text style={styles.headerSubtitle}>{`${class_group} - ${subject_name}`}</Text>
+        <Text style={styles.headerSubtitleSmall}>{`Period ${period_number} (${periodTime}), ${date}`}</Text>
       </View>
       <FlatList
         data={students}
@@ -540,6 +544,14 @@ const styles = StyleSheet.create({
   loaderContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
   noDataText: { textAlign: 'center', marginTop: 20, color: TEXT_COLOR_MEDIUM, fontSize: 16 },
   header: { flexDirection: 'row', alignItems: 'center', paddingVertical: 15, paddingHorizontal: 20, backgroundColor: WHITE, borderBottomWidth: 1, borderBottomColor: BORDER_COLOR },
+  centeredHeader: {
+    paddingVertical: 15,
+    paddingHorizontal: 20,
+    backgroundColor: WHITE,
+    borderBottomWidth: 1,
+    borderBottomColor: BORDER_COLOR,
+    alignItems: 'center',
+  },
   headerTitle: { fontSize: 22, fontWeight: 'bold', color: TEXT_COLOR_DARK, textAlign: 'center' },
   headerSubtitle: { fontSize: 16, color: TEXT_COLOR_MEDIUM, marginTop: 4, textAlign: 'center' },
   headerSubtitleSmall: { fontSize: 14, color: TEXT_COLOR_MEDIUM, marginTop: 2, textAlign: 'center' },
