@@ -13,7 +13,7 @@ const WelcomePage = () => {
 
   return (
     <ImageBackground
-      source={require('../assets/school-background.jpg')} // Make sure this path is correct
+      source={require('../assets/School_1.png')} // Make sure this path is correct
       style={styles.backgroundImage}
       resizeMode="cover"
     >
@@ -51,18 +51,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   logo: {
-    width: 250,
-    height: 200,
+    width: 800,
+    height: 300,
     // Space between logo and tagline
-    marginBottom: 20, 
+    marginBottom: -5, 
   },
   tagline: {
     fontSize: 17,
-    color: '#0f0e0eff',
+    color: '#FFFFFF',
     textAlign: 'center',
     // KEY CHANGE: This is the main space between the text and the button. 
     // Reduced from 100 to a more reasonable 40.
-    marginBottom: 40, 
+    marginBottom: 160, 
     paddingHorizontal: 15,
     fontStyle:"italic",
   },
@@ -75,7 +75,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 0,
-    marginTop: 10,
+    marginTop: -110,
   },
 
   buttonContent: {

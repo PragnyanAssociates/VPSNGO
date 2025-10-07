@@ -1,5 +1,3 @@
-// 📂 File: src/screens/TimetableScreen.tsx (MODIFIED & CORRECTED)
-
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, SafeAreaView,
@@ -7,7 +5,6 @@ import {
 } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { useAuth } from '../context/AuthContext';
-// ★★★ 1. IMPORT apiClient AND REMOVE API_BASE_URL ★★★
 import apiClient from '../api/client';
 import { useNavigation, useIsFocused } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -123,7 +120,6 @@ const TimetableScreen = () => {
   const fetchTimetable = async (classGroup: string) => {
     setIsTimetableLoading(true);
     try {
-      // ★★★ 2. USE apiClient TO FETCH TIMETABLE ★★★
       const response = await apiClient.get(`/timetable/${classGroup}`);
       setApiTimetableData(response.data);
     } catch (error: any) {
@@ -136,7 +132,6 @@ const TimetableScreen = () => {
 
   const fetchTeachers = async () => {
     try {
-      // ★★★ 3. USE apiClient TO FETCH TEACHERS ★★★
       const response = await apiClient.get('/teachers');
       setTeachers(response.data);
     } catch (error: any) {
@@ -201,7 +196,6 @@ const TimetableScreen = () => {
       teacher_id: slotToSave.teacher_id || null,
     };
     try {
-      // ★★★ 4. USE apiClient TO SAVE TIMETABLE ★★★
       await apiClient.post('/timetable', payload);
       Alert.alert('Success', 'Timetable updated!');
       setIsModalVisible(false);

@@ -1,5 +1,3 @@
-// 📂 File: src/screens/AttendanceScreen.tsx (MODIFIED & CORRECTED)
-
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   SafeAreaView,
@@ -14,7 +12,6 @@ import {
 import { Picker } from '@react-native-picker/picker';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useAuth } from '../context/AuthContext';
-// ★★★ 1. IMPORT apiClient AND REMOVE API_BASE_URL ★★★
 import apiClient from '../api/client';
 
 // --- Constants (Shared across views) ---
@@ -73,7 +70,6 @@ const StudentAttendanceView = ({ student }) => {
       if (!student?.id) return;
       setIsLoading(true);
       try {
-        // ★★★ 2. USE apiClient TO FETCH HISTORY ★★★
         const response = await apiClient.get(`/attendance/my-history/${student.id}?viewMode=${viewMode}`);
         
         const jsonData = response.data;
@@ -154,6 +150,7 @@ const TeacherSummaryView = ({ teacher }) => {
     const [selectedSubject, setSelectedSubject] = useState('');
     const [summaryData, setSummaryData] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
+    const [viewMode, setViewMode] = useState('overall');
 
     const fetchSummary = async (classGroup, subjectName) => {
         if (!teacher?.id || !classGroup || !subjectName) {
@@ -163,8 +160,7 @@ const TeacherSummaryView = ({ teacher }) => {
         }
         setIsLoading(true);
         try {
-            // ★★★ 3. USE apiClient TO FETCH TEACHER SUMMARY ★★★
-            const response = await apiClient.get(`/attendance/teacher-summary?teacherId=${teacher.id}&classGroup=${classGroup}&subjectName=${subjectName}`);
+            const response = await apiClient.get(`/attendance/teacher-summary?teacherId=${teacher.id}&classGroup=${classGroup}&subjectName=${subjectName}&viewMode=${viewMode}`);
             setSummaryData(response.data);
         } catch (error: any) {
             console.error("Fetch Summary Error:", error);
@@ -182,17 +178,14 @@ const TeacherSummaryView = ({ teacher }) => {
                 return;
             }
             try {
-                // ★★★ 4. USE apiClient TO FETCH ASSIGNMENTS ★★★
                 const response = await apiClient.get(`/teacher-assignments/${teacher.id}`);
                 const data = response.data;
                 setAssignments(data);
-
                 if (data && data.length > 0) {
                     const firstClass = data[0].class_group;
                     const firstSubject = data[0].subject_name;
                     setSelectedClass(firstClass);
                     setSelectedSubject(firstSubject);
-                    await fetchSummary(firstClass, firstSubject);
                 } else {
                     setIsLoading(false);
                 }
@@ -205,12 +198,21 @@ const TeacherSummaryView = ({ teacher }) => {
         fetchAssignments();
     }, [teacher.id]);
     
+    useEffect(() => {
+      if (selectedClass && selectedSubject) {
+        fetchSummary(selectedClass, selectedSubject);
+      }
+    }, [selectedClass, selectedSubject, viewMode]);
+
     const uniqueClasses = useMemo(() => [...new Set(assignments.map(a => a.class_group))], [assignments]);
     const subjectsForSelectedClass = useMemo(() => assignments.filter(a => a.class_group === selectedClass).map(a => a.subject_name), [assignments, selectedClass]);
     
-    const overallPercentage = useMemo(() => {
-        if (!summaryData?.overallSummary?.total_classes) return 0;
-        return (summaryData.overallSummary.total_present / summaryData.overallSummary.total_classes) * 100;
+    const { overallPercentage, absentCount } = useMemo(() => {
+        const totalClasses = summaryData?.overallSummary?.total_classes || 0;
+        const totalPresent = summaryData?.overallSummary?.total_present || 0;
+        const percentage = totalClasses > 0 ? (totalPresent / totalClasses) * 100 : 0;
+        const absent = totalClasses - totalPresent;
+        return { overallPercentage: percentage, absentCount: absent };
     }, [summaryData]);
 
     const handleClassChange = (newClass) => {
@@ -218,14 +220,8 @@ const TeacherSummaryView = ({ teacher }) => {
         const newSubjects = assignments.filter(a => a.class_group === newClass).map(a => a.subject_name);
         const newSubject = newSubjects.length > 0 ? newSubjects[0] : '';
         setSelectedSubject(newSubject);
-        fetchSummary(newClass, newSubject);
     };
     
-    const handleSubjectChange = (newSubject) => {
-        setSelectedSubject(newSubject);
-        fetchSummary(selectedClass, newSubject);
-    }
-
     return (
         <SafeAreaView style={styles.container}>
             <View style={styles.pickerContainer}>
@@ -238,13 +234,25 @@ const TeacherSummaryView = ({ teacher }) => {
                     </Picker>
                 </View>
                 <View style={styles.pickerWrapper}>
-                    <Picker selectedValue={selectedSubject} onValueChange={handleSubjectChange} enabled={subjectsForSelectedClass.length > 0}>
+                    <Picker selectedValue={selectedSubject} onValueChange={(s) => setSelectedSubject(s)} enabled={subjectsForSelectedClass.length > 0}>
                          {subjectsForSelectedClass.length > 0 ?
                             subjectsForSelectedClass.map(s => <Picker.Item key={s} label={s} value={s} />) :
                             <Picker.Item label="No subjects..." value="" enabled={false} />
                         }
                     </Picker>
                 </View>
+            </View>
+
+            <View style={styles.toggleContainer}>
+                <TouchableOpacity style={[styles.toggleButton, viewMode === 'daily' && styles.toggleButtonActive]} onPress={() => setViewMode('daily')}>
+                    <Text style={[styles.toggleButtonText, viewMode === 'daily' && styles.toggleButtonTextActive]}>Daily</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.toggleButton, viewMode === 'monthly' && styles.toggleButtonActive]} onPress={() => setViewMode('monthly')}>
+                    <Text style={[styles.toggleButtonText, viewMode === 'monthly' && styles.toggleButtonTextActive]}>Monthly</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.toggleButton, viewMode === 'overall' && styles.toggleButtonActive]} onPress={() => setViewMode('overall')}>
+                    <Text style={[styles.toggleButtonText, viewMode === 'overall' && styles.toggleButtonTextActive]}>Overall</Text>
+                </TouchableOpacity>
             </View>
 
             {isLoading ? <ActivityIndicator size="large" color={PRIMARY_COLOR} style={styles.loaderContainer} /> : (
@@ -254,8 +262,8 @@ const TeacherSummaryView = ({ teacher }) => {
                     ListHeaderComponent={() => (
                         <View style={styles.summaryContainer}>
                             <SummaryCard label="Overall" value={`${overallPercentage.toFixed(1)}%`} color={BLUE} />
-                            <SummaryCard label="Present" value={summaryData?.overallSummary.total_present || 0} color={GREEN} />
-                            <SummaryCard label="Classes" value={summaryData?.overallSummary.total_classes || 0} color={TEXT_COLOR_MEDIUM} />
+                            <SummaryCard label="Students Present" value={summaryData?.overallSummary.total_present || 0} color={GREEN} />
+                            <SummaryCard label="Students Absent" value={absentCount} color={RED} />
                         </View>
                     )}
                     renderItem={({ item }) => {
@@ -274,7 +282,7 @@ const TeacherSummaryView = ({ teacher }) => {
                     ListEmptyComponent={
                         <View style={styles.loaderContainer}>
                             <Text style={styles.noDataText}>
-                                {assignments.length === 0 ? 'You have no assigned classes.' : 'No attendance data found for this selection.'}
+                                {assignments.length === 0 ? 'You have no assigned classes.' : `No attendance data for ${capitalize(viewMode)} view.`}
                             </Text>
                         </View>
                     }
@@ -284,13 +292,101 @@ const TeacherSummaryView = ({ teacher }) => {
     );
 };
 
+
+// --- Admin: Student Detail View ---
+const AdminStudentDetailView = ({ student, onBack }) => {
+  const [viewMode, setViewMode] = useState('overall');
+  const [data, setData] = useState({ summary: {}, history: [] });
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchHistory = async () => {
+      if (!student?.student_id) return;
+      setIsLoading(true);
+      try {
+        const response = await apiClient.get(`/attendance/student-history-admin/${student.student_id}?viewMode=${viewMode}`);
+        setData(response.data);
+      } catch (error: any) {
+        Alert.alert('Error', error.response?.data?.message || 'Could not load student attendance history.');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchHistory();
+  }, [student.student_id, viewMode]);
+
+  const percentage = useMemo(() => {
+    if (!data.summary?.total_days) return '0.0';
+    return ((data.summary.present_days / data.summary.total_days) * 100).toFixed(1);
+  }, [data.summary]);
+
+  const renderHistoryItem = ({ item }) => (
+    <View style={styles.historyRow}>
+      <Icon name={item.status === 'Present' ? 'check-circle' : 'close-circle'} size={24} color={item.status === 'Present' ? GREEN : RED} style={{ marginRight: 15 }}/>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.historySubject}>{item.subject_name}</Text>
+        <Text style={styles.historyDate}>{new Date(item.attendance_date).toDateString()} (Period {item.period_number})</Text>
+      </View>
+      <Text style={[styles.historyStatus, { color: item.status === 'Present' ? GREEN : RED }]}>{item.status}</Text>
+    </View>
+  );
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.header}>
+        <TouchableOpacity onPress={onBack} style={styles.backButton}>
+            <Icon name="arrow-left" size={24} color={TEXT_COLOR_DARK} />
+        </TouchableOpacity>
+        <View style={{flex: 1, alignItems: 'center'}}>
+            <Text style={styles.headerTitle}>{student.full_name}</Text>
+            <Text style={styles.headerSubtitle}>Attendance Report</Text>
+        </View>
+        <View style={styles.backButton} />{/* Spacer */}
+      </View>
+      
+      <View style={styles.toggleContainer}>
+          <TouchableOpacity style={[styles.toggleButton, viewMode === 'daily' && styles.toggleButtonActive]} onPress={() => setViewMode('daily')}>
+              <Text style={[styles.toggleButtonText, viewMode === 'daily' && styles.toggleButtonTextActive]}>Daily</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.toggleButton, viewMode === 'monthly' && styles.toggleButtonActive]} onPress={() => setViewMode('monthly')}>
+              <Text style={[styles.toggleButtonText, viewMode === 'monthly' && styles.toggleButtonTextActive]}>Monthly</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.toggleButton, viewMode === 'overall' && styles.toggleButtonActive]} onPress={() => setViewMode('overall')}>
+              <Text style={[styles.toggleButtonText, viewMode === 'overall' && styles.toggleButtonTextActive]}>Overall</Text>
+          </TouchableOpacity>
+      </View>
+
+      {isLoading ? <ActivityIndicator style={styles.loaderContainer} size="large" color={PRIMARY_COLOR} /> : (
+        <>
+          <View style={styles.summaryContainer}>
+            <SummaryCard label="Overall" value={`${percentage}%`} color={BLUE} />
+            <SummaryCard label="Present Days" value={data.summary.present_days || 0} color={GREEN} />
+            <SummaryCard label="Absent Days" value={data.summary.absent_days || 0} color={RED} />
+          </View>
+          <FlatList
+            data={data.history}
+            keyExtractor={(item, index) => `${item.attendance_date}-${item.period_number}-${index}`}
+            renderItem={renderHistoryItem}
+            ListHeaderComponent={<Text style={styles.historyTitle}>Detailed History ({capitalize(viewMode)})</Text>}
+            ListEmptyComponent={<Text style={styles.noDataText}>No records found for this period.</Text>}
+            contentContainerStyle={{ paddingBottom: 20 }}
+          />
+        </>
+      )}
+    </SafeAreaView>
+  );
+};
+
+
 // --- Admin Attendance View ---
 const AdminAttendanceView = () => {
-  const [selectedClass, setSelectedClass] = useState(CLASS_GROUPS[0]);
+  const [selectedClass, setSelectedClass] = useState(CLASS_GROUPS[9]); // Default to Class 10
   const [subjects, setSubjects] = useState([]);
   const [selectedSubject, setSelectedSubject] = useState('');
   const [summaryData, setSummaryData] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [viewMode, setViewMode] = useState('overall');
+  const [selectedStudent, setSelectedStudent] = useState(null);
 
   useEffect(() => {
     const fetchSubjects = async () => {
@@ -300,7 +396,6 @@ const AdminAttendanceView = () => {
       setSelectedSubject('');
       setSummaryData(null);
       try {
-        // ★★★ 5. USE apiClient TO FETCH SUBJECTS ★★★
         const response = await apiClient.get(`/subjects/${selectedClass}`);
         const data = response.data;
         setSubjects(data);
@@ -321,13 +416,11 @@ const AdminAttendanceView = () => {
     const fetchSummary = async () => {
       if (!selectedClass || !selectedSubject) {
         setSummaryData(null);
-        setIsLoading(false);
         return;
       }
       setIsLoading(true);
       try {
-        // ★★★ 6. USE apiClient TO FETCH ADMIN SUMMARY ★★★
-        const response = await apiClient.get(`/attendance/admin-summary?classGroup=${selectedClass}&subjectName=${selectedSubject}`);
+        const response = await apiClient.get(`/attendance/admin-summary?classGroup=${selectedClass}&subjectName=${selectedSubject}&viewMode=${viewMode}`);
         setSummaryData(response.data);
       } catch (error: any) {
         Alert.alert('Error', error.response?.data?.message || 'Could not fetch attendance summary.');
@@ -339,12 +432,19 @@ const AdminAttendanceView = () => {
     if(selectedSubject){
         fetchSummary();
     }
-  }, [selectedSubject]);
+  }, [selectedSubject, viewMode]);
 
-  const overallPercentage = useMemo(() => {
-    if (!summaryData?.overallSummary?.total_classes) return 0;
-    return (summaryData.overallSummary.total_present / summaryData.overallSummary.total_classes) * 100;
+  const { overallPercentage, absentCount } = useMemo(() => {
+    const totalClasses = summaryData?.overallSummary?.total_classes || 0;
+    const totalPresent = summaryData?.overallSummary?.total_present || 0;
+    const percentage = totalClasses > 0 ? (totalPresent / totalClasses) * 100 : 0;
+    const absent = totalClasses - totalPresent;
+    return { overallPercentage: percentage, absentCount: absent };
   }, [summaryData]);
+
+  if (selectedStudent) {
+    return <AdminStudentDetailView student={selectedStudent} onBack={() => setSelectedStudent(null)} />;
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -363,6 +463,17 @@ const AdminAttendanceView = () => {
           </Picker>
         </View>
       </View>
+      <View style={styles.toggleContainer}>
+          <TouchableOpacity style={[styles.toggleButton, viewMode === 'daily' && styles.toggleButtonActive]} onPress={() => setViewMode('daily')}>
+              <Text style={[styles.toggleButtonText, viewMode === 'daily' && styles.toggleButtonTextActive]}>Daily</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.toggleButton, viewMode === 'monthly' && styles.toggleButtonActive]} onPress={() => setViewMode('monthly')}>
+              <Text style={[styles.toggleButtonText, viewMode === 'monthly' && styles.toggleButtonTextActive]}>Monthly</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.toggleButton, viewMode === 'overall' && styles.toggleButtonActive]} onPress={() => setViewMode('overall')}>
+              <Text style={[styles.toggleButtonText, viewMode === 'overall' && styles.toggleButtonTextActive]}>Overall</Text>
+          </TouchableOpacity>
+      </View>
       {isLoading ? <ActivityIndicator size="large" color={PRIMARY_COLOR} style={styles.loaderContainer} /> : (
         <FlatList
           data={summaryData?.studentDetails || []}
@@ -370,27 +481,29 @@ const AdminAttendanceView = () => {
           ListHeaderComponent={() => (
             <View style={styles.summaryContainer}>
               <SummaryCard label="Overall" value={`${overallPercentage.toFixed(1)}%`} color={BLUE} />
-              <SummaryCard label="Present" value={summaryData?.overallSummary.total_present || 0} color={GREEN} />
-              <SummaryCard label="Classes" value={summaryData?.overallSummary.total_classes || 0} color={TEXT_COLOR_MEDIUM} />
+              <SummaryCard label="Students Present" value={summaryData?.overallSummary.total_present || 0} color={GREEN} />
+              <SummaryCard label="Students Absent" value={absentCount} color={RED} />
             </View>
           )}
           renderItem={({ item }) => {
             const studentPercentage = item.total_marked_days > 0 ? (item.present_count / item.total_marked_days) * 100 : 0;
             const percentageColor = studentPercentage >= 75 ? GREEN : studentPercentage >= 50 ? YELLOW : RED;
             return (
-              <View style={styles.summaryStudentRow}>
-                <View style={{flex: 1}}>
-                  <Text style={styles.studentName}>{item.full_name}</Text>
-                  <Text style={styles.studentDetailText}>Present: {item.present_count} / {item.total_marked_days}</Text>
+              <TouchableOpacity onPress={() => setSelectedStudent(item)}>
+                <View style={styles.summaryStudentRow}>
+                  <View style={{flex: 1}}>
+                    <Text style={styles.studentName}>{item.full_name}</Text>
+                    <Text style={styles.studentDetailText}>Present: {item.present_count} / {item.total_marked_days}</Text>
+                  </View>
+                  <Text style={[styles.percentageText, { color: percentageColor }]}>{studentPercentage.toFixed(0)}%</Text>
                 </View>
-                <Text style={[styles.percentageText, { color: percentageColor }]}>{studentPercentage.toFixed(0)}%</Text>
-              </View>
+              </TouchableOpacity>
             );
           }}
           ListEmptyComponent={
             <View style={styles.loaderContainer}>
               <Text style={styles.noDataText}>
-                {subjects.length === 0 ? `No subjects scheduled for ${selectedClass}.` : 'No attendance data for this subject.'}
+                {subjects.length === 0 ? `No subjects scheduled for ${selectedClass}.` : `No attendance data for this subject in ${capitalize(viewMode)} view.`}
               </Text>
             </View>
           }
@@ -417,7 +530,6 @@ const TeacherLiveAttendanceView = ({ route, teacher }) => {
         return;
       }
       try {
-        // ★★★ 7. USE apiClient TO FETCH ATTENDANCE SHEET ★★★
         const response = await apiClient.get(`/attendance/sheet?class_group=${class_group}&date=${date}&period_number=${period_number}`);
         const data = response.data;
         const studentsWithStatus = data.map(s => ({ ...s, status: s.status || 'Present' }));
@@ -437,7 +549,6 @@ const TeacherLiveAttendanceView = ({ route, teacher }) => {
     if (attendanceData.length === 0) return;
     setIsSaving(true);
     try {
-      // ★★★ 8. USE apiClient TO SAVE ATTENDANCE ★★★
       await apiClient.post('/attendance', {
         class_group,
         subject_name,
@@ -487,18 +598,17 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F4F6F8' },
   loaderContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
   noDataText: { textAlign: 'center', marginTop: 20, color: TEXT_COLOR_MEDIUM, fontSize: 16 },
-  header: { paddingVertical: 15, paddingHorizontal: 20, backgroundColor: WHITE, borderBottomWidth: 1, borderBottomColor: BORDER_COLOR, alignItems: 'center' },
-  headerTitle: { fontSize: 22, fontWeight: 'bold', color: TEXT_COLOR_DARK },
-  headerSubtitle: { fontSize: 16, color: TEXT_COLOR_MEDIUM, marginTop: 4 },
+  header: { flexDirection: 'row', alignItems: 'center', paddingVertical: 15, paddingHorizontal: 20, backgroundColor: WHITE, borderBottomWidth: 1, borderBottomColor: BORDER_COLOR },
+  headerTitle: { fontSize: 22, fontWeight: 'bold', color: TEXT_COLOR_DARK, textAlign: 'center' },
+  headerSubtitle: { fontSize: 16, color: TEXT_COLOR_MEDIUM, marginTop: 4, textAlign: 'center' },
   headerSubtitleSmall: { fontSize: 14, color: TEXT_COLOR_MEDIUM, marginTop: 2 },
+  backButton: { position: 'absolute', left: 15, top: 15, zIndex: 1, padding: 5 },
   pickerContainer: { flexDirection: 'row', padding: 10, backgroundColor: WHITE, borderBottomColor: BORDER_COLOR, borderBottomWidth: 1, alignItems: 'center' },
   pickerWrapper: { flex: 1, marginHorizontal: 5, backgroundColor: '#F0F4F8', borderWidth: 1, borderColor: BORDER_COLOR, borderRadius: 8, height: 50, justifyContent: 'center' },
-  picker: { height: 50, width: '100%' },
-  pickerItem: { fontSize: 16 },
   summaryContainer: { flexDirection: 'row', justifyContent: 'space-around', paddingVertical: 15, backgroundColor: WHITE, borderBottomWidth: 1, borderBottomColor: BORDER_COLOR },
   summaryBox: { alignItems: 'center', flex: 1, paddingVertical: 10 },
   summaryValue: { fontSize: 26, fontWeight: 'bold' },
-  summaryLabel: { fontSize: 14, color: TEXT_COLOR_MEDIUM, marginTop: 5, fontWeight: '500' },
+  summaryLabel: { fontSize: 14, color: TEXT_COLOR_MEDIUM, marginTop: 5, fontWeight: '500', textTransform: 'capitalize' },
   summaryStudentRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: WHITE, padding: 15, marginHorizontal: 15, marginVertical: 6, borderRadius: 8, elevation: 1, shadowColor: '#999', shadowOpacity: 0.1, shadowRadius: 5, shadowOffset: { width: 0, height: 2 } },
   studentName: { flex: 1, fontSize: 16, color: TEXT_COLOR_DARK, fontWeight: '600' },
   studentDetailText: { fontSize: 12, color: TEXT_COLOR_MEDIUM, marginTop: 2 },
@@ -511,7 +621,7 @@ const styles = StyleSheet.create({
   statusButtonText: { fontSize: 16, fontWeight: 'bold', color: '#555' },
   saveButton: { backgroundColor: PRIMARY_COLOR, padding: 15, margin: 10, borderRadius: 8, alignItems: 'center' },
   saveButtonText: { color: WHITE, fontSize: 16, fontWeight: 'bold' },
-  toggleContainer: { flexDirection: 'row', justifyContent: 'center', padding: 10, backgroundColor: WHITE },
+  toggleContainer: { flexDirection: 'row', justifyContent: 'center', padding: 10, backgroundColor: WHITE, borderBottomWidth: 1, borderBottomColor: BORDER_COLOR },
   toggleButton: { paddingVertical: 8, paddingHorizontal: 20, borderRadius: 20, marginHorizontal: 5, backgroundColor: '#E0E0E0' },
   toggleButtonActive: { backgroundColor: PRIMARY_COLOR },
   toggleButtonText: { color: TEXT_COLOR_DARK, fontWeight: '600' },
