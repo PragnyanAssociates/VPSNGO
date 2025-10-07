@@ -35,6 +35,7 @@ import FoodScreen from '../screens/food/FoodScreen';
 import GroupChatScreen from '../screens/chat/GroupChatScreen';
 import GalleryScreen from '../screens/gallery/GalleryScreen';
 import OnlineClassScreen from '../screens/Online_Class/OnlineClassScreen';
+import StudentResourcesScreen from '../screens/syllabus_Textbook/StudentResourcesScreen';
 
 interface ProfileData {
   full_name: string;
@@ -107,7 +108,8 @@ const StudentDashboard = ({ navigation }) => {
     { id: 'qa-ads-create', title: 'Create Ad', imageSource: 'https://cdn-icons-png.flaticon.com/128/4944/4944482.png', navigateTo: 'CreateAdScreen' },
     { id: 'qa2', title: 'Timetable', imageSource: 'https://cdn-icons-png.flaticon.com/128/1254/1254275.png', navigateToTab: 'Timetable' },
     { id: 'qa3', title: 'Attendance', imageSource: 'https://cdn-icons-png.flaticon.com/128/10293/10293877.png', navigateToTab: 'Attendance' },
-    { id: 'qa4', title: 'Syllabus', imageSource: 'https://cdn-icons-png.flaticon.com/128/1584/1584937.png', navigateToTab: 'StudentSyllabusScreen' },
+    { id: 'qa4', title: 'Syllabus Tracker', imageSource: 'https://cdn-icons-png.flaticon.com/128/1584/1584937.png', navigateToTab: 'StudentSyllabusScreen' },
+    { id: 'qa40', title: 'Syllabus & Textbook', imageSource: 'https://cdn-icons-png.flaticon.com/128/3185/3185838.png', navigateToTab: 'StudentResourcesScreen' },
     { id: 'qa7', title: 'Exam Schedule', imageSource: 'https://cdn-icons-png.flaticon.com/128/4029/4029113.png', navigateToTab: 'StudentExamScreen' },
     { id: 'qa5', title: 'Exams', imageSource: 'https://cdn-icons-png.flaticon.com/128/207/207190.png',  navigateToTab: 'StudentExamsScreen' },
     { id: 'qa6', title: 'Reports', imageSource: 'https://cdn-icons-png.flaticon.com/128/9913/9913576.png', navigateToTab: 'StudentResultsScreen' },
@@ -192,7 +194,7 @@ const StudentDashboard = ({ navigation }) => {
       case 'StudentExamScreen': return ( <><ContentScreenHeader title="Exam Schedules" /><StudentExamScreen /></> );
       case 'StudentMaterialsScreen': return ( <><ContentScreenHeader title="Study Materials" /><StudentMaterialsScreen /></> );
       case 'StudentExamsScreen': return ( <><ContentScreenHeader title="Exams" /><StudentExamsScreen /></> );
-      case 'StudentSyllabusScreen': return ( <><ContentScreenHeader title="Syllabus" /><StudentSyllabusScreen /></> );
+      case 'StudentSyllabusScreen': return ( <><ContentScreenHeader title="Syllabus Tracker" /><StudentSyllabusScreen /></> );
       case 'TransportScreen': return ( <><ContentScreenHeader title="Transport" /><TransportScreen /></> );
       case 'StudentResultsScreen': return ( <><ContentScreenHeader title="My Reports" /><StudentResultsScreen navigation={navigation} /></> );
       case 'Timetable': return ( <><ContentScreenHeader title="Time Table" /><TimetableScreen /></> );
@@ -203,6 +205,8 @@ const StudentDashboard = ({ navigation }) => {
       case 'GroupChatScreen': return ( <><ContentScreenHeader title="Group Chat" /><GroupChatScreen /></> );
       case 'Gallery': return ( <><ContentScreenHeader title="Gallery" /><GalleryScreen /></> );
       case 'OnlineClassScreen': return ( <><ContentScreenHeader title="Online Class" /><OnlineClassScreen /></> );
+      case 'StudentResourcesScreen': return ( <><ContentScreenHeader title="Syllabus & Textbook" /><StudentResourcesScreen /></> );
+
       default: return ( <View style={styles.fallbackContent}><Text style={styles.fallbackText}>Content for '{activeTab}' is not available.</Text><TouchableOpacity onPress={() => setActiveTab('home')}><Text style={styles.fallbackLink}>Go to Home</Text></TouchableOpacity></View> );
     }
   };

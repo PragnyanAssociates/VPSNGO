@@ -58,6 +58,7 @@ import KitchenScreen from './src/screens/kitchen/KitchenScreen';
 import FoodScreen from './src/screens/food/FoodScreen';
 import AlumniScreen from './src/screens/Alumni/AlumniScreen';
 import PreAdmissionsScreen from './src/screens/Pre-Admissions/PreAdmissionsScreen';
+import TeacherAdminResourcesScreen from './src/screens/syllabus_Textbook/TeacherAdminResourcesScreen';
 
 // Teacher-Specific Screens
 import TeacherHealthAdminScreen from './src/screens/health/TeacherHealthAdminScreen';
@@ -81,6 +82,7 @@ import StudentMaterialsScreen from './src/screens/study-materials/StudentMateria
 import ReportDetailScreen from './src/screens/results/ReportDetailScreen';
 import ChatAIScreen from './src/screens/chatai/ChatAIScreen';
 import OnlineClassScreen from './src/screens/Online_Class/OnlineClassScreen';
+import StudentResourcesScreen from './src/screens/syllabus_Textbook/StudentResourcesScreen';
 
 // Donor-Specific Screens
 // import DonorNotifications from './src/components/DonorNotifications';
@@ -182,13 +184,14 @@ const AuthenticatedStack = () => {
       
       
       <Stack.Screen name="TeacherSyllabusScreen" component={TeacherSyllabusScreen} />
-      
+      <Stack.Screen name="StudentResourcesScreen" component={StudentResourcesScreen} />
       <Stack.Screen name="TeacherHealthAdminScreen" component={TeacherHealthAdminScreen} />
       
       <Stack.Screen name="StudentHealthScreen" component={StudentHealthScreen} />
       
       <Stack.Screen name="StudentSportsScreen" component={StudentSportsScreen} />
       <Stack.Screen name="StudentEventsScreen" component={StudentEventsScreen} />
+      <Stack.Screen name="TeacherAdminResourcesScreen" component={TeacherAdminResourcesScreen} />
       
       
       
