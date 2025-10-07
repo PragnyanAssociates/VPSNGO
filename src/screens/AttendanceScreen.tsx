@@ -205,89 +205,16 @@ const AdminStudentDetailView = ({ student, onBack }) => {
     );
 };
 
-// --- Teacher Attendance Summary View ---
-const TeacherSummaryView = ({ teacher }) => {
-    const [assignments, setAssignments] = useState([]);
-    const [selectedClass, setSelectedClass] = useState('');
-    const [selectedSubject, setSelectedSubject] = useState('');
-    const [summaryData, setSummaryData] = useState(null);
-    const [isLoading, setIsLoading] = useState(true);
-    const [viewMode, setViewMode] = useState('overall');
-
-    useEffect(() => {
-        const fetchAssignments = async () => {
-            if (!teacher?.id) {
-                setIsLoading(false); return;
-            }
-            try {
-                const response = await apiClient.get(`/teacher-assignments/${teacher.id}`);
-                const data = response.data;
-                setAssignments(data);
-                if (data && data.length > 0) {
-                    const firstClass = data[0].class_group;
-                    const firstSubject = data[0].subject_name;
-                    setSelectedClass(firstClass);
-                    setSelectedSubject(firstSubject);
-                } else {
-                    setIsLoading(false);
-                }
-            } catch (error: any) {
-                Alert.alert('Error', error.response?.data?.message || 'Could not fetch assignments.');
-                setIsLoading(false);
-            }
-        };
-        fetchAssignments();
-    }, [teacher.id]);
-    
-    useEffect(() => {
-      const fetchSummary = async () => {
-        if (!teacher?.id || !selectedClass || !selectedSubject) {
-            setSummaryData(null);
-            return;
-        }
-        setIsLoading(true);
-        try {
-            const response = await apiClient.get(`/attendance/teacher-summary?teacherId=${teacher.id}&classGroup=${selectedClass}&subjectName=${selectedSubject}&viewMode=${viewMode}`);
-            setSummaryData(response.data);
-        } catch (error: any) {
-            Alert.alert('Error', error.response?.data?.message || 'Could not retrieve data.');
-            setSummaryData(null);
-        } finally {
-            setIsLoading(false);
-        }
-      };
-      fetchSummary();
-    }, [selectedClass, selectedSubject, viewMode]);
-
-    const uniqueClasses = useMemo(() => [...new Set(assignments.map(a => a.class_group))], [assignments]);
-    const subjectsForSelectedClass = useMemo(() => assignments.filter(a => a.class_group === selectedClass).map(a => a.subject_name), [assignments, selectedClass]);
-    
-    const handleClassChange = (newClass) => {
-        setSelectedClass(newClass);
-        const newSubjects = assignments.filter(a => a.class_group === newClass).map(a => a.subject_name);
-        const newSubject = newSubjects.length > 0 ? newSubjects[0] : '';
-        setSelectedSubject(newSubject);
-    };
-    
+// --- Generic Summary View (for Admin and Teacher) ---
+const GenericSummaryView = ({
+    picker1, picker2, onFetchSummary, listData,
+    summaryData, isLoading, viewMode, setViewMode, onSelectStudent
+}) => {
     return (
         <SafeAreaView style={styles.container}>
             <View style={styles.pickerContainer}>
-                <View style={styles.pickerWrapper}>
-                    <Picker selectedValue={selectedClass} onValueChange={handleClassChange} enabled={uniqueClasses.length > 0}>
-                        {uniqueClasses.length > 0 ? 
-                            uniqueClasses.map(c => <Picker.Item key={c} label={c} value={c} />) :
-                            <Picker.Item label="No classes..." value="" enabled={false} />
-                        }
-                    </Picker>
-                </View>
-                <View style={styles.pickerWrapper}>
-                    <Picker selectedValue={selectedSubject} onValueChange={(s) => setSelectedSubject(s)} enabled={subjectsForSelectedClass.length > 0}>
-                         {subjectsForSelectedClass.length > 0 ?
-                            subjectsForSelectedClass.map(s => <Picker.Item key={s} label={s} value={s} />) :
-                            <Picker.Item label="No subjects..." value="" enabled={false} />
-                        }
-                    </Picker>
-                </View>
+                <View style={styles.pickerWrapper}>{picker1}</View>
+                <View style={styles.pickerWrapper}>{picker2}</View>
             </View>
 
             <View style={styles.toggleContainer}>
@@ -304,38 +231,141 @@ const TeacherSummaryView = ({ teacher }) => {
 
             {isLoading ? <ActivityIndicator size="large" color={PRIMARY_COLOR} style={styles.loaderContainer} /> : (
                 <FlatList
-                    data={summaryData?.studentDetails || []}
+                    data={listData}
                     keyExtractor={(item) => item.student_id.toString()}
-                    ListHeaderComponent={() => (
-                        <View style={styles.summaryContainer}>
-                            <SummaryCard label="Overall %" value={`${(summaryData?.overallSummary?.overall_percentage || 0).toFixed(1)}%`} color={BLUE} />
-                            <SummaryCard label="Students Present" value={summaryData?.overallSummary?.students_present || 0} color={GREEN} />
-                            <SummaryCard label="Students Absent" value={summaryData?.overallSummary?.students_absent || 0} color={RED} />
-                        </View>
-                    )}
+                    ListHeaderComponent={() => {
+                        const summary = summaryData?.overallSummary ?? {};
+                        if (viewMode === 'daily') {
+                            return (
+                                <View style={styles.summaryContainer}>
+                                    <SummaryCard label="Class Attendance %" value={`${(summary.overall_percentage ?? 0).toFixed(1)}%`} color={BLUE} />
+                                    <SummaryCard label="Students Present" value={summary.students_present ?? 0} color={GREEN} />
+                                    <SummaryCard label="Students Absent" value={summary.students_absent ?? 0} color={RED} />
+                                </View>
+                            );
+                        } else { // Monthly & Overall view
+                            return (
+                                <View style={styles.summaryContainer}>
+                                    <SummaryCard label="Class Attendance %" value={`${(summary.overall_percentage ?? 0).toFixed(1)}%`} color={BLUE} />
+                                    <SummaryCard label="Avg. Daily Attendance" value={`${(summary.avg_daily_attendance ?? 0).toFixed(1)}%`} color={ORANGE} />
+                                    <SummaryCard label="Students Below 75%" value={summary.students_below_threshold ?? 0} color={RED} />
+                                </View>
+                            );
+                        }
+                    }}
                     renderItem={({ item }) => {
                         const studentPercentage = item.total_marked_periods > 0 ? (item.present_periods / item.total_marked_periods) * 100 : 0;
                         const percentageColor = studentPercentage >= 75 ? GREEN : studentPercentage >= 50 ? YELLOW : RED;
                         return (
-                            <View style={styles.summaryStudentRow}>
-                                <View style={{flex: 1}}>
-                                    <Text style={styles.studentName}>{item.full_name}</Text>
-                                    <Text style={styles.studentDetailText}>Present: {item.present_periods} / {item.total_marked_periods}</Text>
+                            <TouchableOpacity onPress={() => onSelectStudent && onSelectStudent(item)}>
+                                <View style={styles.summaryStudentRow}>
+                                    <View style={{flex: 1}}>
+                                        <Text style={styles.studentName}>{item.full_name}</Text>
+                                        <Text style={styles.studentDetailText}>Present: {item.present_periods} / {item.total_marked_periods}</Text>
+                                    </View>
+                                    <Text style={[styles.percentageText, { color: percentageColor }]}>{studentPercentage.toFixed(0)}%</Text>
                                 </View>
-                                <Text style={[styles.percentageText, { color: percentageColor }]}>{studentPercentage.toFixed(0)}%</Text>
-                            </View>
+                            </TouchableOpacity>
                         );
                     }}
                     ListEmptyComponent={
                         <View style={styles.loaderContainer}>
-                            <Text style={styles.noDataText}>
-                                {assignments.length === 0 ? 'You have no assigned classes.' : `No attendance data for ${capitalize(viewMode)} view.`}
-                            </Text>
+                            <Text style={styles.noDataText}>No attendance data for this selection.</Text>
                         </View>
                     }
                 />
             )}
         </SafeAreaView>
+    );
+};
+
+
+// --- Teacher Attendance Summary View ---
+const TeacherSummaryView = ({ teacher }) => {
+    const [assignments, setAssignments] = useState([]);
+    const [selectedClass, setSelectedClass] = useState('');
+    const [selectedSubject, setSelectedSubject] = useState('');
+    const [summaryData, setSummaryData] = useState(null);
+    const [isLoading, setIsLoading] = useState(true);
+    const [viewMode, setViewMode] = useState('overall');
+
+    useEffect(() => {
+        const fetchAssignments = async () => {
+            if (!teacher?.id) { setIsLoading(false); return; }
+            try {
+                const response = await apiClient.get(`/teacher-assignments/${teacher.id}`);
+                setAssignments(response.data);
+                if (response.data.length > 0) {
+                    setSelectedClass(response.data[0].class_group);
+                    setSelectedSubject(response.data[0].subject_name);
+                } else {
+                    setIsLoading(false);
+                }
+            } catch (error) {
+                Alert.alert('Error', 'Could not fetch assignments.');
+                setIsLoading(false);
+            }
+        };
+        fetchAssignments();
+    }, [teacher.id]);
+
+    useEffect(() => {
+        const fetchSummary = async () => {
+            if (!teacher?.id || !selectedClass || !selectedSubject) {
+                setSummaryData(null);
+                return;
+            }
+            setIsLoading(true);
+            try {
+                const response = await apiClient.get(`/attendance/teacher-summary?teacherId=${teacher.id}&classGroup=${selectedClass}&subjectName=${selectedSubject}&viewMode=${viewMode}`);
+                setSummaryData(response.data);
+            } catch (error) {
+                Alert.alert('Error', 'Could not retrieve data.');
+                setSummaryData(null);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+        fetchSummary();
+    }, [selectedClass, selectedSubject, viewMode]);
+
+    const uniqueClasses = useMemo(() => [...new Set(assignments.map(a => a.class_group))], [assignments]);
+    const subjectsForSelectedClass = useMemo(() => assignments.filter(a => a.class_group === selectedClass).map(a => a.subject_name), [assignments, selectedClass]);
+    
+    const handleClassChange = (newClass) => {
+        setSelectedClass(newClass);
+        const newSubjects = assignments.filter(a => a.class_group === newClass).map(a => a.subject_name);
+        setSelectedSubject(newSubjects[0] || '');
+    };
+
+    const picker1 = (
+        <Picker selectedValue={selectedClass} onValueChange={handleClassChange} enabled={uniqueClasses.length > 0}>
+            {uniqueClasses.length > 0 ? 
+                uniqueClasses.map(c => <Picker.Item key={c} label={c} value={c} />) :
+                <Picker.Item label="No classes..." value="" enabled={false} />
+            }
+        </Picker>
+    );
+
+    const picker2 = (
+        <Picker selectedValue={selectedSubject} onValueChange={setSelectedSubject} enabled={subjectsForSelectedClass.length > 0}>
+             {subjectsForSelectedClass.length > 0 ?
+                subjectsForSelectedClass.map(s => <Picker.Item key={s} label={s} value={s} />) :
+                <Picker.Item label="No subjects..." value="" enabled={false} />
+            }
+        </Picker>
+    );
+
+    return (
+        <GenericSummaryView
+            picker1={picker1}
+            picker2={picker2}
+            listData={summaryData?.studentDetails || []}
+            summaryData={summaryData}
+            isLoading={isLoading}
+            viewMode={viewMode}
+            setViewMode={setViewMode}
+        />
     );
 };
 
@@ -358,14 +388,13 @@ const AdminAttendanceView = () => {
       setSummaryData(null);
       try {
         const response = await apiClient.get(`/subjects/${selectedClass}`);
-        const data = response.data;
-        setSubjects(data);
-        if (data.length > 0) {
-          setSelectedSubject(data[0]);
+        setSubjects(response.data);
+        if (response.data.length > 0) {
+          setSelectedSubject(response.data[0]);
         } else {
           setIsLoading(false);
         }
-      } catch (error: any) {
+      } catch (error) {
         Alert.alert('Error', 'Failed to fetch subjects.');
         setIsLoading(false);
       }
@@ -383,14 +412,14 @@ const AdminAttendanceView = () => {
       try {
         const response = await apiClient.get(`/attendance/admin-summary?classGroup=${selectedClass}&subjectName=${selectedSubject}&viewMode=${viewMode}`);
         setSummaryData(response.data);
-      } catch (error: any) {
+      } catch (error) {
         Alert.alert('Error', 'Could not fetch summary.');
         setSummaryData(null);
       } finally {
         setIsLoading(false);
       }
     };
-    if(selectedSubject){
+    if (selectedSubject) {
         fetchSummary();
     }
   }, [selectedSubject, viewMode]);
@@ -399,70 +428,32 @@ const AdminAttendanceView = () => {
     return <AdminStudentDetailView student={selectedStudent} onBack={() => setSelectedStudent(null)} />;
   }
 
+  const picker1 = (
+    <Picker selectedValue={selectedClass} onValueChange={setSelectedClass}>
+        {CLASS_GROUPS.map(c => <Picker.Item key={c} label={c} value={c} />)}
+    </Picker>
+  );
+
+  const picker2 = (
+    <Picker selectedValue={selectedSubject} onValueChange={setSelectedSubject} enabled={subjects.length > 0}>
+        {subjects.length > 0 ?
+          subjects.map(s => <Picker.Item key={s} label={s} value={s} />) :
+          <Picker.Item label="No subjects..." value="" />
+        }
+    </Picker>
+  );
+
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.pickerContainer}>
-        <View style={styles.pickerWrapper}>
-          <Picker selectedValue={selectedClass} onValueChange={(itemValue) => setSelectedClass(itemValue)}>
-            {CLASS_GROUPS.map(c => <Picker.Item key={c} label={c} value={c} />)}
-          </Picker>
-        </View>
-        <View style={styles.pickerWrapper}>
-          <Picker selectedValue={selectedSubject} onValueChange={(itemValue) => setSelectedSubject(itemValue)} enabled={subjects.length > 0}>
-            {subjects.length > 0 ?
-              subjects.map(s => <Picker.Item key={s} label={s} value={s} />) :
-              <Picker.Item label="No subjects..." value="" />
-            }
-          </Picker>
-        </View>
-      </View>
-      <View style={styles.toggleContainer}>
-          <TouchableOpacity style={[styles.toggleButton, viewMode === 'daily' && styles.toggleButtonActive]} onPress={() => setViewMode('daily')}>
-              <Text style={[styles.toggleButtonText, viewMode === 'daily' && styles.toggleButtonTextActive]}>Daily</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.toggleButton, viewMode === 'monthly' && styles.toggleButtonActive]} onPress={() => setViewMode('monthly')}>
-              <Text style={[styles.toggleButtonText, viewMode === 'monthly' && styles.toggleButtonTextActive]}>Monthly</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.toggleButton, viewMode === 'overall' && styles.toggleButtonActive]} onPress={() => setViewMode('overall')}>
-              <Text style={[styles.toggleButtonText, viewMode === 'overall' && styles.toggleButtonTextActive]}>Overall</Text>
-          </TouchableOpacity>
-      </View>
-      {isLoading ? <ActivityIndicator size="large" color={PRIMARY_COLOR} style={styles.loaderContainer} /> : (
-        <FlatList
-          data={summaryData?.studentDetails || []}
-          keyExtractor={(item) => item.student_id.toString()}
-          ListHeaderComponent={() => (
-            <View style={styles.summaryContainer}>
-                <SummaryCard label="Overall %" value={`${(summaryData?.overallSummary?.overall_percentage || 0).toFixed(1)}%`} color={BLUE} />
-                <SummaryCard label="Students Present" value={summaryData?.overallSummary?.students_present || 0} color={GREEN} />
-                <SummaryCard label="Students Absent" value={summaryData?.overallSummary?.students_absent || 0} color={RED} />
-            </View>
-          )}
-          renderItem={({ item }) => {
-            const studentPercentage = item.total_marked_periods > 0 ? (item.present_periods / item.total_marked_periods) * 100 : 0;
-            const percentageColor = studentPercentage >= 75 ? GREEN : studentPercentage >= 50 ? YELLOW : RED;
-            return (
-              <TouchableOpacity onPress={() => setSelectedStudent(item)}>
-                <View style={styles.summaryStudentRow}>
-                  <View style={{flex: 1}}>
-                    <Text style={styles.studentName}>{item.full_name}</Text>
-                    <Text style={styles.studentDetailText}>Present: {item.present_periods} / {item.total_marked_periods}</Text>
-                  </View>
-                  <Text style={[styles.percentageText, { color: percentageColor }]}>{studentPercentage.toFixed(0)}%</Text>
-                </View>
-              </TouchableOpacity>
-            );
-          }}
-          ListEmptyComponent={
-            <View style={styles.loaderContainer}>
-              <Text style={styles.noDataText}>
-                {subjects.length === 0 ? `No subjects for ${selectedClass}.` : `No data for this subject in ${capitalize(viewMode)} view.`}
-              </Text>
-            </View>
-          }
-        />
-      )}
-    </SafeAreaView>
+    <GenericSummaryView
+        picker1={picker1}
+        picker2={picker2}
+        listData={summaryData?.studentDetails || []}
+        summaryData={summaryData}
+        isLoading={isLoading}
+        viewMode={viewMode}
+        setViewMode={setViewMode}
+        onSelectStudent={setSelectedStudent}
+    />
   );
 };
 

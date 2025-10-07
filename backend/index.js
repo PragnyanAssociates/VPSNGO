@@ -648,27 +648,52 @@ const getAttendanceSummary = async (filters) => {
     let whereClause = '';
     let queryParams = [];
 
-    if (filters.teacherId) { // Teacher-specific filter
+    if (filters.teacherId) {
         whereClause = 'ar.teacher_id = ? AND ar.class_group = ? AND ar.subject_name = ?';
         queryParams = [filters.teacherId, filters.classGroup, filters.subjectName];
-    } else { // Admin filter
+    } else {
         whereClause = 'ar.class_group = ? AND ar.subject_name = ?';
         queryParams = [filters.classGroup, filters.subjectName];
     }
 
     const baseQuery = `FROM attendance_records ar WHERE ${whereClause} ${dateFilter}`;
 
-    // --- Overall Summary Calculations ---
-    const summaryQuery = `
-        SELECT
-            (COALESCE(SUM(CASE WHEN status = 'Present' THEN 1 ELSE 0 END), 0) * 100 / NULLIF(COUNT(id), 0)) as overall_percentage,
-            COUNT(DISTINCT CASE WHEN status = 'Present' THEN student_id END) as students_present,
-            COUNT(DISTINCT CASE WHEN status = 'Absent' THEN student_id END) as students_absent
-        ${baseQuery}
-    `;
-    const [[overallSummary]] = await db.query(summaryQuery, queryParams);
+    // --- Dynamic Overall Summary Calculations ---
+    let overallSummary;
+    if (viewMode === 'daily') {
+        const summaryQuery = `
+            SELECT
+                COALESCE((SUM(CASE WHEN status = 'Present' THEN 1 ELSE 0 END) * 100 / NULLIF(COUNT(id), 0)), 0) as overall_percentage,
+                COUNT(DISTINCT CASE WHEN status = 'Present' THEN student_id END) as students_present,
+                COUNT(DISTINCT CASE WHEN status = 'Absent' THEN student_id END) as students_absent
+            ${baseQuery}
+        `;
+        [[overallSummary]] = await db.query(summaryQuery, queryParams);
+    } else { // Monthly & Overall
+        // This more complex query calculates the new metrics for longer timeframes
+        const summaryQuery = `
+            WITH StudentPercentages AS (
+                SELECT
+                    student_id,
+                    (SUM(CASE WHEN status = 'Present' THEN 1 ELSE 0 END) * 100 / COUNT(id)) AS percentage
+                ${baseQuery}
+                GROUP BY student_id
+            ),
+            DailyPercentages AS (
+                SELECT
+                    (SUM(CASE WHEN status = 'Present' THEN 1 ELSE 0 END) * 100 / COUNT(id)) AS daily_perc
+                ${baseQuery}
+                GROUP BY attendance_date
+            )
+            SELECT
+                (SELECT COALESCE(AVG(daily_perc), 0) FROM DailyPercentages) AS avg_daily_attendance,
+                (SELECT COUNT(*) FROM StudentPercentages WHERE percentage < 75) AS students_below_threshold,
+                (SELECT COALESCE(SUM(CASE WHEN status = 'Present' THEN 1 ELSE 0 END) * 100 / NULLIF(COUNT(id), 0), 0) ${baseQuery}) as overall_percentage
+        `;
+         [[overallSummary]] = await db.query(summaryQuery, [...queryParams, ...queryParams, ...queryParams]);
+    }
 
-    // --- Student-by-Student Details Calculation (using period counts) ---
+    // --- Student-by-Student Details Calculation (now using period counts) ---
     const studentDetailsQuery = `
         SELECT 
             u.id AS student_id, 
@@ -684,14 +709,7 @@ const getAttendanceSummary = async (filters) => {
     const studentDetailsParams = [...queryParams, filters.classGroup];
     const [studentDetails] = await db.query(studentDetailsQuery, studentDetailsParams);
 
-    return {
-        overallSummary: {
-            overall_percentage: overallSummary?.overall_percentage || 0,
-            students_present: overallSummary?.students_present || 0,
-            students_absent: overallSummary?.students_absent || 0,
-        },
-        studentDetails,
-    };
+    return { overallSummary, studentDetails };
 };
 
 app.get('/api/attendance/teacher-summary', async (req, res) => {
