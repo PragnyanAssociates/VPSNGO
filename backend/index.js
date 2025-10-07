@@ -6151,57 +6151,45 @@ app.delete('/api/preadmissions/:id', async (req, res) => {
 
 
 // ==========================================================
-// --- ACADEMIC RESOURCES API ROUTES (Single Table Logic) ---
+// --- ACADEMIC RESOURCES & Textbook API ROUTES (Single Table, Link-Based) ---
 // ==========================================================
 
-// --- STUDENT VIEW ROUTES ---
+// --- ★ NEW ENDPOINT FOR STUDENT CLASS SELECTION ★ ---
+// GET all unique classes that have at least one resource published.
+app.get('/api/resources/classes', async (req, res) => {
+    try {
+        const query = `SELECT DISTINCT class_group FROM learning_resources ORDER BY class_group;`;
+        const [classes] = await db.query(query);
+        res.status(200).json(classes.map(c => c.class_group));
+    } catch (error) {
+        res.status(500).json({ message: 'Could not fetch class list.' });
+    }
+});
 
-// GET the textbook link for a student's class
+
+// --- STUDENT VIEW ROUTES (No changes, but used differently now) ---
 app.get('/api/resources/textbook/class/:class_group', async (req, res) => {
     try {
         const { class_group } = req.params;
-        const query = `SELECT id, class_group, url FROM learning_resources WHERE class_group = ? AND resource_type = 'textbook';`;
+        const query = `SELECT id, url FROM learning_resources WHERE class_group = ? AND resource_type = 'textbook';`;
         const [[link]] = await db.query(query, [class_group]);
-        if (!link) {
-            return res.status(404).json({ message: 'Textbook link not found for this class.' });
-        }
+        if (!link) return res.status(404).json({ message: 'Textbook link not found.' });
         res.status(200).json(link);
-    } catch (error) {
-        res.status(500).json({ message: 'Could not fetch textbook link.' });
-    }
+    } catch (error) { res.status(500).json({ message: 'Could not fetch textbook link.' }); }
 });
 
-// GET all syllabus subjects for a student's class
 app.get('/api/resources/syllabus/class/:class_group', async (req, res) => {
     try {
         const { class_group } = req.params;
-        const query = `SELECT id, subject_name FROM learning_resources WHERE class_group = ? AND resource_type = 'syllabus' ORDER BY subject_name;`;
+        const query = `SELECT id, subject_name, url, cover_image_url FROM learning_resources WHERE class_group = ? AND resource_type = 'syllabus' ORDER BY subject_name;`;
         const [subjects] = await db.query(query, [class_group]);
         res.status(200).json(subjects);
-    } catch (error) {
-        res.status(500).json({ message: 'Could not fetch subjects for the class.' });
-    }
-});
-
-// GET specific syllabus content by its ID
-app.get('/api/resources/syllabus/content/:id', async (req, res) => {
-    try {
-        const { id } = req.params;
-        const query = `SELECT class_group, subject_name, content FROM learning_resources WHERE id = ? AND resource_type = 'syllabus';`;
-        const [[syllabus]] = await db.query(query, [id]);
-         if (!syllabus) {
-            return res.status(404).json({ message: 'Syllabus content not found.' });
-        }
-        res.status(200).json(syllabus);
-    } catch (error) {
-        res.status(500).json({ message: 'Could not fetch syllabus content.' });
-    }
+    } catch (error) { res.status(500).json({ message: 'Could not fetch subjects for the class.' }); }
 });
 
 
 // --- ADMIN & TEACHER MANAGEMENT ROUTES ---
 
-// GET all textbook links for the management dashboard
 app.get('/api/resources/textbooks', async (req, res) => {
     try {
         const query = `SELECT id, class_group, url FROM learning_resources WHERE resource_type = 'textbook' ORDER BY class_group;`;
@@ -6212,10 +6200,9 @@ app.get('/api/resources/textbooks', async (req, res) => {
     }
 });
 
-// GET all syllabus entries for the management dashboard
 app.get('/api/resources/syllabus', async (req, res) => {
     try {
-        const query = `SELECT id, class_group, subject_name FROM learning_resources WHERE resource_type = 'syllabus' ORDER BY class_group, subject_name;`;
+        const query = `SELECT id, class_group, subject_name, url, cover_image_url FROM learning_resources WHERE resource_type = 'syllabus' ORDER BY class_group, subject_name;`;
         const [syllabi] = await db.query(query);
         res.status(200).json(syllabi);
     } catch (error) {
@@ -6223,35 +6210,32 @@ app.get('/api/resources/syllabus', async (req, res) => {
     }
 });
 
-// CREATE a new syllabus entry
 app.post('/api/resources/syllabus', async (req, res) => {
     try {
-        const { class_group, subject_name, content } = req.body;
-        if (!class_group || !subject_name || !content) {
-            return res.status(400).json({ message: 'Class, subject, and content are required.' });
+        const { class_group, subject_name, url, cover_image_url } = req.body;
+        if (!class_group || !subject_name || !url) {
+            return res.status(400).json({ message: 'Class, subject, and syllabus URL are required.' });
         }
-        const query = 'INSERT INTO learning_resources (class_group, resource_type, subject_name, content) VALUES (?, "syllabus", ?, ?)';
-        await db.query(query, [class_group, subject_name, content]);
+        const query = 'INSERT INTO learning_resources (class_group, resource_type, subject_name, url, cover_image_url) VALUES (?, "syllabus", ?, ?, ?)';
+        await db.query(query, [class_group, subject_name, url, cover_image_url]);
         res.status(201).json({ message: 'Syllabus created successfully.' });
     } catch (error) {
         res.status(500).json({ message: 'Error creating syllabus.' });
     }
 });
 
-// UPDATE a syllabus entry
 app.put('/api/resources/syllabus/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        const { class_group, subject_name, content } = req.body;
-        const query = 'UPDATE learning_resources SET class_group = ?, subject_name = ?, content = ? WHERE id = ? AND resource_type = "syllabus"';
-        await db.query(query, [class_group, subject_name, content, id]);
+        const { class_group, subject_name, url, cover_image_url } = req.body;
+        const query = 'UPDATE learning_resources SET class_group = ?, subject_name = ?, url = ?, cover_image_url = ? WHERE id = ? AND resource_type = "syllabus"';
+        await db.query(query, [class_group, subject_name, url, cover_image_url, id]);
         res.status(200).json({ message: 'Syllabus updated successfully.' });
     } catch (error) {
         res.status(500).json({ message: 'Error updating syllabus.' });
     }
 });
 
-// DELETE a syllabus entry
 app.delete('/api/resources/syllabus/:id', async (req, res) => {
     try {
         const { id } = req.params;
@@ -6262,7 +6246,6 @@ app.delete('/api/resources/syllabus/:id', async (req, res) => {
     }
 });
 
-// CREATE/UPDATE a textbook link
 app.post('/api/resources/textbooks', async (req, res) => {
     try {
         const { class_group, url } = req.body;

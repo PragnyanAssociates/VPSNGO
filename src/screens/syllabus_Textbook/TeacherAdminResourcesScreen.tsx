@@ -20,8 +20,8 @@ const TeacherAdminResourcesScreen = () => {
     // Form State
     const [selectedClass, setSelectedClass] = useState('');
     const [subjectName, setSubjectName] = useState('');
-    const [content, setContent] = useState('');
     const [url, setUrl] = useState('');
+    const [coverImageUrl, setCoverImageUrl] = useState('');
     
     const fetchData = useCallback(async () => {
         setIsLoading(true);
@@ -47,28 +47,22 @@ const TeacherAdminResourcesScreen = () => {
         setEditingItem(null);
         setSelectedClass('');
         setSubjectName('');
-        setContent('');
         setUrl('');
+        setCoverImageUrl('');
     };
 
     const openCreateModal = () => {
         resetForm();
-        if (view === 'textbooks' && textbooks.length > 0) {
-            setSelectedClass(textbooks[0].class_group);
-            setUrl(textbooks[0].url);
-        }
         setIsModalVisible(true);
     };
 
     const openEditModal = (item) => {
         setEditingItem(item);
         setSelectedClass(item.class_group);
+        setUrl(item.url || '');
         if (view === 'syllabus') {
             setSubjectName(item.subject_name);
-            // Fetch full content for editing
-            apiClient.get(`/resources/syllabus/content/${item.id}`).then(res => setContent(res.data.content));
-        } else {
-            setUrl(item.url);
+            setCoverImageUrl(item.cover_image_url || '');
         }
         setIsModalVisible(true);
     };
@@ -91,8 +85,8 @@ const TeacherAdminResourcesScreen = () => {
         setIsSaving(true);
         try {
             if (view === 'syllabus') {
-                if (!selectedClass || !subjectName || !content) throw new Error("All fields are required.");
-                const payload = { class_group: selectedClass, subject_name: subjectName, content };
+                if (!selectedClass || !subjectName || !url) throw new Error("Class, Subject, and Syllabus URL are required.");
+                const payload = { class_group: selectedClass, subject_name: subjectName, url, cover_image_url: coverImageUrl };
                 if (editingItem) {
                     await apiClient.put(`/resources/syllabus/${editingItem.id}`, payload);
                 } else {
@@ -171,7 +165,7 @@ const TeacherAdminResourcesScreen = () => {
             </TouchableOpacity>
 
             <Modal visible={isModalVisible} onRequestClose={() => setIsModalVisible(false)} animationType="slide">
-                <ScrollView style={styles.modalView}>
+                <ScrollView style={styles.modalView} keyboardShouldPersistTaps="handled">
                     <Text style={styles.modalTitle}>{editingItem ? 'Edit' : 'Create'} {view === 'syllabus' ? 'Syllabus' : 'Textbook Link'}</Text>
                     
                     <Text style={styles.label}>Class</Text>
@@ -186,8 +180,10 @@ const TeacherAdminResourcesScreen = () => {
                         <>
                             <Text style={styles.label}>Subject Name</Text>
                             <TextInput style={styles.input} value={subjectName} onChangeText={setSubjectName} placeholder="e.g., English" />
-                            <Text style={styles.label}>Syllabus Content</Text>
-                            <TextInput style={[styles.input, styles.textArea]} value={content} onChangeText={setContent} placeholder="Enter syllabus details..." multiline />
+                            <Text style={styles.label}>Syllabus URL</Text>
+                            <TextInput style={styles.input} value={url} onChangeText={setUrl} placeholder="https://..." keyboardType="url" />
+                            <Text style={styles.label}>Cover Image URL (Optional)</Text>
+                            <TextInput style={styles.input} value={coverImageUrl} onChangeText={setCoverImageUrl} placeholder="https://..." keyboardType="url" />
                         </>
                     ) : (
                         <>
@@ -227,7 +223,6 @@ const styles = StyleSheet.create({
     modalTitle: { fontSize: 22, fontWeight: 'bold', marginBottom: 20, textAlign: 'center' },
     label: { fontSize: 16, fontWeight: '500', color: '#444', marginBottom: 5, marginLeft: 5, marginTop: 10 },
     input: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#ccc', padding: 12, borderRadius: 8, marginBottom: 5 },
-    textArea: { height: 150, textAlignVertical: 'top' },
     pickerContainer: { borderWidth: 1, borderColor: '#ccc', borderRadius: 8, backgroundColor: '#fff' },
     modalActions: { flexDirection: 'row', justifyContent: 'space-around', marginTop: 30, marginBottom: 50 },
     modalBtn: { flex: 1, paddingVertical: 12, borderRadius: 8, alignItems: 'center', marginHorizontal: 5, elevation: 2 },
